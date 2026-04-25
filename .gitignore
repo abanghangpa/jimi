@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+jimi_env/
+*.csv
+jimi_v610_trades.csv
+eth_15m_*.csv
