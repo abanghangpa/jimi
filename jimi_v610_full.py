@@ -414,8 +414,8 @@ CONFIG = {
     "TP2_CLOSE": 0.30,
 
     # --- POSITION SIZING ---
-    "SIZE_STD": 5.0,            # SHORT size
-    "SIZE_LONG": 2.5,           # LONG size — half of SHORT (bearish market headwind)
+    "SIZE_STD": 5.0,            # default size (both directions)
+    "SIZE_LONG": 5.0,           # LONG size — equalized (was 2.5, penalized longs)
     "SIZE_M2_NEUTRAL": 2.5,
     "SIZE_CAUTION": 3.5,
 
@@ -434,7 +434,7 @@ CONFIG = {
     "CONSEC_LOSS_PAUSE_BARS": 8, # pause for 2 hours (NEW)
 
     # --- LONG FILTER ---
-    "LONG_MIN_ICS": 0.65,       # require higher ICS for LONG (NEW)
+    "LONG_MIN_ICS": 0.55,       # same as general threshold (was 0.65, penalized longs)
 
     # --- DERIVATIVES (M6) ---
     "M6_WEIGHT": 0.10,          # derivatives signal weight in ICS
@@ -1391,10 +1391,9 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5, m6
 
 def check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h):
     row = df_15m.iloc[idx]
-    if direction == 'LONG' and swing_bias == 'BEARISH':
-        return False, "swing_bearish_block_long"
-    if direction == 'SHORT' and swing_bias == 'BULLISH':
-        return False, "swing_bullish_block_short"
+    # Swing bias no longer blocks entries — it's too laggy and causes
+    # the framework to miss recoveries (2023) and fight trends (2020).
+    # Instead, swing_bias now only affects ICS floor via phase0.
     if not pd.isna(atr_1h) and atr_1h > 0:
         bar_move = abs(row['Close'] - row['Open'])
         if direction == 'LONG' and row['Close'] < row['Open']:
@@ -1691,18 +1690,8 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         # --- M4 PASS Required ---
         if m4_status == 'FAIL': stats['m4_required_skip'] = stats.get('m4_required_skip', 0) + 1; continue
 
-        # --- LONG filter: require strong confluence ---
-        if direction == 'LONG':
-            long_min_ics = 0.65
-            if ics < long_min_ics:
-                stats['long_ics_skip'] = stats.get('long_ics_skip', 0) + 1
-                continue
-            if m2_status != 'PASS':
-                stats['m2_neutral_long_skip'] += 1
-                continue
-            if phase0_val is not None and phase0_val >= 0.40:
-                stats['long_phase0_skip'] = stats.get('long_phase0_skip', 0) + 1
-                continue
+        # Symmetric direction filter — both long and short treated equally.
+        # (Removed: hardcoded long_min_ics=0.65, m2_neutral_long_skip, long_phase0_skip)
 
         passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h)
         if not passed:
@@ -1718,12 +1707,6 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
             if price_dist < min_dist:
                 stats['dedup_skip'] = stats.get('dedup_skip', 0) + 1
                 continue
-
-        # --- LONG ICS Filter: require higher ICS for LONG ---
-        long_min_ics = CONFIG.get('LONG_MIN_ICS', 0)
-        if direction == 'LONG' and long_min_ics > 0 and ics < long_min_ics:
-            stats['long_ics_skip'] = stats.get('long_ics_skip', 0) + 1
-            continue
 
         # --- Position Sizing ---
         size = CONFIG.get('SIZE_LONG', CONFIG['SIZE_STD']) if direction == 'LONG' else CONFIG['SIZE_STD']
