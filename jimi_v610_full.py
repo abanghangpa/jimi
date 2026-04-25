@@ -771,6 +771,94 @@ def find_gaps(bin_centers, vol_profile, n_gaps=5):
     gaps.sort(key=lambda x: x[1])
     return gaps[:n_gaps]
 
+# ═══════════════════════════════════════════════════════════════════════
+# SUPPORT / RESISTANCE — Behavioral Level Detection
+# ═══════════════════════════════════════════════════════════════════════
+
+def find_support_resistance(df_15m, idx=None, lookback=672, n_levels=10,
+                             bin_pct=0.002, touch_pct=0.004, bounce_pct=0.003,
+                             bounce_bars=8, min_touches=3):
+    """
+    Find support/resistance levels based on price rejection behavior.
+
+    Unlike volume-profile magnets (which find where volume *concentrated*),
+    this finds where price *touched and bounced* repeatedly — behavioral S/R.
+
+    Algorithm:
+    1. Discretize price into bins (bin_pct width)
+    2. For each bin, count touches (low within touch_pct of bin center)
+    3. For each touch, check if price bounced (moved bounce_pct away within N bars)
+    4. Levels with high touch+bounce count are S/R
+    5. Strength = bounce_count / touch_count (consistency) * touch_count (frequency)
+
+    Returns: list of (price, strength, touches, bounces, type) tuples
+    - type: 'SUPPORT' or 'RESISTANCE' based on whether price is above or below
+    """
+    if idx is None:
+        idx = len(df_15m) - 1
+    if idx < lookback:
+        return []
+
+    start = max(0, idx - lookback + 1)
+    highs = df_15m['High'].values[start:idx+1].astype(float)
+    lows = df_15m['Low'].values[start:idx+1].astype(float)
+    closes = df_15m['Close'].values[start:idx+1].astype(float)
+    current_price = closes[-1]
+
+    if len(closes) < 20:
+        return []
+
+    price_min, price_max = lows.min(), highs.max()
+    price_range = price_max - price_min
+    if price_range <= 0:
+        return []
+
+    # Create bins
+    n_bins = max(int(price_range / (current_price * bin_pct)), 20)
+    bin_edges = np.linspace(price_min, price_max, n_bins + 1)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    bin_width = bin_edges[1] - bin_edges[0]
+
+    levels = []
+    for bi in range(len(bin_centers)):
+        bc = bin_centers[bi]
+        touches = 0
+        bounces = 0
+
+        for i in range(len(closes)):
+            # Touch: low comes within touch_pct of bin center
+            touch_dist = abs(lows[i] - bc) / bc
+            if touch_dist <= touch_pct:
+                touches += 1
+                # Bounce: price moves away within bounce_bars bars
+                bounced = False
+                for j in range(i+1, min(i+1+bounce_bars, len(closes))):
+                    if abs(closes[j] - bc) / bc >= bounce_pct:
+                        bounced = True
+                        break
+                if bounced:
+                    bounces += 1
+
+        if touches >= min_touches and bounces >= min_touches:
+            consistency = bounces / touches if touches > 0 else 0
+            strength = touches * consistency
+            # Determine type based on recent price action
+            # If current price is above, it's support; below = resistance
+            sr_type = 'SUPPORT' if current_price > bc else 'RESISTANCE'
+            levels.append((bc, strength, touches, bounces, sr_type))
+
+    # Deduplicate nearby levels
+    levels.sort(key=lambda x: x[1], reverse=True)
+    filtered = []
+    for level in levels:
+        if not any(abs(level[0] - e[0]) / e[0] < bin_pct for e in filtered):
+            filtered.append(level)
+
+    # Sort by distance from current price
+    filtered.sort(key=lambda x: abs(x[0] - current_price))
+    return filtered[:n_levels]
+
+
 def calc_magnetic_pull(current_price, magnets, direction):
     if not magnets:
         return 0.0, None, None
@@ -1890,6 +1978,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d):
     result['magnets'] = [(round(p, 2), round(s, 2)) for p, _, s in magnets[:5]]
     result['gaps'] = [round(p, 2) for p, _ in gaps[:5]]
 
+    # --- Support / Resistance (behavioral levels) ---
+    sr_levels = find_support_resistance(df_15m, idx)
+    # Sort by strength (most significant first), keep top 8
+    sr_levels.sort(key=lambda x: x[1], reverse=True)
+    result['sr_levels'] = [(round(p, 2), round(s, 2), t, touches, bounces)
+                           for p, s, touches, bounces, t in sr_levels[:8]]
+
     # --- Estimated Liquidation Levels ---
     # Based on ATR-derived SL distances for typical leverage
     price = float(row['Close'])
@@ -2052,6 +2147,25 @@ def print_signal(result):
         for i, p in enumerate(gaps[:3]):
             dist = (p - price) / price * 100
             print(f"    #{i+1}: ${p:.2f}  ({dist:+.2f}%)")
+
+    # --- Support / Resistance Levels ---
+    sr = result.get('sr_levels', [])
+    if sr:
+        supports = [(p, s, t, touches, bounces) for p, s, t, touches, bounces in sr if t == 'SUPPORT']
+        resistances = [(p, s, t, touches, bounces) for p, s, t, touches, bounces in sr if t == 'RESISTANCE']
+        # Sort each by strength (strongest first)
+        supports.sort(key=lambda x: x[1], reverse=True)
+        resistances.sort(key=lambda x: x[1], reverse=True)
+        if supports:
+            print(f"  Support Levels (price rejection):")
+            for i, (p, s, _, touches, bounces) in enumerate(supports[:4]):
+                dist = (p - price) / price * 100
+                print(f"    #{i+1}: ${p:.2f}  strength={s:.1f}  touches={touches} bounces={bounces}  ({dist:+.2f}%)")
+        if resistances:
+            print(f"  Resistance Levels (price rejection):")
+            for i, (p, s, _, touches, bounces) in enumerate(resistances[:4]):
+                dist = (p - price) / price * 100
+                print(f"    #{i+1}: ${p:.2f}  strength={s:.1f}  touches={touches} bounces={bounces}  ({dist:+.2f}%)")
 
     # --- Estimated Liquidation Levels ---
     liq = result.get('liquidation_levels', {})
