@@ -706,17 +706,17 @@ def calc_trend_state(df_1d):
 
 CONFIG = {
     # --- GATE THRESHOLDS ---
-    "ICS_THRESHOLD_NORMAL": 0.55,   # raised floor (was 0.50)
-    "ICS_THRESHOLD_CAUTION": 0.55,  # same (was 0.54)
-    "ICS_FLOOR": 0.55,              # raised (was 0.50)
-    "ICS_FLOOR_M4_FALSE": 0.55,     # raised (was 0.50)
+    "ICS_THRESHOLD_NORMAL": 0.50,   # lowered to increase trade frequency
+    "ICS_THRESHOLD_CAUTION": 0.52,  # slightly higher in caution zones
+    "ICS_FLOOR": 0.50,              # lowered floor
+    "ICS_FLOOR_M4_FALSE": 0.50,     # lowered floor
     "ICS_CEILING": 0.70,            # NEW — reject overconfident signals
 
     # --- v6.12 IMPROVEMENTS ---
     "BIAS_GATE_ENABLED": True,       # Directional bias gate for longs
     "BIAS_GATE_LONG_ICS": 0.65,
     "TREND_FILTER_ENABLED": True,      # Hard directional filter
-    "TREND_BLOCK_COUNTER_TREND": True, # Block trades against trend
+    "TREND_BLOCK_COUNTER_TREND": False,  # disabled — allow counter-trend trades with high ICS
     "TREND_STRONG_ONLY": False,        # If True, only trade STRONG trends
     "TREND_MIN_SCORE": 0.15,           # Minimum trend_score to allow trade in trend dir      # Higher ICS required for LONG when bias is BEARISH
     "MONTHLY_DD_CIRCUIT": 0.05,       # Stop trading if monthly PnL drops below -5%
@@ -743,7 +743,6 @@ CONFIG = {
     "SHOULDER_TP1_CLOSE": 0.45,      # Close more at TP1 (was 30%) — capture gains
     "SHOULDER_ICS_BOOST": 0.02,      # Slightly higher ICS required
     "SHOULDER_MAX_TRADES_DAY": 3,    # Fewer trades per day
-    "SHOULDER_COOLDOWN": 15,         # Longer cooldown between trades
 
     # --- MODULE WEIGHTS (ICS) — Forensic rebalance based on March 2026 analysis ---
     # M2 (EMA) removed from ICS: hallucinating (delta -0.105). Now veto-only.
@@ -765,7 +764,7 @@ CONFIG = {
     "SESSION_ASIAN_BLOCK": False,   # disabled — loses profitable EU-open signals that overlap
     "POST_CRASH_COOLDOWN": True,    # NEW — disable trend-following after extreme daily moves
     "POST_CRASH_THRESHOLD": 0.10,   # daily move > 10% triggers cooldown
-    "POST_CRASH_BARS": 288,         # cooldown for 72h (288 × 15m bars)
+    "POST_CRASH_BARS": 48,          # cooldown for 12h (was 288 = 72h)
     "CASCADE_MULTIPLIER": 1.12,     # v6.12: NEW — ICS boost when cascade WITH trade
     "CASCADE_PENALTY": 0.85,        # v6.12: NEW — ICS penalty when cascade AGAINST trade
     "DIR_VETO_ENABLED": True,       # v6.12: NEW — block when M4+M5 disagree with M1/M2
@@ -839,10 +838,11 @@ CONFIG = {
     "MAX_TRADES_DAY_SUMMER": 3,    # v6.13: fewer trades in summer chop
     "MAX_DAILY_LOSS": 0.05,     # 5% daily loss limit (was 0.06)
     "MAX_DAILY_LOSS_SUMMER": 0.03, # v6.13: tighter daily loss in summer
-    "COOLDOWN_MINUTES": 10,
-    "COOLDOWN_MINUTES_SUMMER": 20, # v6.13: longer cooldown in summer
-    "ROLLING_WR_WINDOW": 12,
-    "ROLLING_WR_MIN": 0.25,
+    "COOLDOWN_BARS": 2,             # bars to wait between entries (was 10 min)
+    "COOLDOWN_BARS_SUMMER": 4,      # longer cooldown in summer (was 20 min)
+    "SHOULDER_COOLDOWN_BARS": 3,    # shoulder month cooldown bars (was 15 min)
+    "ROLLING_WR_WINDOW": 20,        # wider window — less reactive to short streaks
+    "ROLLING_WR_MIN": 0.15,         # only block when truly terrible (was 0.25)
     "MAX_CONSEC_LOSS": 3,       # pause after 3 consecutive losses (NEW)
     "CONSEC_LOSS_PAUSE_BARS": 8, # pause for 2 hours (NEW)
 
@@ -886,7 +886,7 @@ CONFIG = {
     # --- Adaptive Direction Bias ---
     "ADAPTIVE_DIR_ENABLED": True,
     "ADAPTIVE_DIR_MIN_BIAS": 0.10,
-    "ADAPTIVE_DIR_BLOCK_THRESHOLD": 0.40,
+    "ADAPTIVE_DIR_BLOCK_THRESHOLD": 0.60,  # only block extreme opposition (was 0.40)
 
     # --- Data Freshness ---
     "DATA_FRESHNESS_ENABLED": True,
@@ -2598,7 +2598,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
             print(f"  Funding rate fetch failed: {e}")
     trades, open_trades = [], []
     daily_trades, daily_pnl = {}, {}
-    last_loss_time = None
+    last_entry_bar = -999  # bar index of last entry (for bar-based cooldown)
     deriv_df = None  # derivatives DataFrame (used for data freshness check, populated in live mode)
     regime_state = RegimeState()  # hysteresis-based regime tracking
     stats = {
@@ -2723,8 +2723,8 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         if daily_trades[today] >= max_trades_today: continue
         max_daily_loss = CONFIG.get('MAX_DAILY_LOSS_SUMMER', CONFIG['MAX_DAILY_LOSS']) if is_summer else CONFIG['MAX_DAILY_LOSS']
         if daily_pnl[today] <= -max_daily_loss: continue
-        cooldown = CONFIG.get('COOLDOWN_MINUTES_SUMMER', CONFIG['COOLDOWN_MINUTES']) if is_summer else (CONFIG.get('SHOULDER_COOLDOWN', CONFIG['COOLDOWN_MINUTES']) if is_shoulder else CONFIG['COOLDOWN_MINUTES'])
-        if last_loss_time and (ts - last_loss_time).total_seconds() / 60 < cooldown: continue
+        cooldown_bars = CONFIG.get('COOLDOWN_BARS_SUMMER', CONFIG['COOLDOWN_BARS']) if is_summer else (CONFIG.get('SHOULDER_COOLDOWN_BARS', CONFIG['COOLDOWN_BARS']) if is_shoulder else CONFIG['COOLDOWN_BARS'])
+        if idx - last_entry_bar < cooldown_bars: continue
         phase0_block = CONFIG.get('PHASE0_SUMMER_BLOCK', 0.90) if is_summer else 0.90
         if phase0_val >= phase0_block: continue
 
@@ -2741,8 +2741,8 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
                         continue
 
         # --- Rolling Win Rate Circuit Breaker ---
-        rolling_window = CONFIG.get('ROLLING_WR_WINDOW', 8)
-        rolling_min = CONFIG.get('ROLLING_WR_MIN', 0.40)
+        rolling_window = CONFIG.get('ROLLING_WR_WINDOW', 20)
+        rolling_min = CONFIG.get('ROLLING_WR_MIN', 0.15)
         if len(trades) >= rolling_window:
             rolling_trades = trades[-rolling_window:]
             rolling_wr = sum(1 for t in rolling_trades if t.pnl_pct > 0) / rolling_window
@@ -3233,6 +3233,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
                       m7_details=m7_details)
         open_trades.append(trade); trades.append(trade)
         daily_trades[today] += 1; stats['entries'] += 1
+        last_entry_bar = idx
 
         if verbose and stats['entries'] <= 50:
             print(f"  ENTRY #{stats['entries']}: {ts} {direction} @ {entry_price:.2f} "

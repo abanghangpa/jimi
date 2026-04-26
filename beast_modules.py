@@ -1049,7 +1049,7 @@ def compute_adaptive_direction(
 
     # --- Determine if direction is allowed ---
     # Minimum bias required to trade in a direction
-    min_bias = BEAST_CONFIG.get('ADAPTIVE_DIR_MIN_BIAS', 0.10)
+    min_bias = BEAST_CONFIG.get('ADAPTIVE_DIR_MIN_BIAS', 0.0)  # no min bias gate — rely on block_threshold only
     block_threshold = BEAST_CONFIG.get('ADAPTIVE_DIR_BLOCK_THRESHOLD', 0.50)
 
     if direction == 'LONG':
@@ -1124,7 +1124,7 @@ BEAST_CONFIG = {
     # --- Adaptive Direction Bias ---
     'ADAPTIVE_DIR_ENABLED': True,
     'ADAPTIVE_DIR_MIN_BIAS': 0.10,         # minimum bias to allow trade
-    'ADAPTIVE_DIR_BLOCK_THRESHOLD': 0.50,  # block if bias opposes this much (raised from 0.40)
+    'ADAPTIVE_DIR_BLOCK_THRESHOLD': 0.70,  # only block extreme opposition (was 0.50)
     'ADAPTIVE_DIR_CHOP_BIAS': 0.15,        # stronger bias needed in chop
 
     # --- Data Freshness ---
