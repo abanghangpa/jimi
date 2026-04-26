@@ -36,7 +36,7 @@ def fetch_ohlcv(symbol, timeframe, since_ms, until_ms):
         current = last_ts + 1
     return pd.DataFrame(all_candles)
 
-from jimi_v612_finetuned import run_backtest, print_report
+from jimi_v613 import run_backtest, print_report
 
 # Month configs: (month_num, fetch_start_month, fetch_start_day, year_offset)
 MONTHS = {
@@ -62,7 +62,7 @@ for month_name, (mn, fsm, fsd, yoff) in MONTHS.items():
     print(f"  {month_name.upper()} — v6.13 Analysis")
     print(f"{'='*60}")
 
-    for year in [2020, 2021, 2022, 2023, 2024, 2025]:
+    for year in [2025, 2026]:
         fetch_start_year = year - 1 if yoff else year
         last_day = calendar.monthrange(year, mn)[1]
 
@@ -135,7 +135,7 @@ with open('/tmp/v613_full_results.json', 'w') as f:
 
 # Print summary table
 print("\n\n" + "=" * 80)
-print("  JIMI v6.13 — FULL YEAR SUMMARY (2020-2025)")
+print("  JIMI v6.13 — YEAR SUMMARY (2025-2026)")
 print("=" * 80)
 print(f"\n  {'Month':<12} {'Profitable':>10} {'Avg PnL%':>10} {'Avg WR%':>9} {'Avg PF':>8} {'Avg DD%':>9} {'Best':>12} {'Worst':>12}")
 print(f"  {'─'*12} {'─'*10} {'─'*10} {'─'*9} {'─'*8} {'─'*9} {'─'*12} {'─'*12}")
