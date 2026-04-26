@@ -763,6 +763,9 @@ CONFIG = {
     "M7_GATE_STRONG_THRESHOLD": 0.60, # M7 above this = ICS boost
     "M7_GATE_STRONG_BOOST": 0.04,   # ICS boost when M7 strongly agrees
     "SESSION_ASIAN_BLOCK": False,   # disabled — loses profitable EU-open signals that overlap
+    "POST_CRASH_COOLDOWN": True,    # NEW — disable trend-following after extreme daily moves
+    "POST_CRASH_THRESHOLD": 0.10,   # daily move > 10% triggers cooldown
+    "POST_CRASH_BARS": 288,         # cooldown for 72h (288 × 15m bars)
     "CASCADE_MULTIPLIER": 1.12,     # v6.12: NEW — ICS boost when cascade WITH trade
     "CASCADE_PENALTY": 0.85,        # v6.12: NEW — ICS penalty when cascade AGAINST trade
     "DIR_VETO_ENABLED": True,       # v6.12: NEW — block when M4+M5 disagree with M1/M2
@@ -2559,6 +2562,25 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
     warmup_time = df_1h['Open time'].iloc[min(CONFIG['WARMUP_BARS_1H'], len(df_1h)-1)]
     print(f"  Warmup: skip until {warmup_time}")
 
+    # --- Precompute post-crash cooldown windows ---
+    _post_crash_windows = []
+    if CONFIG.get('POST_CRASH_COOLDOWN', False):
+        crash_thresh = CONFIG.get('POST_CRASH_THRESHOLD', 0.10)
+        cooldown_bars = CONFIG.get('POST_CRASH_BARS', 192)
+        for d_idx in range(1, len(df_1d)):
+            prev_close = df_1d['Close'].iloc[d_idx - 1]
+            curr_close = df_1d['Close'].iloc[d_idx]
+            if prev_close > 0:
+                day_chg = abs(curr_close - prev_close) / prev_close
+                if day_chg > crash_thresh:
+                    crash_ts = df_1d['Open time'].iloc[d_idx]
+                    crash_end = crash_ts + pd.Timedelta(minutes=cooldown_bars * 15)
+                    _post_crash_windows.append((crash_ts, crash_end))
+        if _post_crash_windows:
+            print(f"  Post-crash cooldown: {len(_post_crash_windows)} crash window(s) detected")
+            for cs, ce in _post_crash_windows:
+                print(f"    {cs} → {ce}")
+
     print("[5/6] Running backtest...")
 
     # --- Cache funding rate (changes every 8h, fetch once) ---
@@ -2597,7 +2619,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         'veto_hard_block': 0, 'veto_hard_m9': 0, 'veto_hard_data': 0,
         'veto_hard_risk': 0, 'veto_hard_dir': 0,
         'gate_block': 0, 'gate_m7_block': 0, 'gate_m10_block': 0, 'gate_trend_block': 0,
-        'm2_veto_block': 0, 'm5_hard_block': 0, 'session_asian_block': 0,
+        'm2_veto_block': 0, 'm5_hard_block': 0, 'session_asian_block': 0, 'post_crash_block': 0,
         'veto_soft_applied': 0, 'data_stale_block': 0,
     }
 
@@ -2731,7 +2753,18 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
                     stats['rolling_wr_skip'] = stats.get('rolling_wr_skip', 0) + 1
                     continue
 
-        # Monthly DD and losing month checks are now handled by VETO system (after module scoring)
+        # --- Post-Crash Cooldown (Feb 2026 fix: -15% crash → 2 losing shorts) ---
+        if CONFIG.get('POST_CRASH_COOLDOWN', False):
+            crash_threshold = CONFIG.get('POST_CRASH_THRESHOLD', 0.10)
+            cooldown_bars = CONFIG.get('POST_CRASH_BARS', 192)
+            crash_block = False
+            for crash_ts, crash_end_ts in _post_crash_windows:
+                if crash_ts < ts < crash_end_ts:
+                    crash_block = True
+                    break
+            if crash_block:
+                stats['post_crash_block'] = stats.get('post_crash_block', 0) + 1
+                continue
 
         stats['signals_checked'] += 1
         veto_soft_penalty = 0.0  # initialized per-bar, updated by veto system after module scoring
@@ -3296,7 +3329,7 @@ def print_report(trades, stats):
     if early_count:
         print(f"    EARLY_EXIT: {early_count} ({early_count/total*100:.1f}%)")
     print(f"\n  Signal Flow:")
-    for k in ['signals_checked','m1_neutral_skip','m3_fail','m2_neutral_long_skip','long_disabled','long_ics_skip','long_m5_skip','long_phase0_skip','ics_blocked','ics_ceiling_skip','m4_required_skip','m4_false_anchored','m5_pass','m5_fail','cascade_detected','dedup_skip','filter_blocked','consec_pause','rolling_wr_skip','bias_gate_skip','monthly_dd_skip','dir_veto_skip','adaptive_dir_block','gate_block','gate_m7_block','gate_m10_block','gate_trend_block','m2_veto_block','m5_hard_block','session_asian_block','veto_hard_block','veto_soft_applied','data_stale_block','m9_block','m10_pass','m10_fail','m11_pass','m11_fail','m11_skip','entries']:
+    for k in ['signals_checked','m1_neutral_skip','m3_fail','m2_neutral_long_skip','long_disabled','long_ics_skip','long_m5_skip','long_phase0_skip','ics_blocked','ics_ceiling_skip','m4_required_skip','m4_false_anchored','m5_pass','m5_fail','cascade_detected','dedup_skip','filter_blocked','consec_pause','rolling_wr_skip','bias_gate_skip','monthly_dd_skip','dir_veto_skip','adaptive_dir_block','gate_block','gate_m7_block','gate_m10_block','gate_trend_block','m2_veto_block','m5_hard_block','session_asian_block','post_crash_block','veto_hard_block','veto_soft_applied','data_stale_block','m9_block','m10_pass','m10_fail','m11_pass','m11_fail','m11_skip','entries']:
         if k in stats:
             print(f"    {k+':':<26} {stats[k]}")
 
