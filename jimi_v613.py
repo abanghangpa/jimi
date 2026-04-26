@@ -1940,7 +1940,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         'm1_neutral_skip': 0, 'm3_fail': 0, 'm2_neutral_long_skip': 0, 'rolling_wr_skip': 0,
         'dedup_skip': 0, 'long_ics_skip': 0, 'consec_pause': 0,
         'ics_ceiling_skip': 0, 'm4_required_skip': 0, 'long_disabled': 0, 'long_phase0_skip': 0, 'long_m5_skip': 0,
-        'bias_gate_skip': 0, 'monthly_dd_skip': 0, 'dir_veto_skip': 0, 'trend_block': 0, 'trend_weak': 0,
+        'bias_gate_skip': 0, 'monthly_dd_skip': 0, 'dir_veto_skip': 0, 'trend_flip': 0, 'trend_weak': 0,
     }
 
     for idx in range(len(df_15m)):
