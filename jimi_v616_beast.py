@@ -44,6 +44,8 @@ from beast_modules import (
     score_m11_mtf_momentum,
     score_m12_orderbook,
     compute_adaptive_direction,
+    check_data_freshness, check_data_continuity,
+    evaluate_vetoes, VetoResult,
     BEAST_CONFIG,
 )
 
@@ -865,6 +867,19 @@ CONFIG = {
     "ADAPTIVE_DIR_ENABLED": True,
     "ADAPTIVE_DIR_MIN_BIAS": 0.10,
     "ADAPTIVE_DIR_BLOCK_THRESHOLD": 0.40,
+
+    # --- Data Freshness ---
+    "DATA_FRESHNESS_ENABLED": True,
+    "DATA_FRESHNESS_MAX_AGE_MIN": 20,
+    "DATA_FRESHNESS_CHECK_INTERVAL": 5,
+
+    # --- Veto Priority System ---
+    "VETO_ENABLED": True,
+    "VETO_CRISIS_HARD": True,
+    "VETO_CHOP_HARD": False,
+    "VETO_STALE_DATA_HARD": True,
+    "VETO_MONTHLY_DD_HARD": True,
+    "VETO_DIR_CONFLICT_HARD": True,
 
     # --- DATA ---
     "PAIR": "ETHUSDT",
@@ -2439,6 +2454,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
     trades, open_trades = [], []
     daily_trades, daily_pnl = {}, {}
     last_loss_time = None
+    deriv_df = None  # derivatives DataFrame (used for data freshness check, populated in live mode)
     stats = {
         'signals_checked': 0, 'ics_blocked': 0, 'filter_blocked': 0, 'entries': 0,
         'exits_sl': 0, 'exits_tp1': 0, 'exits_tp2': 0, 'exits_tp3': 0, 'exits_signal': 0, 'exits_early': 0,
@@ -2454,6 +2470,9 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         'm12_pass': 0, 'm12_fail': 0, 'm12_skip': 0,
         'adaptive_dir_block': 0,
         'rolling_wr_skip': 0,
+        'veto_hard_block': 0, 'veto_hard_m9': 0, 'veto_hard_data': 0,
+        'veto_hard_risk': 0, 'veto_hard_dir': 0,
+        'veto_soft_applied': 0, 'data_stale_block': 0,
     }
 
     # --- Adaptive Weights ---
@@ -2586,33 +2605,10 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
                     stats['rolling_wr_skip'] = stats.get('rolling_wr_skip', 0) + 1
                     continue
 
-        # --- v6.11: Monthly Drawdown Circuit Breaker ---
-        monthly_dd_limit = CONFIG.get('MONTHLY_DD_CIRCUIT', 0)
-        if monthly_dd_limit > 0:
-            month_key = f"{ts.year}-{ts.month:02d}"
-            month_trades = [t for t in trades if t.exit_time is not None and hasattr(t.exit_time, 'year') and f"{t.exit_time.year}-{t.exit_time.month:02d}" == month_key]
-            month_pnl = sum(t.pnl_pct * t.size_pct for t in month_trades)
-            if month_pnl <= -monthly_dd_limit:
-                stats['monthly_dd_skip'] = stats.get('monthly_dd_skip', 0) + 1
-                continue
-
-        # --- Consecutive Losing Months: require higher ICS ---
-        losing_month_boost = 0.0
-        prev_month_key = f"{ts.year}-{ts.month - 1:02d}" if ts.month > 1 else f"{ts.year - 1}-12"
-        prev_month_trades = [t for t in trades if t.exit_time is not None and hasattr(t.exit_time, 'year') and f"{t.exit_time.year}-{t.exit_time.month:02d}" == prev_month_key]
-        if prev_month_trades:
-            prev_pnl = sum(t.pnl_pct * t.size_pct for t in prev_month_trades)
-            if prev_pnl < 0:
-                losing_month_boost = 0.03  # require 3% higher ICS after a losing month
-                # Check 2 months back too
-                prev2_key = f"{ts.year}-{ts.month - 2:02d}" if ts.month > 2 else f"{ts.year - 1}-{12 + ts.month - 2:02d}"
-                prev2_trades = [t for t in trades if t.exit_time is not None and hasattr(t.exit_time, 'year') and f"{t.exit_time.year}-{t.exit_time.month:02d}" == prev2_key]
-                if prev2_trades:
-                    prev2_pnl = sum(t.pnl_pct * t.size_pct for t in prev2_trades)
-                    if prev2_pnl < 0:
-                        losing_month_boost = 0.05  # 2 consecutive losing months = 5% higher ICS
+        # Monthly DD and losing month checks are now handled by VETO system (after module scoring)
 
         stats['signals_checked'] += 1
+        veto_soft_penalty = 0.0  # initialized per-bar, updated by veto system after module scoring
 
         # --- Module Scoring ---
         m1_dir, m1_score = score_m1(df_1h, idx_1h)
@@ -2688,8 +2684,8 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
             threshold += CONFIG.get('SUMMER_ICS_BOOST', 0)
         elif is_shoulder:
             threshold += CONFIG.get('SHOULDER_ICS_BOOST', 0)
-        # Losing month boost — require higher ICS after recent monthly losses
-        threshold += losing_month_boost
+        # Veto soft penalties — increase threshold based on module failures
+        threshold += veto_soft_penalty
         if ics_pre < effective_floor or ics_pre < threshold: stats['ics_blocked'] += 1; continue
 
         # --- M5 (lazy, cached every 4 bars) ---
@@ -2741,10 +2737,6 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
             use_m9 = True
             stats['m9_pass'] = stats.get('m9_pass', 0) + (1 if m9_status == 'PASS' else 0)
             stats['m9_fail'] = stats.get('m9_fail', 0) + (1 if m9_status == 'FAIL' else 0)
-            # Block crisis regime entirely
-            if vol_regime in CONFIG.get('M9_BLOCK_REGIMES', []):
-                stats['m9_block'] = stats.get('m9_block', 0) + 1
-                continue
 
         # ===== M10: Cross-Asset Macro =====
         m10_score = 0.5
@@ -2783,6 +2775,73 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
             stats['m12_pass'] = stats.get('m12_pass', 0) + (1 if m12_status == 'PASS' else 0)
             stats['m12_fail'] = stats.get('m12_fail', 0) + (1 if m12_status == 'FAIL' else 0)
 
+        # ═══════════════════════════════════════════════════════════════
+        # VETO PRIORITY SYSTEM — Hard vetoes override everything
+        # ═══════════════════════════════════════════════════════════════
+        if CONFIG.get('VETO_ENABLED', False):
+            # Check data freshness (periodically, not every bar)
+            data_fresh = True
+            data_age = 0
+            freshness_interval = CONFIG.get('DATA_FRESHNESS_CHECK_INTERVAL', 5)
+            if CONFIG.get('DATA_FRESHNESS_ENABLED', False) and idx % freshness_interval == 0:
+                if deriv_df is not None and len(deriv_df) > 0:
+                    data_fresh, data_age, freshness_details = check_data_freshness(
+                        deriv_df,
+                        max_age_minutes=CONFIG.get('DATA_FRESHNESS_MAX_AGE_MIN', 20),
+                        current_time=ts
+                    )
+                    if not data_fresh:
+                        stats['data_stale_block'] = stats.get('data_stale_block', 0) + 1
+
+            # Check monthly DD hit
+            monthly_dd_hit = False
+            monthly_dd_limit = CONFIG.get('MONTHLY_DD_CIRCUIT', 0)
+            if monthly_dd_limit > 0:
+                month_key = f"{ts.year}-{ts.month:02d}"
+                month_trades_veto = [t for t in trades if t.exit_time is not None and hasattr(t.exit_time, 'year') and f"{t.exit_time.year}-{t.exit_time.month:02d}" == month_key]
+                month_pnl_veto = sum(t.pnl_pct * t.size_pct for t in month_trades_veto)
+                if month_pnl_veto <= -monthly_dd_limit:
+                    monthly_dd_hit = True
+
+            # Check direction conflict (M4+M5 both against)
+            dir_conflict = False
+            if CONFIG.get('DIR_VETO_ENABLED', False):
+                m4_disagree = (direction == 'LONG' and m4_div == 'BEARISH') or \
+                              (direction == 'SHORT' and m4_div == 'BULLISH')
+                m5_disagree = (m5_status == 'FAIL')
+                if m4_disagree and m5_disagree:
+                    dir_conflict = True
+
+            # Evaluate all vetoes
+            veto = evaluate_vetoes(
+                CONFIG,
+                vol_regime=vol_regime,
+                data_fresh=data_fresh,
+                data_age_minutes=data_age,
+                monthly_dd_hit=monthly_dd_hit,
+                dir_veto=dir_conflict,
+                m9_status=m9_status,
+                m10_status=m10_status,
+                m11_status=m11_status,
+            )
+
+            # Handle hard vetoes
+            if veto.hard_blocked:
+                for v in veto.hard_vetoes:
+                    key = f"veto_hard_{v['module'].lower()}"
+                    stats[key] = stats.get(key, 0) + 1
+                stats['veto_hard_block'] = stats.get('veto_hard_block', 0) + 1
+                if verbose and stats['veto_hard_block'] <= 10:
+                    print(f"  VETO: {ts} {direction} hard blocked: {veto.summary()}")
+                continue
+
+            # Store soft penalty for ICS adjustment
+            veto_soft_penalty = veto.soft_penalty
+            if veto.soft_vetoes:
+                stats['veto_soft_applied'] = stats.get('veto_soft_applied', 0) + 1
+        else:
+            veto_soft_penalty = 0.0
+
         # ===== Cross-Asset Correlation =====
         cross_asset_score = 0.5
         use_cross_asset = False
@@ -2816,6 +2875,9 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
             # Session multiplier applies to the threshold (lower mult = easier to pass)
             threshold *= (2.0 - session_mult)  # invert: lower mult = higher threshold = harder to enter
 
+        # Apply veto soft penalties to final threshold
+        threshold += veto_soft_penalty
+
         if ics < effective_floor or ics < threshold: stats['ics_blocked'] += 1; continue
 
         # --- ICS Ceiling: reject overconfident signals ---
@@ -2825,15 +2887,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         # --- M4 PASS Required ---
         if m4_status == 'FAIL': stats['m4_required_skip'] = stats.get('m4_required_skip', 0) + 1; continue
 
-        # --- v6.12: Directional Veto ---
-        # If M4 CVD + M5 magnet BOTH disagree with M1/M2 direction, block regardless of ICS
-        if CONFIG.get('DIR_VETO_ENABLED', False):
-            m4_disagree = (direction == 'LONG' and m4_div == 'BEARISH') or \
-                          (direction == 'SHORT' and m4_div == 'BULLISH')
-            m5_disagree = (m5_status == 'FAIL')  # M5 FAIL means magnet doesn't support direction
-            if m4_disagree and m5_disagree:
-                stats['dir_veto_skip'] = stats.get('dir_veto_skip', 0) + 1
-                continue
+        # Direction conflict veto is now handled by VETO system (above)
 
         # --- v6.11: Directional Bias Gate (seasonal — bad months only) ---
         # Only restrict LONGs when bias is BEARISH during historically bad months (Mar, Jul, Sep)
@@ -3049,7 +3103,7 @@ def print_report(trades, stats):
     if early_count:
         print(f"    EARLY_EXIT: {early_count} ({early_count/total*100:.1f}%)")
     print(f"\n  Signal Flow:")
-    for k in ['signals_checked','m1_neutral_skip','m3_fail','m2_neutral_long_skip','long_disabled','long_ics_skip','long_m5_skip','long_phase0_skip','ics_blocked','ics_ceiling_skip','m4_required_skip','m4_false_anchored','m5_pass','m5_fail','cascade_detected','dedup_skip','filter_blocked','consec_pause','rolling_wr_skip','bias_gate_skip','monthly_dd_skip','dir_veto_skip','adaptive_dir_block','m9_block','m10_pass','m10_fail','m11_pass','m11_fail','m11_skip','entries']:
+    for k in ['signals_checked','m1_neutral_skip','m3_fail','m2_neutral_long_skip','long_disabled','long_ics_skip','long_m5_skip','long_phase0_skip','ics_blocked','ics_ceiling_skip','m4_required_skip','m4_false_anchored','m5_pass','m5_fail','cascade_detected','dedup_skip','filter_blocked','consec_pause','rolling_wr_skip','bias_gate_skip','monthly_dd_skip','dir_veto_skip','adaptive_dir_block','veto_hard_block','veto_soft_applied','data_stale_block','m9_block','m10_pass','m10_fail','m11_pass','m11_fail','m11_skip','entries']:
         if k in stats:
             print(f"    {k+':':<26} {stats[k]}")
 
