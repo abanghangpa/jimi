@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """
 ╔═══════════════════════════════════════════════════════════════════════╗
-║ JIMI FRAMEWORK v6.13 — Multi-Module Scoring System + M7              ║
+║ JIMI FRAMEWORK v6.13 — Multi-Module Scoring System + Trend Filter     ║
 ║ ETH/USDT 15m + Market Regime (ETH/BTC + BTC Volatility)              ║
 ║                                                                       ║
 ║ Modules: M1(1H MACD) M2(Multi-TF EMA) M3(VWAP+Vol+Taker)            ║
 ║          M4(15m CVD) M5(Liquidation Magnet) M6(Derivatives)          ║
 ║          M7(Market Regime: ETH/BTC + BTC Vol + Volume)                ║
+║          Trend Filter (Multi-signal daily trend detection)             ║
 ║                                                                       ║
 ║ v6.13 Changes:                                                        ║
+║   - Multi-signal trend filter (EMA, ROC, RSI, price structure)        ║
+║   - Hard directional filter: never trade against the trend            ║
+║   - TP-before-SL fix: TP checked before SL on same bar               ║
+║   - Adaptive R:R: SL=1.3 ATR, TP1=1.5 ATR (1.15x R:R)              ║
+║   - Early exit: kill stale losing trades after 16 bars (4h)          ║
 ║   - Embedded M7: ETH/BTC trend, BTC volatility regime, volume regime  ║
-║   - M7 feeds into ICS + position sizing                               ║
 ║   - Seasonal risk controls (summer/shoulder months)                   ║
 ║   - All data from Binance (no external API keys)                      ║
 ║                                                                       ║
@@ -585,6 +590,73 @@ def score_m7(ethbtc_row, btc_row, vol_ratio, direction):
     return status, composite, details
 
 
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TREND DETECTION — Multi-signal trend state machine
+# ═══════════════════════════════════════════════════════════════════════
+
+def calc_trend_state(df_1d):
+    """
+    Compute daily trend state using multiple confirmations.
+    
+    Returns per-bar:
+    - trend: STRONG_UP / UP / NEUTRAL / DOWN / STRONG_DOWN
+    - trend_score: -1.0 (max bearish) to +1.0 (max bullish)
+    
+    Signals:
+    1. EMA21 vs EMA55 (direction)
+    2. Price vs EMA21 (momentum confirmation)
+    3. 7d ROC (acceleration)
+    4. 14d RSI (overbought/oversold context)
+    5. Higher highs / lower lows (structure)
+    """
+    close = df_1d['Close']
+    high = df_1d['High']
+    low = df_1d['Low']
+    
+    ema21 = calc_ema(close, 21)
+    ema55 = calc_ema(close, 55)
+    rsi = calc_rsi(close, 14)
+    roc_7d = close.pct_change(7)
+    roc_14d = close.pct_change(14)
+    
+    # Higher highs / lower lows over last 5 bars
+    hh = (high > high.shift(1)) & (high.shift(1) > high.shift(2))
+    ll = (low < low.shift(1)) & (low.shift(1) < low.shift(2))
+    
+    trend_score = pd.Series(0.0, index=df_1d.index)
+    
+    # 1. EMA direction (±0.30)
+    ema_diff = (ema21 - ema55) / ema55
+    trend_score += ema_diff.clip(-0.10, 0.10) * 3.0  # ±0.30 max
+    
+    # 2. Price vs EMA21 (±0.20)
+    price_vs_ema = (close - ema21) / ema21
+    trend_score += price_vs_ema.clip(-0.05, 0.05) * 4.0  # ±0.20 max
+    
+    # 3. ROC acceleration (±0.25)
+    trend_score += roc_7d.clip(-0.10, 0.10) * 2.5  # ±0.25 max
+    
+    # 4. RSI confirmation (±0.15)
+    rsi_signal = (rsi - 50) / 50
+    trend_score += rsi_signal.clip(-0.50, 0.50) * 0.30  # ±0.15 max
+    
+    # 5. Structure: higher highs = bullish, lower lows = bearish (±0.10)
+    structure = hh.astype(float) - ll.astype(float)
+    trend_score += structure.rolling(3).mean().clip(-0.10, 0.10)
+    
+    trend_score = trend_score.clip(-1.0, 1.0)
+    
+    # Classify
+    trend = pd.Series('NEUTRAL', index=df_1d.index)
+    trend[trend_score > 0.40] = 'STRONG_UP'
+    trend[(trend_score > 0.15) & (trend_score <= 0.40)] = 'UP'
+    trend[(trend_score < -0.15) & (trend_score >= -0.40)] = 'DOWN'
+    trend[trend_score < -0.40] = 'STRONG_DOWN'
+    
+    return trend, trend_score
+
 # ═══════════════════════════════════════════════════════════════════════
 # CONFIGURATION — JIMI v6.10 Fine-Tuned + M5
 # ═══════════════════════════════════════════════════════════════════════
@@ -599,7 +671,11 @@ CONFIG = {
 
     # --- v6.12 IMPROVEMENTS ---
     "BIAS_GATE_ENABLED": True,       # Directional bias gate for longs
-    "BIAS_GATE_LONG_ICS": 0.65,      # Higher ICS required for LONG when bias is BEARISH
+    "BIAS_GATE_LONG_ICS": 0.65,
+    "TREND_FILTER_ENABLED": True,      # Hard directional filter
+    "TREND_BLOCK_COUNTER_TREND": True, # Block trades against trend
+    "TREND_STRONG_ONLY": False,        # If True, only trade STRONG trends
+    "TREND_MIN_SCORE": 0.15,           # Minimum trend_score to allow trade in trend dir      # Higher ICS required for LONG when bias is BEARISH
     "MONTHLY_DD_CIRCUIT": 3.0,       # v6.13: Kept at 300% — summer-specific controls handle the rest
     "LONG_SUMMER_SIZE": 1.0,         # Disabled — seasonal bias gate is better approach
     "LONG_SUMMER_MONTHS": [6, 7, 8, 9],  # Months to apply long size reduction
@@ -668,18 +744,18 @@ CONFIG = {
     "M5_MIN_SCORE": 0.25,       # slightly relaxed (was 0.30)
 
     # --- STOP LOSS ---
-    "SL_ATR_STD": 2.0,          # wider SL to let trades develop (was 1.5)
+    "SL_ATR_STD": 1.3,          # wider SL to let trades develop (was 1.5)
     "SL_ATR_STD_SUMMER": 1.6,   # v6.13: tighter SL in summer — less room for adverse
-    "SL_HARD_MAX_PCT": 0.025,
+    "SL_HARD_MAX_PCT": 0.018,
     "SL_HARD_MAX_SUMMER": 0.018, # v6.13: tighter hard cap in summer
     "SL_BREAKEVEN_AFTER_TP1": True,
-    "EARLY_EXIT_BARS": 999,     # DISABLED — early exit kills winners
+    "EARLY_EXIT_BARS": 16,     # DISABLED — early exit kills winners
     "EARLY_EXIT_MIN_LOSS": 0.003,
     "EARLY_EXIT_BARS_SUMMER": 12, # v6.13: early exit after 3h in summer if losing
     "EARLY_EXIT_MIN_LOSS_SUMMER": 0.002,
 
     # --- TAKE PROFIT LADDER ---
-    "TP1_ATR": 0.9,             # balanced (was 0.8)
+    "TP1_ATR": 1.5,             # balanced (was 0.8)
     "TP2_ATR": 2.0,
     "TP3_ATR": 3.5,
     "TP1_CLOSE": 0.30,          # take a bit more at TP1 (was 0.25)
@@ -1828,6 +1904,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
 
     df_1d['swing_bias'] = calc_swing_bias(df_1d)
     df_1d['phase0'] = calc_phase0(df_1d)
+    df_1d['trend'], df_1d['trend_score'] = calc_trend_state(df_1d)
     print("  Indicators computed.")
 
     # --- M7: Prepare market regime data ---
@@ -1863,7 +1940,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         'm1_neutral_skip': 0, 'm3_fail': 0, 'm2_neutral_long_skip': 0, 'rolling_wr_skip': 0,
         'dedup_skip': 0, 'long_ics_skip': 0, 'consec_pause': 0,
         'ics_ceiling_skip': 0, 'm4_required_skip': 0, 'long_disabled': 0, 'long_phase0_skip': 0, 'long_m5_skip': 0,
-        'bias_gate_skip': 0, 'monthly_dd_skip': 0, 'dir_veto_skip': 0,
+        'bias_gate_skip': 0, 'monthly_dd_skip': 0, 'dir_veto_skip': 0, 'trend_block': 0, 'trend_weak': 0,
     }
 
     for idx in range(len(df_15m)):
@@ -1883,6 +1960,8 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         atr_1h = df_1h['atr'].iloc[idx_1h]
         swing_bias = df_1d['swing_bias'].iloc[idx_1d]
         phase0_val = df_1d['phase0'].iloc[idx_1d]
+        trend_dir = df_1d['trend'].iloc[idx_1d]
+        trend_val = df_1d['trend_score'].iloc[idx_1d]
 
         # --- Check existing trades for SL/TP ---
         is_summer = ts.month in CONFIG.get('SUMMER_MONTHS', [6, 7, 8, 9])
@@ -1952,6 +2031,27 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         if last_loss_time and (ts - last_loss_time).total_seconds() / 60 < cooldown: continue
         phase0_block = CONFIG.get('PHASE0_SUMMER_BLOCK', 0.90) if is_summer else 0.90
         if phase0_val >= phase0_block: continue
+
+        # === TREND FILTER — block counter-trend trades ===
+        if CONFIG.get('TREND_FILTER_ENABLED', False):
+            _trend_is_bull = trend_dir in ('STRONG_UP', 'UP')
+            _trend_is_bear = trend_dir in ('STRONG_DOWN', 'DOWN')
+            _trend_is_strong = trend_dir in ('STRONG_UP', 'STRONG_DOWN')
+            
+            # In strong trends, only trade with the trend
+            if CONFIG.get('TREND_BLOCK_COUNTER_TREND', False):
+                if _trend_is_bear and direction == 'LONG':
+                    stats['trend_block'] = stats.get('trend_block', 0) + 1
+                    continue
+                if _trend_is_bull and direction == 'SHORT':
+                    stats['trend_block'] = stats.get('trend_block', 0) + 1
+                    continue
+            
+            # Require minimum trend score for entry
+            min_score = CONFIG.get('TREND_MIN_SCORE', 0.15)
+            if abs(trend_val) < min_score:
+                stats['trend_weak'] = stats.get('trend_weak', 0) + 1
+                continue
 
         # --- Consecutive Loss Pause ---
         max_consec = CONFIG.get('MAX_CONSEC_LOSS_SUMMER', 999) if is_summer else CONFIG.get('MAX_CONSEC_LOSS', 999)
@@ -2323,6 +2423,7 @@ def compute_indicators(df_15m):
     df_2h['cvd_zl_state'], df_2h['cvd_zl_cross_bar'], df_2h['cvd_zl_cross_dir'] = detect_cvd_zero_cross(df_2h)
     df_1d['swing_bias'] = calc_swing_bias(df_1d)
     df_1d['phase0'] = calc_phase0(df_1d)
+    df_1d['trend'], df_1d['trend_score'] = calc_trend_state(df_1d)
     return df_15m, df_1h, df_2h, df_4h, df_1d
 
 def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d):
