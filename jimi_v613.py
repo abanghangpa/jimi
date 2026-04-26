@@ -2041,10 +2041,12 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
             # In strong trends, only trade with the trend
             if CONFIG.get('TREND_BLOCK_COUNTER_TREND', False):
                 if _trend_is_bear and direction == 'LONG':
-                    stats['trend_block'] = stats.get('trend_block', 0) + 1
+                    direction = "SHORT" if direction == "LONG" else "LONG"
+                    stats["trend_flip"] = stats.get("trend_flip", 0) + 1
                     continue
                 if _trend_is_bull and direction == 'SHORT':
-                    stats['trend_block'] = stats.get('trend_block', 0) + 1
+                    direction = "SHORT" if direction == "LONG" else "LONG"
+                    stats["trend_flip"] = stats.get("trend_flip", 0) + 1
                     continue
             
             # Require minimum trend score for entry
