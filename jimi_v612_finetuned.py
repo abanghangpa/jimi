@@ -364,9 +364,31 @@ CONFIG = {
     # --- v6.12 IMPROVEMENTS ---
     "BIAS_GATE_ENABLED": True,       # Directional bias gate for longs
     "BIAS_GATE_LONG_ICS": 0.65,      # Higher ICS required for LONG when bias is BEARISH
-    "MONTHLY_DD_CIRCUIT": 3.0,       # v6.12: ENABLED at 300% — caps catastrophic months
+    "MONTHLY_DD_CIRCUIT": 3.0,       # v6.13: Kept at 300% — summer-specific controls handle the rest
     "LONG_SUMMER_SIZE": 1.0,         # Disabled — seasonal bias gate is better approach
     "LONG_SUMMER_MONTHS": [6, 7, 8, 9],  # Months to apply long size reduction
+
+    # --- v6.13: ZERO-PNL MONTH FIXES ---
+    "SUMMER_MONTHS": [6, 7, 8, 9],   # Months with historically weak/negative PnL
+    "SUMMER_SIZE_MULT": 0.60,        # Reduce position size 40% in summer chop
+    "SUMMER_ICS_BOOST": 0.03,        # Require slightly higher ICS in summer months
+    "TP1_CLOSE_BASE": 0.30,          # Base TP1 close fraction
+    "TP1_CLOSE_SUMMER": 0.45,        # Higher TP1 close in summer — lock in gains before reversal
+    "TP1_ATR_SUMMER": 0.7,           # Tighter TP1 in summer — hit target faster
+    "MAX_CONSEC_LOSS_SUMMER": 2,     # Pause after 2 consecutive losses in summer (was 3)
+    "CONSEC_LOSS_PAUSE_SUMMER": 12,  # Pause for 3 hours in summer (was 2h)
+    "PHASE0_SUMMER_BLOCK": 0.60,     # Block entries in summer when phase0 > 0.60 (was 0.90)
+
+    # --- v6.13: SHOULDER MONTH FIXES (October, March) ---
+    "SHOULDER_MONTHS": [3, 10],      # Transition months — choppy, trend-uncertain
+    "SHOULDER_SIZE_MULT": 0.50,      # Half size in shoulder months
+    "SHOULDER_SL_ATR": 1.4,          # Tighter SL (was 2.0) — lose less per stop
+    "SHOULDER_SL_HARD_MAX": 0.016,   # Tighter hard cap (was 2.5%)
+    "SHOULDER_TP1_ATR": 0.8,         # Slightly tighter TP1 (was 0.9)
+    "SHOULDER_TP1_CLOSE": 0.45,      # Close more at TP1 (was 30%) — capture gains
+    "SHOULDER_ICS_BOOST": 0.02,      # Slightly higher ICS required
+    "SHOULDER_MAX_TRADES_DAY": 3,    # Fewer trades per day
+    "SHOULDER_COOLDOWN": 15,         # Longer cooldown between trades
 
     # --- MODULE WEIGHTS (ICS) — v6.12: Rebalanced toward positioning/flow ---
     "M1_WEIGHT": 0.10,              # v6.12: was 0.18 — direction is NOT the edge
@@ -411,10 +433,14 @@ CONFIG = {
 
     # --- STOP LOSS ---
     "SL_ATR_STD": 2.0,          # wider SL to let trades develop (was 1.5)
+    "SL_ATR_STD_SUMMER": 1.6,   # v6.13: tighter SL in summer — less room for adverse
     "SL_HARD_MAX_PCT": 0.025,
+    "SL_HARD_MAX_SUMMER": 0.018, # v6.13: tighter hard cap in summer
     "SL_BREAKEVEN_AFTER_TP1": True,
     "EARLY_EXIT_BARS": 999,     # DISABLED — early exit kills winners
     "EARLY_EXIT_MIN_LOSS": 0.003,
+    "EARLY_EXIT_BARS_SUMMER": 12, # v6.13: early exit after 3h in summer if losing
+    "EARLY_EXIT_MIN_LOSS_SUMMER": 0.002,
 
     # --- TAKE PROFIT LADDER ---
     "TP1_ATR": 0.9,             # balanced (was 0.8)
@@ -436,8 +462,11 @@ CONFIG = {
 
     # --- RISK MANAGEMENT ---
     "MAX_TRADES_DAY": 5,
+    "MAX_TRADES_DAY_SUMMER": 3,    # v6.13: fewer trades in summer chop
     "MAX_DAILY_LOSS": 0.05,     # 5% daily loss limit (was 0.06)
+    "MAX_DAILY_LOSS_SUMMER": 0.03, # v6.13: tighter daily loss in summer
     "COOLDOWN_MINUTES": 10,
+    "COOLDOWN_MINUTES_SUMMER": 20, # v6.13: longer cooldown in summer
     "ROLLING_WR_WINDOW": 8,
     "ROLLING_WR_MIN": 0.40,
     "MAX_CONSEC_LOSS": 3,       # pause after 3 consecutive losses (NEW)
@@ -1589,17 +1618,21 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         phase0_val = df_1d['phase0'].iloc[idx_1d]
 
         # --- Check existing trades for SL/TP ---
+        is_summer = ts.month in CONFIG.get('SUMMER_MONTHS', [6, 7, 8, 9])
+        is_shoulder = ts.month in CONFIG.get('SHOULDER_MONTHS', [3, 10])
         for trade in open_trades[:]:
             if not trade.is_open: continue
             high, low = row['High'], row['Low']
             trade.bars_held += 1
 
             # Early exit: close losing trades that haven't moved after N bars
-            if trade.bars_held >= CONFIG['EARLY_EXIT_BARS'] and not trade.tp1_hit:
+            early_exit_bars = CONFIG.get('EARLY_EXIT_BARS_SUMMER', CONFIG['EARLY_EXIT_BARS']) if is_summer else CONFIG['EARLY_EXIT_BARS']
+            early_exit_loss = CONFIG.get('EARLY_EXIT_MIN_LOSS_SUMMER', CONFIG['EARLY_EXIT_MIN_LOSS']) if is_summer else CONFIG['EARLY_EXIT_MIN_LOSS']
+            if trade.bars_held >= early_exit_bars and not trade.tp1_hit:
                 current_pnl = ((row['Close'] - trade.entry_price) / trade.entry_price
                                if trade.direction == 'LONG'
                                else (trade.entry_price - row['Close']) / trade.entry_price)
-                if current_pnl < -CONFIG['EARLY_EXIT_MIN_LOSS']:
+                if current_pnl < -early_exit_loss:
                     trade.close(row['Close'], ts, 'EARLY_EXIT')
                     stats['exits_early'] = stats.get('exits_early', 0) + 1
                     continue
@@ -1623,10 +1656,17 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
                     trade.close(trade.tp2, ts, 'TP2', frac); trade.tp2_hit = True; trade.update_sl_trail(); stats['exits_tp2'] += 1
 
             if not trade.tp1_hit:
+                # v6.13: Higher TP1 close in summer/shoulder — lock in gains before reversal
+                if is_summer:
+                    tp1_close_frac = CONFIG.get('TP1_CLOSE_SUMMER', CONFIG['TP1_CLOSE'])
+                elif is_shoulder:
+                    tp1_close_frac = CONFIG.get('SHOULDER_TP1_CLOSE', CONFIG['TP1_CLOSE'])
+                else:
+                    tp1_close_frac = CONFIG['TP1_CLOSE']
                 if trade.direction == 'LONG' and high >= trade.tp1:
-                    trade.close(trade.tp1, ts, 'TP1', CONFIG['TP1_CLOSE']); trade.tp1_hit = True; trade.update_sl_trail(); stats['exits_tp1'] += 1
+                    trade.close(trade.tp1, ts, 'TP1', tp1_close_frac); trade.tp1_hit = True; trade.update_sl_trail(); stats['exits_tp1'] += 1
                 elif trade.direction == 'SHORT' and low <= trade.tp1:
-                    trade.close(trade.tp1, ts, 'TP1', CONFIG['TP1_CLOSE']); trade.tp1_hit = True; trade.update_sl_trail(); stats['exits_tp1'] += 1
+                    trade.close(trade.tp1, ts, 'TP1', tp1_close_frac); trade.tp1_hit = True; trade.update_sl_trail(); stats['exits_tp1'] += 1
 
         open_trades = [t for t in open_trades if t.is_open]
 
@@ -1637,19 +1677,23 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         # --- Update daily PnL from closed trades ---
         today_closed = [t for t in trades if t.exit_time is not None and hasattr(t.exit_time, 'date') and t.exit_time.date() == today]
         daily_pnl[today] = sum(t.pnl_pct * t.size_pct for t in today_closed)
-        if daily_trades[today] >= CONFIG['MAX_TRADES_DAY']: continue
-        if daily_pnl[today] <= -CONFIG['MAX_DAILY_LOSS']: continue
-        if last_loss_time and (ts - last_loss_time).total_seconds() / 60 < CONFIG['COOLDOWN_MINUTES']: continue
-        if phase0_val >= 0.90: continue
+        max_trades_today = CONFIG.get('MAX_TRADES_DAY_SUMMER', CONFIG['MAX_TRADES_DAY']) if is_summer else (CONFIG.get('SHOULDER_MAX_TRADES_DAY', CONFIG['MAX_TRADES_DAY']) if is_shoulder else CONFIG['MAX_TRADES_DAY'])
+        if daily_trades[today] >= max_trades_today: continue
+        max_daily_loss = CONFIG.get('MAX_DAILY_LOSS_SUMMER', CONFIG['MAX_DAILY_LOSS']) if is_summer else CONFIG['MAX_DAILY_LOSS']
+        if daily_pnl[today] <= -max_daily_loss: continue
+        cooldown = CONFIG.get('COOLDOWN_MINUTES_SUMMER', CONFIG['COOLDOWN_MINUTES']) if is_summer else (CONFIG.get('SHOULDER_COOLDOWN', CONFIG['COOLDOWN_MINUTES']) if is_shoulder else CONFIG['COOLDOWN_MINUTES'])
+        if last_loss_time and (ts - last_loss_time).total_seconds() / 60 < cooldown: continue
+        phase0_block = CONFIG.get('PHASE0_SUMMER_BLOCK', 0.90) if is_summer else 0.90
+        if phase0_val >= phase0_block: continue
 
         # --- Consecutive Loss Pause ---
-        max_consec = CONFIG.get('MAX_CONSEC_LOSS', 999)
+        max_consec = CONFIG.get('MAX_CONSEC_LOSS_SUMMER', 999) if is_summer else CONFIG.get('MAX_CONSEC_LOSS', 999)
         if max_consec < 999 and len(trades) >= max_consec:
             recent = trades[-max_consec:]
             if all(t.pnl_pct < 0 for t in recent):
                 last_exit = max(t.exit_time for t in recent if t.exit_time is not None)
                 if last_exit is not None and hasattr(last_exit, 'total_seconds'):
-                    pause_bars = CONFIG.get('CONSEC_LOSS_PAUSE_BARS', 8)
+                    pause_bars = CONFIG.get('CONSEC_LOSS_PAUSE_SUMMER', 8) if is_summer else CONFIG.get('CONSEC_LOSS_PAUSE_BARS', 8)
                     if (ts - last_exit).total_seconds() / 900 < pause_bars:
                         stats['consec_pause'] = stats.get('consec_pause', 0) + 1
                         continue
@@ -1689,6 +1733,11 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         ics_pre, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, 0.5)
         if m4_status == 'FAIL': stats['m4_false_anchored'] += 1
         threshold = CONFIG['ICS_THRESHOLD_CAUTION'] if phase0_val >= 0.40 else CONFIG['ICS_THRESHOLD_NORMAL']
+        # v6.13: Summer/shoulder ICS boost — require higher confidence in choppy months
+        if is_summer:
+            threshold += CONFIG.get('SUMMER_ICS_BOOST', 0)
+        elif is_shoulder:
+            threshold += CONFIG.get('SHOULDER_ICS_BOOST', 0)
         if ics_pre < effective_floor or ics_pre < threshold: stats['ics_blocked'] += 1; continue
 
         # --- M5 (lazy, cached every 4 bars) ---
@@ -1762,12 +1811,34 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         size = CONFIG.get('SIZE_LONG', CONFIG['SIZE_STD']) if direction == 'LONG' else CONFIG['SIZE_STD']
         if m2_status == 'NEUTRAL': size *= CONFIG['SIZE_M2_NEUTRAL']
         if phase0_val >= 0.40: size *= CONFIG['SIZE_CAUTION']
+        # v6.13: Reduce size in summer chop months
+        if is_summer:
+            size *= CONFIG.get('SUMMER_SIZE_MULT', 1.0)
+        elif is_shoulder:
+            size *= CONFIG.get('SHOULDER_SIZE_MULT', 1.0)
         if size < 0.01: continue
 
         entry_price = row['Close']
         atr_for_sl = atr_1h if not pd.isna(atr_1h) else row['atr']
-        sl_dist = min(CONFIG['SL_ATR_STD'] * atr_for_sl, CONFIG['SL_HARD_MAX_PCT'] * entry_price)
-        tp1_dist = CONFIG['TP1_ATR'] * atr_for_sl
+        # v6.13: Use tighter SL in summer
+        if is_summer:
+            sl_std = CONFIG.get('SL_ATR_STD_SUMMER', CONFIG['SL_ATR_STD'])
+            sl_hard_max = CONFIG.get('SL_HARD_MAX_SUMMER', CONFIG['SL_HARD_MAX_PCT'])
+        elif is_shoulder:
+            sl_std = CONFIG.get('SHOULDER_SL_ATR', CONFIG['SL_ATR_STD'])
+            sl_hard_max = CONFIG.get('SHOULDER_SL_HARD_MAX', CONFIG['SL_HARD_MAX_PCT'])
+        else:
+            sl_std = CONFIG['SL_ATR_STD']
+            sl_hard_max = CONFIG['SL_HARD_MAX_PCT']
+        sl_dist = min(sl_std * atr_for_sl, sl_hard_max * entry_price)
+        # v6.13: Use tighter TP1 in summer to lock in gains faster
+        if is_summer:
+            tp1_atr = CONFIG.get('TP1_ATR_SUMMER', CONFIG['TP1_ATR'])
+        elif is_shoulder:
+            tp1_atr = CONFIG.get('SHOULDER_TP1_ATR', CONFIG['TP1_ATR'])
+        else:
+            tp1_atr = CONFIG['TP1_ATR']
+        tp1_dist = tp1_atr * atr_for_sl
         tp2_mult, tp3_mult = get_tp_multipliers(row.get('vol_ratio', np.nan))
         tp2_dist, tp3_dist = tp2_mult * atr_for_sl, tp3_mult * atr_for_sl
 
