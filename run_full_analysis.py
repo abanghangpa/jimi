@@ -62,7 +62,7 @@ for month_name, (mn, fsm, fsd, yoff) in MONTHS.items():
     print(f"  {month_name.upper()} — v6.13 Analysis")
     print(f"{'='*60}")
 
-    for year in [2025, 2026]:
+    for year in [2021, 2022, 2023, 2024]:
         fetch_start_year = year - 1 if yoff else year
         last_day = calendar.monthrange(year, mn)[1]
 
@@ -135,7 +135,7 @@ with open('/tmp/v613_full_results.json', 'w') as f:
 
 # Print summary table
 print("\n\n" + "=" * 80)
-print("  JIMI v6.13 — YEAR SUMMARY (2025-2026)")
+print("  JIMI v6.13 — YEAR SUMMARY (2021-2024)")
 print("=" * 80)
 print(f"\n  {'Month':<12} {'Profitable':>10} {'Avg PnL%':>10} {'Avg WR%':>9} {'Avg PF':>8} {'Avg DD%':>9} {'Best':>12} {'Worst':>12}")
 print(f"  {'─'*12} {'─'*10} {'─'*10} {'─'*9} {'─'*8} {'─'*9} {'─'*12} {'─'*12}")
