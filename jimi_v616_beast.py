@@ -662,28 +662,28 @@ def calc_trend_state(df_1d):
     rsi = calc_rsi(close, 14)
     roc_7d = close.pct_change(7)
     roc_14d = close.pct_change(14)
-    
+
     # Higher highs / lower lows over last 5 bars
     hh = (high > high.shift(1)) & (high.shift(1) > high.shift(2))
     ll = (low < low.shift(1)) & (low.shift(1) < low.shift(2))
-    
+
     trend_score = pd.Series(0.0, index=df_1d.index)
-    
+
     # 1. EMA direction (±0.30)
     ema_diff = (ema21 - ema55) / ema55
     trend_score += ema_diff.clip(-0.10, 0.10) * 3.0  # ±0.30 max
-    
+
     # 2. Price vs EMA21 (±0.20)
     price_vs_ema = (close - ema21) / ema21
     trend_score += price_vs_ema.clip(-0.05, 0.05) * 4.0  # ±0.20 max
-    
+
     # 3. ROC acceleration (±0.25)
     trend_score += roc_7d.clip(-0.10, 0.10) * 2.5  # ±0.25 max
-    
+
     # 4. RSI confirmation (±0.15)
     rsi_signal = (rsi - 50) / 50
     trend_score += rsi_signal.clip(-0.50, 0.50) * 0.30  # ±0.15 max
-    
+
     # 5. Structure: higher highs = bullish, lower lows = bearish (±0.10)
     structure = hh.astype(float) - ll.astype(float)
     trend_score += structure.rolling(3).mean().clip(-0.10, 0.10)
@@ -788,6 +788,10 @@ CONFIG = {
     # --- STOP LOSS ---
     "SL_ATR_STD": 1.3,          # wider SL to let trades develop (was 1.5)
     "SL_ATR_STD_SUMMER": 1.6,   # v6.13: tighter SL in summer — less room for adverse
+    "SL_ATR_TRANSITION": 1.0,   # tighter SL in transition zone — cut losses faster
+    "TP1_ATR_TRANSITION": 1.2,  # tighter TP1 in transition — lock in smaller gains
+    "TRANSITION_SIZE_MULT": 0.50,  # half size in transition zone
+    "TRANSITION_SCORE_RANGE": 0.20,  # |trend_score| below this = transition zone
     "SL_HARD_MAX_PCT": 0.018,
     "SL_HARD_MAX_SUMMER": 0.018, # v6.13: tighter hard cap in summer
     "SL_BREAKEVEN_AFTER_TP1": True,
@@ -934,8 +938,8 @@ CONFIG = {
 def load_data(filepath):
     df = pd.read_csv(filepath)
     df.columns = df.columns.str.strip()
-    df['Open time'] = pd.to_datetime(df['Open time'].str.strip())
-    df['Close time'] = pd.to_datetime(df['Close time'].str.strip())
+    df['Open time'] = pd.to_datetime(df['Open time'].str.strip(), format='mixed')
+    df['Close time'] = pd.to_datetime(df['Close time'].str.strip(), format='mixed')
     for col in ['Open', 'High', 'Low', 'Close', 'Volume',
                 'Quote asset volume', 'Number of trades',
                 'Taker buy base asset volume', 'Taker buy quote asset volume']:
@@ -2916,10 +2920,17 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
                 stats['dedup_skip'] = stats.get('dedup_skip', 0) + 1
                 continue
 
+        # --- Transition Zone Detection ---
+        transition_range = CONFIG.get('TRANSITION_SCORE_RANGE', 0.20)
+        is_transition = abs(trend_val) < transition_range
+
         # --- Position Sizing ---
         size = CONFIG.get('SIZE_LONG', CONFIG['SIZE_STD']) if direction == 'LONG' else CONFIG['SIZE_STD']
         if m2_status == 'NEUTRAL': size *= CONFIG['SIZE_M2_NEUTRAL']
         if phase0_val >= 0.40: size *= CONFIG['SIZE_CAUTION']
+        # Transition zone: reduce size
+        if is_transition:
+            size *= CONFIG.get('TRANSITION_SIZE_MULT', 0.50)
         # v6.13: Reduce size in summer chop months
         if is_summer:
             size *= CONFIG.get('SUMMER_SIZE_MULT', 1.0)
@@ -2973,8 +2984,12 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
 
         entry_price = row['Close']
         atr_for_sl = atr_1h if not pd.isna(atr_1h) else row['atr']
+
         # v6.13: Use tighter SL in summer
-        if is_summer:
+        if is_transition:
+            sl_std = CONFIG.get('SL_ATR_TRANSITION', 1.0)
+            sl_hard_max = CONFIG.get('SL_HARD_MAX_PCT', 0.05)
+        elif is_summer:
             sl_std = CONFIG.get('SL_ATR_STD_SUMMER', CONFIG['SL_ATR_STD'])
             sl_hard_max = CONFIG.get('SL_HARD_MAX_SUMMER', CONFIG['SL_HARD_MAX_PCT'])
         elif is_shoulder:
@@ -2985,7 +3000,9 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
             sl_hard_max = CONFIG['SL_HARD_MAX_PCT']
         sl_dist = min(sl_std * atr_for_sl, sl_hard_max * entry_price)
         # v6.13: Use tighter TP1 in summer to lock in gains faster
-        if is_summer:
+        if is_transition:
+            tp1_atr = CONFIG.get('TP1_ATR_TRANSITION', 1.2)
+        elif is_summer:
             tp1_atr = CONFIG.get('TP1_ATR_SUMMER', CONFIG['TP1_ATR'])
         elif is_shoulder:
             tp1_atr = CONFIG.get('SHOULDER_TP1_ATR', CONFIG['TP1_ATR'])

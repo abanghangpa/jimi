@@ -845,20 +845,35 @@ def compute_adaptive_direction(
         components['momentum'] * 0.15
     )
     bias = np.clip(bias, -1.0, 1.0)
-    
+
+    # --- Regime Transition Detection ---
+    # If daily trend is bearish but EMA1h/4h are turning positive, we're transitioning
+    daily_bearish = components.get('daily_trend', 0) < -0.10
+    fast_turning = (components.get('ema_1h', 0) + components.get('ema_4h', 0)) / 2 > -0.05
+    regime_transition = daily_bearish and fast_turning
+
     # --- Determine if direction is allowed ---
     # Minimum bias required to trade in a direction
-    min_bias = CONFIG.get('ADAPTIVE_DIR_MIN_BIAS', 0.10) if 'CONFIG' in dir() else 0.10
-    block_threshold = 0.60  # only block when bias is very strongly against
+    min_bias = BEAST_CONFIG.get('ADAPTIVE_DIR_MIN_BIAS', 0.10)
+    block_threshold = BEAST_CONFIG.get('ADAPTIVE_DIR_BLOCK_THRESHOLD', 0.50)
 
     if direction == 'LONG':
         allowed = bias >= -min_bias  # allow longs unless strongly bearish
         if bias < -block_threshold:
-            allowed = False
+            # During regime transition, raise threshold instead of hard block
+            if regime_transition:
+                allowed = bias < -(block_threshold + 0.15)  # harder to block during transition
+            else:
+                allowed = False
     else:
         allowed = bias <= min_bias  # allow shorts unless strongly bullish
         if bias > block_threshold:
-            allowed = False
+            if regime_transition:
+                allowed = bias > (block_threshold + 0.15)
+            else:
+                allowed = False
+
+    details['regime_transition'] = regime_transition
     
     details['direction_bias'] = round(bias, 4)
     details['bias_components'] = {k: round(v, 4) for k, v in components.items()}
@@ -914,7 +929,7 @@ BEAST_CONFIG = {
     # --- Adaptive Direction Bias ---
     'ADAPTIVE_DIR_ENABLED': True,
     'ADAPTIVE_DIR_MIN_BIAS': 0.10,         # minimum bias to allow trade
-    'ADAPTIVE_DIR_BLOCK_THRESHOLD': 0.40,  # block if bias opposes this much
+    'ADAPTIVE_DIR_BLOCK_THRESHOLD': 0.50,  # block if bias opposes this much (raised from 0.40)
     'ADAPTIVE_DIR_CHOP_BIAS': 0.15,        # stronger bias needed in chop
 
     # --- Data Freshness ---
