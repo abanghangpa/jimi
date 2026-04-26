@@ -260,3 +260,97 @@ Based on historical data:
 - `monthly_data/` — Raw backtest results by month
 - `fetch_*.py` — Data fetching scripts
 - `run_*_backtest.py` — Backtest runner scripts
+
+---
+
+## v6.12 Finetuned — Cross-Validation (2020–2025)
+
+Independent backtest using `jimi_v612_finetuned.py` on the same Binance ETH/USDT 15m data, covering 5 of the 12 months with 6 years each (2020–2025).
+
+### Monthly Comparison: v6.10 vs v6.12 Finetuned
+
+| Month | v6.10 Avg PnL% | v6.10 Profitable | v6.12 Avg PnL% | v6.12 Profitable | Delta |
+|-------|---------------|-----------------|---------------|-----------------|-------|
+| **April** | +257.6% | 7/9 (78%) | +22.99% | 4/6 (67%) | v6.10 much stronger |
+| **September** | −82.1% | 3/8 (38%) | +12.92% | 4/6 (67%) | v6.12 flipped positive |
+| **December** | +47.6% | 8/8 (100%) | −7.74% | 3/6 (50%) | v6.10 much stronger |
+| **March** | −189.8% | 2/9 (22%) | −24.78% | 3/6 (50%) | v6.12 less catastrophic |
+| **July** | −35.3% | 4/8 (50%) | −128.17% | 3/6 (50%) | v6.12 worse |
+
+### v6.12 Detailed Results
+
+#### April (v6.12)
+| Year | Trades | W/L | WR% | PnL% | PF | Max DD% |
+|------|--------|-----|-----|------|----|---------|
+| 2020 | 57 | 36/21 | 63.2 | −80.10 | 0.68 | 120.3 |
+| 2021 | 60 | 39/21 | 65.0 | −358.13 | 0.38 | 444.3 |
+| 2022 | 56 | 34/22 | 60.7 | +6.98 | 1.04 | 82.6 |
+| 2023 | 80 | 67/13 | 83.8 | +104.76 | 1.83 | 48.2 |
+| 2024 | 72 | 55/17 | 76.4 | +108.99 | 1.75 | 76.6 |
+| 2025 | 86 | 70/16 | 81.4 | +355.44 | 3.43 | 64.1 |
+
+#### September (v6.12)
+| Year | Trades | W/L | WR% | PnL% | PF | Max DD% |
+|------|--------|-----|-----|------|----|---------|
+| 2020 | 50 | 41/9 | 82.0 | +22.50 | 1.17 | 68.1 |
+| 2021 | 58 | 48/10 | 82.8 | +61.04 | 1.27 | 126.9 |
+| 2022 | 74 | 51/23 | 68.9 | −38.20 | 0.89 | 136.6 |
+| 2023 | 74 | 56/18 | 75.7 | +12.47 | 1.15 | 25.1 |
+| 2024 | 88 | 70/18 | 79.5 | +31.05 | 1.22 | 49.0 |
+| 2025 | 46 | 30/16 | 65.2 | −11.32 | 0.90 | 72.7 |
+
+#### December (v6.12)
+| Year | Trades | W/L | WR% | PnL% | PF | Max DD% |
+|------|--------|-----|-----|------|----|---------|
+| 2020 | 79 | 49/30 | 62.0 | −10.14 | 0.97 | 164.5 |
+| 2021 | 71 | 56/15 | 78.9 | +190.84 | 2.32 | 44.3 |
+| 2022 | 79 | 57/22 | 72.2 | +43.13 | 1.40 | 35.2 |
+| 2023 | 89 | 56/33 | 62.9 | −71.40 | 0.81 | 242.3 |
+| 2024 | 77 | 57/20 | 74.0 | −207.12 | 0.51 | 296.9 |
+| 2025 | 64 | 38/26 | 59.4 | +8.23 | 1.04 | 58.6 |
+
+#### March (v6.12)
+| Year | Trades | W/L | WR% | PnL% | PF | Max DD% |
+|------|--------|-----|-----|------|----|---------|
+| 2020 | 43 | 30/13 | 69.8 | +157.46 | 2.02 | 108.6 |
+| 2021 | 57 | 35/22 | 61.4 | −19.10 | 0.92 | 143.2 |
+| 2022 | 72 | 30/42 | 41.7 | −386.31 | 0.31 | 386.3 |
+| 2023 | 30 | 13/17 | 43.3 | −338.77 | 0.10 | 357.7 |
+| 2024 | 75 | 63/12 | 84.0 | +334.98 | 2.15 | 151.9 |
+| 2025 | 78 | 52/26 | 66.7 | +103.09 | 1.41 | 120.7 |
+
+#### July (v6.12)
+| Year | Trades | W/L | WR% | PnL% | PF | Max DD% |
+|------|--------|-----|-----|------|----|---------|
+| 2020 | 75 | 46/29 | 61.3 | −403.96 | 0.35 | 420.1 |
+| 2021 | 51 | 33/18 | 64.7 | +3.72 | 1.02 | 84.8 |
+| 2022 | 67 | 39/28 | 58.2 | −152.92 | 0.56 | 207.9 |
+| 2023 | 74 | 60/14 | 81.1 | +61.18 | 2.00 | 15.5 |
+| 2024 | 91 | 70/21 | 76.9 | +165.35 | 1.75 | 113.9 |
+| 2025 | 69 | 42/27 | 60.9 | −442.38 | 0.34 | 498.8 |
+
+### Key Differences (v6.10 vs v6.12)
+
+1. **September flipped positive** — v6.12 shows +12.92% avg vs v6.10's −82.1%. The finetuned version handles September's chop better.
+2. **April still strong but lower magnitude** — v6.12's +23% avg vs v6.10's +258%. The finetuned version is more conservative.
+3. **March still negative** — Both versions agree March is bad. v6.12 is less catastrophic (−25% vs −190%).
+4. **December diverged** — v6.10's 100% hit rate dropped to 50% in v6.12. Year-end trading became unreliable.
+5. **July got worse** — v6.12's −128% is worse than v6.10's −35%. Summer chop remains the enemy.
+6. **Fewer trades** — v6.12 averages 65-80 trades/month vs v6.10's 120-150. The finetuned version is more selective.
+7. **Higher per-trade quality** — v6.12's win rates are similar or higher, but with smaller position sizes and tighter risk.
+
+### v6.12 Tier Classification
+
+| Tier | Months | Action |
+|------|--------|--------|
+| 🟢 Run | April | Strong PnL, clear post-2022 improvement |
+| 🟡 Conditional | September | Most consistent, lowest drawdowns |
+| 🟠 Caution | December, March | High variance, year-dependent |
+| 🔴 Skip | July | Consistent capital destroyer |
+
+### Files Added
+- `jimi_v612_finetuned.py` — v6.12 framework source
+- `backtest_april.py` — April + September backtest runner
+- `backtest_march.py` — March backtest runner
+- `backtest_july.py` — July backtest runner
+- `backtest_dec.py` — December backtest runner
