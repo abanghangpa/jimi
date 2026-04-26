@@ -40,6 +40,7 @@ HAS_DERIVATIVES = True
 # ═══ BEAST MODULES (v6.16) ═══
 from beast_modules import (
     compute_vol_regime, score_vol_regime,
+    RegimeState,
     m10_prepare_data, m10_get_row, m10_compute_emas, score_m10_macro,
     score_m11_mtf_momentum,
     score_m12_orderbook,
@@ -744,12 +745,24 @@ CONFIG = {
     "SHOULDER_MAX_TRADES_DAY": 3,    # Fewer trades per day
     "SHOULDER_COOLDOWN": 15,         # Longer cooldown between trades
 
-    # --- MODULE WEIGHTS (ICS) — v6.12: Rebalanced toward positioning/flow ---
-    "M1_WEIGHT": 0.10,              # v6.12: was 0.18 — direction is NOT the edge
-    "M2_WEIGHT": 0.05,              # v6.12: was 0.12 — trend conf, low alpha
-    "M3_WEIGHT": 0.25,              # v6.12: was 0.30 — entry timing, still important
-    "M4_WEIGHT": 0.30,              # v6.12: was 0.25 — CVD positioning flow, core alpha
-    "M5_WEIGHT": 0.20,              # v6.12: was 0.15 — liquidation magnets, core alpha
+    # --- MODULE WEIGHTS (ICS) — Forensic rebalance based on March 2026 analysis ---
+    # M2 (EMA) removed from ICS: hallucinating (delta -0.105). Now veto-only.
+    # M9 (Vol Regime) removed from ICS: hallucinating (delta -0.093). Now gate-only.
+    # M4 (CVD) and M5 (Magnet) boosted: strongest predictors (delta +0.139, +0.131).
+    "M1_WEIGHT": 0.08,              # reduced — neutral discriminator
+    "M2_WEIGHT": 0.00,              # REMOVED from ICS — now veto-only (hallucinating)
+    "M3_WEIGHT": 0.22,              # entry timing — restored from best run
+    "M4_WEIGHT": 0.38,              # strongest predictor (delta +0.139)
+    "M5_WEIGHT": 0.25,              # strong predictor, also executor gate
+    "M2_VETO_ENABLED": True,        # M2 blocks when strongly against direction
+    "M2_VETO_THRESHOLD": 0.40,      # M2 score below this + direction mismatch = block
+    "M5_FAIL_ICS_BOOST": 0.06,      # require +6% higher ICS when M5 fails
+    "M5_FAIL_HARD_THRESHOLD": 0.25, # M5 score below this = hard block
+    "M7_HARD_GATE": False,          # disabled — M7 never triggers in March, loses ICS boost
+    "M7_GATE_THRESHOLD": 0.30,      # block when M7 score below this against direction
+    "M7_GATE_STRONG_THRESHOLD": 0.60, # M7 above this = ICS boost
+    "M7_GATE_STRONG_BOOST": 0.04,   # ICS boost when M7 strongly agrees
+    "SESSION_ASIAN_BLOCK": False,   # disabled — loses profitable EU-open signals that overlap
     "CASCADE_MULTIPLIER": 1.12,     # v6.12: NEW — ICS boost when cascade WITH trade
     "CASCADE_PENALTY": 0.85,        # v6.12: NEW — ICS penalty when cascade AGAINST trade
     "DIR_VETO_ENABLED": True,       # v6.12: NEW — block when M4+M5 disagree with M1/M2
@@ -841,14 +854,14 @@ CONFIG = {
 
     # --- M7: MARKET REGIME (ETH/BTC + BTC Vol + Volume) ---
     "M7_ENABLED": True,          # enable M7 market regime module
-    "M7_WEIGHT": 0.08,           # M7 weight in ICS (macro filter)
+    "M7_WEIGHT": 0.00,              # gate-only — restored from best run
     "M7_SIZE_REDUCTION": 0.70,   # reduce size 30% when M7 very bearish (<0.35)
     "M7_SIZE_MILD": 0.85,        # reduce size 15% when M7 mildly bearish (<0.45)
 
 
     # --- M9: Volatility Regime ---
     "M9_ENABLED": True,
-    "M9_WEIGHT": 0.10,
+    "M9_WEIGHT": 0.00,              # REMOVED from ICS — now gate-only (hallucinating)
     "M9_BLOCK_REGIMES": ["CRISIS"],
     "M9_SIZE_CHOP": 0.50,
     "M9_SIZE_COMPRESSING": 0.80,
@@ -2163,6 +2176,85 @@ class AdaptiveWeights:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════════
+# GATEKEEPER — Stage 1 binary filter (runs AFTER veto, BEFORE ICS)
+# ═══════════════════════════════════════════════════════════════════════
+
+class GatekeeperResult:
+    __slots__ = ('passed', 'blocked_by', 'size_mult', 'ics_boost', 'details')
+    
+    def __init__(self):
+        self.passed = True
+        self.blocked_by = []
+        self.size_mult = 1.0
+        self.ics_boost = 0.0
+        self.details = {}
+    
+    def block(self, module, reason):
+        self.passed = False
+        self.blocked_by.append({'module': module, 'reason': reason})
+    
+    def summary(self):
+        if self.passed:
+            return f"PASS (mult={self.size_mult:.2f}, boost={self.ics_boost:+.3f})"
+        return f"BLOCKED by {', '.join(b['module'] for b in self.blocked_by)}"
+
+
+def run_gatekeepers(direction, vol_regime, m7_score, m7_status, m7_details,
+                    m9_score, m9_status, m10_score, m10_status,
+                    trend_dir, config=None):
+    """
+    Stage 1: Gatekeeper checks. Binary pass/fail AFTER veto system.
+    Does NOT replace existing veto or size logic — adds additional filtering.
+    """
+    cfg = config or CONFIG
+    result = GatekeeperResult()
+    
+    # GATE 1: M7 Market Regime — hard gate (forensic: M7 high+ICS high = 83% WR)
+    if cfg.get('M7_HARD_GATE', False) and m7_status != 'SKIP':
+        gate_thresh = cfg.get('M7_GATE_THRESHOLD', 0.35)
+        strong_thresh = cfg.get('M7_GATE_STRONG_THRESHOLD', 0.60)
+        
+        # Hard block when M7 strongly against direction
+        if direction == 'LONG' and m7_score < gate_thresh:
+            result.block('M7', f'M7 {m7_score:.3f} < {gate_thresh} bearish for LONG')
+            return result
+        elif direction == 'SHORT' and m7_score < gate_thresh:
+            result.block('M7', f'M7 {m7_score:.3f} < {gate_thresh} bullish for SHORT')
+            return result
+        
+        # ICS boost when M7 strongly agrees
+        if (direction == 'LONG' and m7_score > strong_thresh) or \
+           (direction == 'SHORT' and m7_score > strong_thresh):
+            result.ics_boost += cfg.get('M7_GATE_STRONG_BOOST', 0.04)
+            result.details['M7'] = 'strong_agree'
+        elif (direction == 'LONG' and m7_score < 0.45) or \
+             (direction == 'SHORT' and m7_score < 0.45):
+            result.size_mult *= 0.85
+            result.details['M7'] = 'mild_disagree'
+    
+    # GATE 2: M10 Cross-Asset — hard block if strongly against
+    if cfg.get('M10_ENABLED', False) and m10_status != 'SKIP':
+        if direction == 'LONG' and m10_score < 0.25:
+            result.block('M10', f'M10 {m10_score:.3f} strongly bearish for LONG')
+            return result
+        elif direction == 'SHORT' and m10_score < 0.25:
+            result.block('M10', f'M10 {m10_score:.3f} strongly bullish for SHORT')
+            return result
+    
+    # GATE 3: Trend alignment — block if trend strongly against
+    if cfg.get('TREND_FILTER_ENABLED', False):
+        if direction == 'LONG' and trend_dir == 'STRONG_DOWN':
+            result.block('TREND', f'STRONG_DOWN vs LONG')
+            return result
+        elif direction == 'SHORT' and trend_dir == 'STRONG_UP':
+            result.block('TREND', f'STRONG_UP vs SHORT')
+            return result
+    
+    return result
+
+
 # ICS COMPOSITE SCORE
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -2260,7 +2352,14 @@ def get_tp_multipliers(vol_ratio):
 class Trade:
     def __init__(self, entry_time, direction, entry_price, sl, tp1, tp2, tp3,
                  size_pct, m1_dir, m2_status, m3_score, m4_status, m5_status, m5_score,
-                 ics, phase0, reason, m1_score=0.5, m2_score=0.5, m4_score=0.5, m7_score=0.5):
+                 ics, phase0, reason, m1_score=0.5, m2_score=0.5, m4_score=0.5, m7_score=0.5,
+                 # Forensic module states
+                 m8_score=0.5, m8_status='SKIP', m9_score=0.5, m9_status='SKIP',
+                 m10_score=0.5, m10_status='SKIP', m11_score=0.5, m11_status='SKIP',
+                 m12_score=0.5, m12_status='SKIP', vol_regime='NEUTRAL',
+                 trend_dir='NEUTRAL', trend_val=0.0, cross_asset_score=0.5,
+                 session_name='UNKNOWN', veto_soft_penalty=0.0,
+                 gatekeeper_passed=True, m7_details=None):
         self.entry_time = entry_time
         self.direction = direction
         self.entry_price = entry_price
@@ -2282,6 +2381,26 @@ class Trade:
         self.m2_score = m2_score
         self.m4_score = m4_score
         self.m7_score = m7_score
+        # Forensic states
+        self.m8_score = m8_score
+        self.m8_status = m8_status
+        self.m9_score = m9_score
+        self.m9_status = m9_status
+        self.m10_score = m10_score
+        self.m10_status = m10_status
+        self.m11_score = m11_score
+        self.m11_status = m11_status
+        self.m12_score = m12_score
+        self.m12_status = m12_status
+        self.vol_regime = vol_regime
+        self.trend_dir = trend_dir
+        self.trend_val = trend_val
+        self.cross_asset_score = cross_asset_score
+        self.session_name = session_name
+        self.veto_soft_penalty = veto_soft_penalty
+        self.gatekeeper_passed = gatekeeper_passed
+        self.m7_details = m7_details or {}
+        # Trade lifecycle
         self.remaining = 1.0
         self.tp1_hit = False
         self.tp2_hit = False
@@ -2459,6 +2578,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
     daily_trades, daily_pnl = {}, {}
     last_loss_time = None
     deriv_df = None  # derivatives DataFrame (used for data freshness check, populated in live mode)
+    regime_state = RegimeState()  # hysteresis-based regime tracking
     stats = {
         'signals_checked': 0, 'ics_blocked': 0, 'filter_blocked': 0, 'entries': 0,
         'exits_sl': 0, 'exits_tp1': 0, 'exits_tp2': 0, 'exits_tp3': 0, 'exits_signal': 0, 'exits_early': 0,
@@ -2476,6 +2596,8 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         'rolling_wr_skip': 0,
         'veto_hard_block': 0, 'veto_hard_m9': 0, 'veto_hard_data': 0,
         'veto_hard_risk': 0, 'veto_hard_dir': 0,
+        'gate_block': 0, 'gate_m7_block': 0, 'gate_m10_block': 0, 'gate_trend_block': 0,
+        'm2_veto_block': 0, 'm5_hard_block': 0, 'session_asian_block': 0,
         'veto_soft_applied': 0, 'data_stale_block': 0,
     }
 
@@ -2622,6 +2744,16 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         elif m1_dir == 'BEARISH': direction = 'SHORT'
         else: stats['m1_neutral_skip'] += 1; continue
 
+        # === M2 VETO — Block when M2 strongly disagrees (forensic: M2 hallucinates) ===
+        if CONFIG.get('M2_VETO_ENABLED', False):
+            m2_veto_thresh = CONFIG.get('M2_VETO_THRESHOLD', 0.40)
+            if direction == 'LONG' and m2_status == 'BEARISH' and m2_score < m2_veto_thresh:
+                stats['m2_veto_block'] = stats.get('m2_veto_block', 0) + 1
+                continue
+            if direction == 'SHORT' and m2_status == 'BULLISH' and m2_score < m2_veto_thresh:
+                stats['m2_veto_block'] = stats.get('m2_veto_block', 0) + 1
+                continue
+
         # === ADAPTIVE DIRECTION BIAS (replaces binary trend filter) ===
         if CONFIG.get('ADAPTIVE_DIR_ENABLED', False):
             # Get EMA values for adaptive direction
@@ -2714,6 +2846,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         # ===== M7: Market Regime Scoring =====
         m7_score = 0.5
         m7_status = 'SKIP'
+        m7_details = {}
         if CONFIG.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
             eb_row, bt_row = m7_get_row(m7_ethbtc_df, m7_btc_df, ts)
             m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), direction)
@@ -2736,7 +2869,7 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
         vol_regime = 'NEUTRAL'
         use_m9 = False
         if CONFIG.get('M9_ENABLED', False):
-            vol_regime, m9_raw, m9_vol_details = compute_vol_regime(df_15m, df_1h, idx, idx_1h)
+            vol_regime, m9_raw, m9_vol_details = compute_vol_regime(df_15m, df_1h, idx, idx_1h, regime_state=regime_state)
             m9_status, m9_score, m9_details = score_vol_regime(vol_regime, m9_raw, direction, trend_dir)
             use_m9 = True
             stats['m9_pass'] = stats.get('m9_pass', 0) + (1 if m9_status == 'PASS' else 0)
@@ -2862,6 +2995,21 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
             use_cross_asset = True
 
         use_m7 = CONFIG.get('M7_ENABLED', False) and m7_ethbtc_df is not None
+
+        # ═══ STAGE 1: GATEKEEPER — Binary filter after veto, before ICS ═══
+        gatekeeper = run_gatekeepers(
+            direction, vol_regime,
+            m7_score, m7_status, m7_details,
+            m9_score, m9_status, m10_score, m10_status,
+            trend_dir, config=CONFIG,
+        )
+        if not gatekeeper.passed:
+            for b in gatekeeper.blocked_by:
+                stats[f"gate_{b['module'].lower()}_block"] = stats.get(f"gate_{b['module'].lower()}_block", 0) + 1
+            stats['gate_block'] = stats.get('gate_block', 0) + 1
+            continue
+
+        # ═══ STAGE 2: SCORERS — Weighted ICS ═══
         ics, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
                                         m7_score=m7_score, m8_score=m8_score, cross_asset_score=cross_asset_score,
                                         use_m7=use_m7, use_m8=use_m8, use_cross_asset=use_cross_asset,
@@ -2870,17 +3018,34 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
                                         m10_score=m10_score, use_m10=use_m10,
                                         m11_score=m11_score, use_m11=use_m11,
                                         m12_score=m12_score, use_m12=use_m12)
+        # Apply gatekeeper ICS boost
+        ics += gatekeeper.ics_boost
 
         # --- Session Awareness: adjust threshold ---
         session_mult = 1.0
+        session_name = 'UNKNOWN'
         if CONFIG.get('SESSION_AWARENESS_ENABLED', False):
             session_name, session_mult = get_session(ts)
             stats[f'session_{session_name.lower()}'] = stats.get(f'session_{session_name.lower()}', 0) + 1
+            # Asian session block (forensic: 0% WR)
+            if session_name == 'ASIAN' and CONFIG.get('SESSION_ASIAN_BLOCK', False):
+                stats['session_asian_block'] = stats.get('session_asian_block', 0) + 1
+                continue
             # Session multiplier applies to the threshold (lower mult = easier to pass)
             threshold *= (2.0 - session_mult)  # invert: lower mult = higher threshold = harder to enter
 
         # Apply veto soft penalties to final threshold
         threshold += veto_soft_penalty
+
+        # --- M5 Failure Penalty (forensic: M5 failure = 25% WR) ---
+        if m5_status == 'FAIL':
+            m5_fail_ics = CONFIG.get('M5_FAIL_ICS_BOOST', 0.06)
+            threshold += m5_fail_ics
+            # Hard block if M5 score is extremely low
+            m5_hard = CONFIG.get('M5_FAIL_HARD_THRESHOLD', 0.25)
+            if m5_score < m5_hard:
+                stats['m5_hard_block'] = stats.get('m5_hard_block', 0) + 1
+                continue
 
         if ics < effective_floor or ics < threshold: stats['ics_blocked'] += 1; continue
 
@@ -3021,7 +3186,18 @@ def run_backtest(csv_path, verbose=False, date_start=None, date_end=None):
                       m1_dir, m2_status, m3_score, m4_status, m5_status, m5_score,
                       ics, phase0_val,
                       f"M1={m1_dir} M2={m2_status} M3={m3_status} M4={m4_status} M5={m5_status} M7={m7_status}({m7_score:.2f}) ICS={ics:.3f}",
-                      m1_score=m1_score, m2_score=m2_score, m4_score=m4_score, m7_score=m7_score)
+                      m1_score=m1_score, m2_score=m2_score, m4_score=m4_score, m7_score=m7_score,
+                      m8_score=m8_score, m8_status=m8_status,
+                      m9_score=m9_score, m9_status=m9_status,
+                      m10_score=m10_score, m10_status=m10_status,
+                      m11_score=m11_score, m11_status=m11_status,
+                      m12_score=m12_score, m12_status=m12_status,
+                      vol_regime=vol_regime, trend_dir=trend_dir, trend_val=trend_val,
+                      cross_asset_score=cross_asset_score,
+                      session_name=session_name if 'session_name' in dir() else 'UNKNOWN',
+                      veto_soft_penalty=veto_soft_penalty,
+                      gatekeeper_passed=gatekeeper.passed if 'gatekeeper' in dir() else True,
+                      m7_details=m7_details)
         open_trades.append(trade); trades.append(trade)
         daily_trades[today] += 1; stats['entries'] += 1
 
@@ -3120,7 +3296,7 @@ def print_report(trades, stats):
     if early_count:
         print(f"    EARLY_EXIT: {early_count} ({early_count/total*100:.1f}%)")
     print(f"\n  Signal Flow:")
-    for k in ['signals_checked','m1_neutral_skip','m3_fail','m2_neutral_long_skip','long_disabled','long_ics_skip','long_m5_skip','long_phase0_skip','ics_blocked','ics_ceiling_skip','m4_required_skip','m4_false_anchored','m5_pass','m5_fail','cascade_detected','dedup_skip','filter_blocked','consec_pause','rolling_wr_skip','bias_gate_skip','monthly_dd_skip','dir_veto_skip','adaptive_dir_block','veto_hard_block','veto_soft_applied','data_stale_block','m9_block','m10_pass','m10_fail','m11_pass','m11_fail','m11_skip','entries']:
+    for k in ['signals_checked','m1_neutral_skip','m3_fail','m2_neutral_long_skip','long_disabled','long_ics_skip','long_m5_skip','long_phase0_skip','ics_blocked','ics_ceiling_skip','m4_required_skip','m4_false_anchored','m5_pass','m5_fail','cascade_detected','dedup_skip','filter_blocked','consec_pause','rolling_wr_skip','bias_gate_skip','monthly_dd_skip','dir_veto_skip','adaptive_dir_block','gate_block','gate_m7_block','gate_m10_block','gate_trend_block','m2_veto_block','m5_hard_block','session_asian_block','veto_hard_block','veto_soft_applied','data_stale_block','m9_block','m10_pass','m10_fail','m11_pass','m11_fail','m11_skip','entries']:
         if k in stats:
             print(f"    {k+':':<26} {stats[k]}")
 
@@ -3158,6 +3334,190 @@ def export_trades(trades, filepath):
         })
     pd.DataFrame(rows).to_csv(filepath, index=False)
     print(f"\n  Trade log exported: {filepath}")
+
+
+def export_forensic(trades, filepath):
+    """Export full module state snapshot for every trade — forensic audit."""
+    rows = []
+    for t in trades:
+        eth_btc_trend = t.m7_details.get('eth_btc_trend', 'N/A') if isinstance(t.m7_details, dict) else 'N/A'
+        btc_trend = t.m7_details.get('btc_trend', 'N/A') if isinstance(t.m7_details, dict) else 'N/A'
+        btc_atr_pctl = t.m7_details.get('btc_atr_pctl', None) if isinstance(t.m7_details, dict) else None
+        m7_composite = t.m7_details.get('m7_score', None) if isinstance(t.m7_details, dict) else None
+
+        rows.append({
+            # Trade outcome
+            'entry_time': t.entry_time, 'exit_time': t.exit_time,
+            'direction': t.direction, 'exit_reason': t.exit_reason,
+            'pnl_pct': round(t.pnl_pct * 100, 4),
+            'size_pct': t.size_pct, 'bars_held': t.bars_held,
+            'result': 'WIN' if t.pnl_pct > 0 else ('LOSS' if t.pnl_pct < 0 else 'FLAT'),
+            # Gatekeeper
+            'ics': round(t.ics, 4),
+            'gatekeeper_passed': t.gatekeeper_passed,
+            'veto_soft_penalty': t.veto_soft_penalty,
+            # M1: MACD
+            'm1_dir': t.m1_dir, 'm1_score': round(t.m1_score, 4),
+            # M2: Multi-TF EMA
+            'm2_status': t.m2_status, 'm2_score': round(t.m2_score, 4),
+            # M3: VWAP+Vol
+            'm3_score': round(t.m3_score, 4),
+            # M4: CVD
+            'm4_status': t.m4_status, 'm4_score': round(t.m4_score, 4),
+            # M5: Liquidation Magnet
+            'm5_status': t.m5_status, 'm5_score': round(t.m5_score, 4),
+            # M7: Market Regime
+            'm7_score': round(t.m7_score, 4), 'm7_composite': m7_composite,
+            'eth_btc_trend': eth_btc_trend, 'btc_trend': btc_trend,
+            'btc_atr_pctl': btc_atr_pctl,
+            # M8: Funding Rate
+            'm8_status': t.m8_status, 'm8_score': round(t.m8_score, 4),
+            # M9: Volatility Regime
+            'm9_status': t.m9_status, 'm9_score': round(t.m9_score, 4),
+            'vol_regime': t.vol_regime,
+            # M10: Cross-Asset Macro
+            'm10_status': t.m10_status, 'm10_score': round(t.m10_score, 4),
+            # M11: MTF Momentum
+            'm11_status': t.m11_status, 'm11_score': round(t.m11_score, 4),
+            # M12: Order Book
+            'm12_status': t.m12_status, 'm12_score': round(t.m12_score, 4),
+            # Context
+            'trend_dir': t.trend_dir, 'trend_val': round(t.trend_val, 4),
+            'cross_asset_score': round(t.cross_asset_score, 4),
+            'session': t.session_name, 'phase0': t.phase0,
+        })
+    df = pd.DataFrame(rows)
+    df.to_csv(filepath, index=False)
+    print(f"  Forensic log exported: {filepath} ({len(df)} trades)")
+    return df
+
+
+def forensic_analysis(trades, verbose=True):
+    """
+    Analyze module states correlated with wins vs losses.
+    Identifies which modules are 'hallucinating' — giving false signals.
+    """
+    if not trades:
+        print("  No trades to analyze.")
+        return
+
+    winners = [t for t in trades if t.pnl_pct > 0]
+    losers = [t for t in trades if t.pnl_pct < 0]
+
+    if not winners or not losers:
+        print("  Need both winners and losers for forensic analysis.")
+        return
+
+    print(f"\n{'='*80}")
+    print(f"  FORENSIC MODULE ANALYSIS — {len(winners)} Winners vs {len(losers)} Losers")
+    print(f"{'='*80}")
+
+    # ── Per-module score comparison ──
+    modules = [
+        ('M1_score', lambda t: t.m1_score),
+        ('M2_score', lambda t: t.m2_score),
+        ('M3_score', lambda t: t.m3_score),
+        ('M4_score', lambda t: t.m4_score),
+        ('M5_score', lambda t: t.m5_score),
+        ('M7_score', lambda t: t.m7_score),
+        ('M8_score', lambda t: t.m8_score),
+        ('M9_score', lambda t: t.m9_score),
+        ('M10_score', lambda t: t.m10_score),
+        ('M11_score', lambda t: t.m11_score),
+        ('M12_score', lambda t: t.m12_score),
+        ('cross_asset', lambda t: t.cross_asset_score),
+        ('ICS', lambda t: t.ics),
+    ]
+
+    print(f"\n  {'Module':>14} {'Win Avg':>10} {'Loss Avg':>10} {'Delta':>10} {'Verdict':>12}")
+    print(f"  {'-'*56}")
+
+    hallucinating = []
+    predictive = []
+
+    for name, fn in modules:
+        w_avg = np.mean([fn(t) for t in winners])
+        l_avg = np.mean([fn(t) for t in losers])
+        delta = w_avg - l_avg
+
+        # If loss avg > win avg, the module is giving false confidence
+        if delta < -0.05:
+            verdict = '⚠ HALLUCINATING'
+            hallucinating.append((name, delta, w_avg, l_avg))
+        elif delta > 0.05:
+            verdict = '✓ PREDICTIVE'
+            predictive.append((name, delta, w_avg, l_avg))
+        else:
+            verdict = '~ NEUTRAL'
+
+        print(f"  {name:>14} {w_avg:>10.4f} {l_avg:>10.4f} {delta:>+10.4f} {verdict:>12}")
+
+    # ── Regime analysis ──
+    print(f"\n  Regime Distribution:")
+    for regime in ['TRENDING', 'CHOP', 'COMPRESSING', 'NEUTRAL', 'CRISIS']:
+        w_count = len([t for t in winners if t.vol_regime == regime])
+        l_count = len([t for t in losers if t.vol_regime == regime])
+        total = w_count + l_count
+        if total > 0:
+            wr = w_count / total * 100
+            print(f"    {regime:>12}: {total} trades, WR {wr:.0f}% ({w_count}W/{l_count}L)")
+
+    # ── Session analysis ──
+    print(f"\n  Session Distribution:")
+    for session in ['ASIAN', 'EU', 'US', 'LATE_US']:
+        w_count = len([t for t in winners if t.session_name == session])
+        l_count = len([t for t in losers if t.session_name == session])
+        total = w_count + l_count
+        if total > 0:
+            wr = w_count / total * 100
+            print(f"    {session:>12}: {total} trades, WR {wr:.0f}% ({w_count}W/{l_count}L)")
+
+    # ── Direction analysis ──
+    print(f"\n  Direction Analysis:")
+    for direction in ['LONG', 'SHORT']:
+        w_count = len([t for t in winners if t.direction == direction])
+        l_count = len([t for t in losers if t.direction == direction])
+        total = w_count + l_count
+        if total > 0:
+            wr = w_count / total * 100
+            avg_pnl = np.mean([t.pnl_pct * t.size_pct for t in trades if t.direction == direction]) * 100
+            print(f"    {direction:>12}: {total} trades, WR {wr:.0f}%, Avg PnL {avg_pnl:+.2f}%")
+
+    # ── Confluence analysis: module pairs ──
+    print(f"\n  Module Confluence (pairs that amplify/dampen):")
+    pair_checks = [
+        ('M4_PASS+M5_PASS', lambda t: t.m4_status == 'PASS' and t.m5_status == 'PASS'),
+        ('M4_PASS+M5_FAIL', lambda t: t.m4_status == 'PASS' and t.m5_status == 'FAIL'),
+        ('M1_bear+M4_bear', lambda t: t.m1_dir == 'BEARISH' and t.m4_score < 0.5),
+        ('M1_bull+M4_bull', lambda t: t.m1_dir == 'BULLISH' and t.m4_score > 0.5),
+        ('TRENDING+M5_PASS', lambda t: t.vol_regime == 'TRENDING' and t.m5_status == 'PASS'),
+        ('CHOP+any', lambda t: t.vol_regime == 'CHOP'),
+        ('M7_high+ICS_high', lambda t: t.m7_score > 0.6 and t.ics > 0.60),
+        ('M10_low', lambda t: t.m10_score < 0.45),
+    ]
+    for label, fn in pair_checks:
+        matched = [t for t in trades if fn(t)]
+        if matched:
+            w = len([t for t in matched if t.pnl_pct > 0])
+            wr = w / len(matched) * 100
+            avg = np.mean([t.pnl_pct * t.size_pct for t in matched]) * 100
+            print(f"    {label:>22}: {len(matched)} trades, WR {wr:.0f}%, Avg PnL {avg:+.2f}%")
+
+    # ── Summary ──
+    if hallucinating:
+        print(f"\n  ⚠ HALLUCINATING MODULES (higher scores in losers):")
+        for name, delta, w_avg, l_avg in hallucinating:
+            print(f"    {name}: winners avg {w_avg:.4f}, losers avg {l_avg:.4f} (delta {delta:+.4f})")
+        print(f"    → Consider reducing weight or making these veto-only.")
+
+    if predictive:
+        print(f"\n  ✓ PREDICTIVE MODULES (higher scores in winners):")
+        for name, delta, w_avg, l_avg in predictive:
+            print(f"    {name}: winners avg {w_avg:.4f}, losers avg {l_avg:.4f} (delta {delta:+.4f})")
+        print(f"    → These modules are working. Consider increasing weight.")
+
+    print(f"\n{'='*80}")
+    return {'hallucinating': hallucinating, 'predictive': predictive}
 
 
 # ═══════════════════════════════════════════════════════════════════════

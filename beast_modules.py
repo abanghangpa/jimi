@@ -32,12 +32,182 @@ import ccxt
 #
 # Uses: Bollinger Band width, ATR percentile, price structure, volume
 
-def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h):
-    """
-    Compute volatility regime for current bar.
-    Returns: (regime: str, vol_regime_score: float, details: dict)
+# ═══════════════════════════════════════════════════════════════════════
+# REGIME HYSTERESIS — Schmitt Trigger for regime transitions
+# ═══════════════════════════════════════════════════════════════════════
+
+class RegimeState:
+    """Tracks regime history with hysteresis to prevent flickering."""
     
-    vol_regime_score: 0.0 (worst) to 1.0 (best) for trading
+    # Hysteresis thresholds: (enter_threshold, exit_threshold)
+    # To ENTER a regime: metric must cross enter_threshold
+    # To EXIT a regime:  metric must cross exit_threshold (different bar)
+    HYSTERESIS = {
+        'CRISIS': {
+            'atr_pctl_enter': 0.90,   # enter CRISIS when ATR > 0.90
+            'atr_pctl_exit': 0.80,    # exit CRISIS when ATR < 0.80
+            'bb_pctl_enter': 0.90,
+            'bb_pctl_exit': 0.80,
+            'confirm_bars': 2,        # require 2 consecutive bars to confirm
+        },
+        'TRENDING': {
+            'directionality_enter': 0.40,
+            'directionality_exit': 0.30,
+            'structure_enter': 0.30,
+            'structure_exit': 0.20,
+            'confirm_bars': 2,
+        },
+        'COMPRESSING': {
+            'bb_pctl_enter': 0.25,
+            'bb_pctl_exit': 0.35,
+            'atr_pctl_enter': 0.35,
+            'atr_pctl_exit': 0.45,
+            'confirm_bars': 3,        # compression takes longer to confirm
+        },
+        'CHOP': {
+            'directionality_enter': 0.20,
+            'directionality_exit': 0.30,
+            'bb_pctl_enter': 0.40,
+            'bb_pctl_exit': 0.30,
+            'confirm_bars': 2,
+        },
+    }
+    
+    # Transition cooldowns (bars to wait after a transition before allowing another)
+    TRANSITION_COOLDOWN = {
+        'CRISIS': 8,      # 2 hours — crisis transitions need settling time
+        'TRENDING': 4,    # 1 hour
+        'COMPRESSING': 6, # 1.5 hours
+        'CHOP': 4,        # 1 hour
+    }
+    
+    def __init__(self):
+        self.prev_regime = 'NEUTRAL'
+        self.candidate_regime = None  # regime we're considering transitioning to
+        self.candidate_count = 0      # how many bars the candidate has persisted
+        self.cooldown_remaining = 0
+        self.transition_log = []      # forensic log of all transitions
+    
+    def update(self, raw_regime, atr_pctl, bb_pctl, directionality, structure_score, timestamp=None):
+        """
+        Apply hysteresis logic to determine actual regime.
+        
+        Returns: (confirmed_regime, is_transition, details)
+        """
+        details = {}
+        
+        # If in cooldown, hold previous regime
+        if self.cooldown_remaining > 0:
+            self.cooldown_remaining -= 1
+            details['cooldown_remaining'] = self.cooldown_remaining
+            return self.prev_regime, False, details
+        
+        # If raw regime matches current, no transition needed
+        if raw_regime == self.prev_regime:
+            self.candidate_regime = None
+            self.candidate_count = 0
+            return self.prev_regime, False, details
+        
+        # Raw regime differs — check if we should transition
+        # Use hysteresis: the thresholds to LEAVE current regime are softer
+        # than the thresholds to ENTER the new one
+        
+        should_transition = False
+        transition_reason = ''
+        
+        # Check if current regime should be exited
+        if self.prev_regime == 'CRISIS':
+            # Only exit CRISIS when both ATR and BB drop below exit thresholds
+            hyst = self.HYSTERESIS['CRISIS']
+            if atr_pctl < hyst['atr_pctl_exit'] and bb_pctl < hyst['bb_pctl_exit']:
+                should_transition = True
+                transition_reason = f"CRISIS exit: ATR {atr_pctl:.3f}<{hyst['atr_pctl_exit']}, BB {bb_pctl:.3f}<{hyst['bb_pctl_exit']}"
+        
+        elif self.prev_regime == 'TRENDING':
+            hyst = self.HYSTERESIS['TRENDING']
+            if directionality < hyst['directionality_exit'] and structure_score < hyst['structure_exit']:
+                should_transition = True
+                transition_reason = f"TRENDING exit: dir {directionality:.3f}<{hyst['directionality_exit']}, struct {structure_score:.3f}<{hyst['structure_exit']}"
+        
+        elif self.prev_regime == 'COMPRESSING':
+            hyst = self.HYSTERESIS['COMPRESSING']
+            if bb_pctl > hyst['bb_pctl_exit'] or atr_pctl > hyst['atr_pctl_exit']:
+                should_transition = True
+                transition_reason = f"COMPRESSING exit: BB {bb_pctl:.3f}>{hyst['bb_pctl_exit']} or ATR {atr_pctl:.3f}>{hyst['atr_pctl_exit']}"
+        
+        elif self.prev_regime == 'CHOP':
+            hyst = self.HYSTERESIS['CHOP']
+            if directionality > hyst['directionality_exit'] or bb_pctl < hyst['bb_pctl_exit']:
+                should_transition = True
+                transition_reason = f"CHOP exit: dir {directionality:.3f}>{hyst['directionality_exit']} or BB {bb_pctl:.3f}<{hyst['bb_pctl_exit']}"
+        
+        else:
+            # NEUTRAL or UNKNOWN — allow transition freely
+            should_transition = True
+            transition_reason = f"From {self.prev_regime} (no hysteresis required)"
+        
+        if not should_transition:
+            self.candidate_regime = None
+            self.candidate_count = 0
+            return self.prev_regime, False, details
+        
+        # Should transition — check confirmation bars
+        if self.candidate_regime == raw_regime:
+            self.candidate_count += 1
+        else:
+            self.candidate_regime = raw_regime
+            self.candidate_count = 1
+        
+        # Get confirmation requirement for target regime
+        confirm_needed = self.HYSTERESIS.get(raw_regime, {}).get('confirm_bars', 2)
+        
+        if self.candidate_count >= confirm_needed:
+            # Confirmed — execute transition
+            old_regime = self.prev_regime
+            self.prev_regime = raw_regime
+            self.candidate_regime = None
+            self.candidate_count = 0
+            
+            # Set cooldown for the target regime
+            self.cooldown_remaining = self.TRANSITION_COOLDOWN.get(raw_regime, 4)
+            
+            # Log transition
+            entry = {
+                'timestamp': timestamp,
+                'from': old_regime,
+                'to': raw_regime,
+                'reason': transition_reason,
+                'atr_pctl': atr_pctl,
+                'bb_pctl': bb_pctl,
+                'directionality': directionality,
+                'bars_confirmed': self.candidate_count,
+            }
+            self.transition_log.append(entry)
+            details['transition'] = entry
+            
+            return raw_regime, True, details
+        else:
+            # Not yet confirmed — hold previous regime, report pending
+            details['pending_transition'] = {
+                'target': raw_regime,
+                'bars_confirmed': self.candidate_count,
+                'bars_needed': confirm_needed,
+            }
+            return self.prev_regime, False, details
+
+
+def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
+    """
+    Compute volatility regime for current bar with hysteresis.
+    
+    Args:
+        df_15m: 15m OHLCV DataFrame
+        df_1h: 1H OHLCV DataFrame  
+        idx_15m: current index in 15m data
+        idx_1h: current index in 1H data
+        regime_state: RegimeState instance (if None, falls back to hard thresholds)
+    
+    Returns: (regime: str, vol_regime_score: float, details: dict)
     """
     details = {}
     
@@ -125,22 +295,47 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h):
         (1.0 - abs(atr_pctl - 0.5) * 2) * 0.10  # mid-range ATR = best
     )
     
-    # Classify
+    # --- Raw Regime Classification (hard thresholds) ---
     if atr_pctl > 0.90 or bb_pctl > 0.90:
-        regime = 'CRISIS'
-        score = 0.15  # very bad for trading
+        raw_regime = 'CRISIS'
+        score = 0.15
     elif bb_pctl < 0.25 and atr_pctl < 0.35:
-        regime = 'COMPRESSING'
-        score = 0.40  # wait for breakout
+        raw_regime = 'COMPRESSING'
+        score = 0.40
     elif directionality > 0.4 and structure_score > 0.3 and vol_ratio > 0.8:
-        regime = 'TRENDING'
-        score = 0.80  # ideal for trend-following
+        raw_regime = 'TRENDING'
+        score = 0.80
     elif directionality < 0.2 and bb_pctl > 0.4:
-        regime = 'CHOP'
-        score = 0.25  # avoid or reduce size
+        raw_regime = 'CHOP'
+        score = 0.25
     else:
-        regime = 'NEUTRAL'
+        raw_regime = 'NEUTRAL'
         score = 0.50
+    
+    details['raw_regime'] = raw_regime
+    
+    # --- Apply Hysteresis if regime_state provided ---
+    if regime_state is not None:
+        ts = df_15m['Open time'].iloc[idx_15m] if 'Open time' in df_15m.columns else None
+        regime, is_transition, hyst_details = regime_state.update(
+            raw_regime, atr_pctl, bb_pctl, directionality, structure_score, timestamp=ts
+        )
+        details.update(hyst_details)
+        details['is_transition'] = is_transition
+        
+        # Recompute score based on confirmed regime
+        if regime == 'CRISIS':
+            score = 0.15
+        elif regime == 'COMPRESSING':
+            score = 0.40
+        elif regime == 'TRENDING':
+            score = 0.80
+        elif regime == 'CHOP':
+            score = 0.25
+        else:
+            score = 0.50
+    else:
+        regime = raw_regime
     
     details['regime'] = regime
     details['vol_regime_score'] = round(score, 3)
