@@ -1,76 +1,108 @@
-# JIMI Framework v6.13
+# JIMI Framework
 
-ETH/USDT 15m multi-module scoring system with trend filtering.
+Multi-module trading scoring system for ETH/USDT 15m. 12 independent scoring modules, unified backtest engine, live scanner.
+
+## Architecture
+
+```
+jimi/
+├── config/
+│   └── settings.yaml          # All tunable parameters
+├── data/
+│   ├── raw/                    # Unprocessed exchange logs
+│   └── processed/              # Cleaned CSVs
+├── src/
+│   ├── config.py               # Config loader (YAML → dict)
+│   ├── engine.py               # Trade class, ICS, backtest loop
+│   ├── modules/
+│   │   ├── base_module.py      # Abstract base class
+│   │   ├── m1_macd.py          # MACD + RSI + Momentum
+│   │   ├── m2_ema.py           # Multi-TF EMA confluence
+│   │   ├── m3_vwap.py          # VWAP + Volume + Taker
+│   │   ├── m4_cvd.py           # CVD divergence + zero-line
+│   │   ├── m5_liquidation.py   # Volume profile + cascade
+│   │   ├── m6_derivatives.py   # OI, L/S ratio, taker flow
+│   │   ├── m7_market_regime.py # ETH/BTC + BTC volatility
+│   │   ├── m8_funding.py       # Funding rate
+│   │   ├── m9_volatility.py    # Vol regime classifier
+│   │   ├── m10_macro.py        # Cross-asset macro
+│   │   ├── m11_momentum.py     # MTF momentum divergence
+│   │   ├── m12_orderbook.py    # Order book imbalance
+│   │   ├── adaptive_direction.py
+│   │   ├── adaptive_weights.py
+│   │   ├── cross_asset.py
+│   │   ├── session.py
+│   │   └── veto_system.py
+│   └── utils/
+│       ├── data_handler.py     # Load, resample, fetch
+│       └── indicators.py       # EMA, MACD, RSI, ATR, VWAP
+├── scripts/
+│   ├── backtest_runner.py      # Unified backtester
+│   ├── scanner.py              # Live signal scanner
+│   └── analyze.py              # Result processor
+├── tests/
+├── requirements.txt
+└── .gitignore
+```
 
 ## Quick Start
 
 ```bash
-# Install dependencies
-pip install pandas numpy requests ccxt
+pip install -r requirements.txt
 
-# Live signal scan
-python3 jimi_v613.py scan
+# Backtest
+python scripts/backtest_runner.py data/processed/eth_15m_merged.csv --verbose
 
-# Backtest with CSV data
-python3 jimi_v613.py backtest eth_15m_data.csv --verbose
+# Backtest specific date range
+python scripts/backtest_runner.py data/processed/eth_15m_merged.csv --start 2026-03-01 --end 2026-03-31
 
-# Web dashboard
-python3 jimi_v613.py dashboard 8888
+# Fetch data + backtest
+python scripts/backtest_runner.py --fetch --start 2026-03-01 --end 2026-03-31
+
+# Live scan
+python scripts/scanner.py
+python scripts/scanner.py --json
+
+# Analyze results
+python scripts/analyze.py jimi_trades.csv --forensic
+
+# Use different config
+python scripts/backtest_runner.py data.csv --config config/v615.yaml
 ```
 
-## How It Works
+## Modules
 
-### 7 Scoring Modules
-- **M1** — 1H MACD direction
-- **M2** — Multi-timeframe EMA confirmation
-- **M3** — VWAP + Volume + Taker ratio entry timing
-- **M4** — 15m CVD (Cumulative Volume Delta) divergence
-- **M5** — Liquidation Magnet (volume profile clusters)
-- **M6** — Derivatives data (OI, L/S ratio, funding rate)
-- **M7** — Market Regime (ETH/BTC trend, BTC volatility)
+| Module | File | Weight | Role |
+|--------|------|--------|------|
+| M1 | m1_macd.py | 0.08 | MACD histogram + RSI divergence + momentum |
+| M2 | m2_ema.py | 0.00 | Multi-TF EMA confluence (veto-only) |
+| M3 | m3_vwap.py | 0.22 | VWAP zone + volume + taker ratio |
+| M4 | m4_cvd.py | 0.38 | CVD divergence (15m) + zero-line cross (2H) |
+| M5 | m5_liquidation.py | 0.25 | Volume profile magnets + cascade detection |
+| M6 | m6_derivatives.py | 0.10 | OI divergence, L/S ratio, whale signal |
+| M7 | m7_market_regime.py | 0.00 | ETH/BTC trend + BTC vol (gate-only) |
+| M8 | m8_funding.py | 0.10 | Funding rate bias |
+| M9 | m9_volatility.py | 0.00 | Vol regime classifier (gate-only) |
+| M10 | m10_macro.py | 0.10 | BTC trend + ETH/BTC relative strength |
+| M11 | m11_momentum.py | 0.12 | Multi-TF RSI/MACD divergence |
+| M12 | m12_orderbook.py | 0.05 | Bid/ask imbalance (live only) |
 
-### Trend Filter (v6.13)
-Multi-signal daily trend detection using:
-- EMA21 vs EMA55 crossover
-- Price position relative to EMA21
-- 7-day rate of change
-- 14-day RSI
-- Higher highs / lower lows structure
+## Config
 
-When a signal goes against the trend, the direction is **flipped** to trade with the trend.
+All parameters live in `config/settings.yaml`. Switch between versions by passing `--config`:
 
-### Exit Logic
-- **TP checked before SL** — when both trigger on same bar, TP wins
-- **R:R = 1.15x** — SL at 1.3 ATR, TP1 at 1.5 ATR
-- **Early exit** — kill losing trades after 16 bars (4 hours)
-- **Breakeven trailing** — SL moves to entry after TP1
+```bash
+# Use v615 parameters
+python scripts/backtest_runner.py data.csv --config config/v615.yaml
 
-## Backtest Results (2021-2026)
-
-| Month | Profitable | Avg PnL |
-|-------|-----------|---------|
-| October | 100% | +8.9% |
-| November | 100% | +103.1% |
-| June | 75% | +92.2% |
-| March | 75% | +2.2% |
-| September | 75% | +9.3% |
-| May | 50% | +142.1% |
-| January | 50% | +48.1% |
-
-See `ANALYSIS.md` for full details and `v613_full_results.json` for raw data.
-
-## Data Format
-
-CSV with columns: `Open time, Open, High, Low, Close, Volume, Close time, Quote asset volume, Number of trades, Taker buy base asset volume, Taker buy quote asset volume`
-
-Fetch from Binance API:
-```python
-import requests, pandas as pd
-r = requests.get("https://api.binance.com/api/v3/klines", params={
-    "symbol": "ETHUSDT", "interval": "15m", "limit": 1000
-})
+# Use v616 parameters (default)
+python scripts/backtest_runner.py data.csv
 ```
 
-## Risk Warning
+## Legacy Files
 
-This is a backtesting framework. Past performance does not guarantee future results. Use at your own risk.
+The following files are kept for reference but are superseded by the new structure:
+
+- `jimi_v6*.py` → `src/engine.py` + `src/modules/`
+- `backtest_*.py` → `scripts/backtest_runner.py`
+- `beast_modules.py` → `src/modules/m9_volatility.py` through `m12_orderbook.py`

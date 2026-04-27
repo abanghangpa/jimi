@@ -1,0 +1,245 @@
+# ═══════════════════════════════════════════════════════════════
+# JIMI Framework — Central Configuration
+# ═══════════════════════════════════════════════════════════════
+# Override any parameter here. Unset keys fall back to defaults.
+# Switch between "modes" by passing --config v615.yaml etc.
+
+# ─── GATE THRESHOLDS ─────────────────────────────────────────
+ICS_THRESHOLD_NORMAL: 0.50
+ICS_THRESHOLD_CAUTION: 0.52
+ICS_FLOOR: 0.50
+ICS_FLOOR_M4_FALSE: 0.50
+ICS_CEILING: 0.70
+
+# ─── MODULE WEIGHTS (ICS) ────────────────────────────────────
+# Forensic rebalance: M2/M9 removed from ICS (hallucinating).
+# M4/M5 boosted (strongest predictors).
+M1_WEIGHT: 0.08
+M2_WEIGHT: 0.00       # veto-only
+M3_WEIGHT: 0.22
+M4_WEIGHT: 0.38
+M5_WEIGHT: 0.25
+
+# ─── V6.12 IMPROVEMENTS ─────────────────────────────────────
+BIAS_GATE_ENABLED: true
+BIAS_GATE_LONG_ICS: 0.65
+TREND_FILTER_ENABLED: true
+TREND_BLOCK_COUNTER_TREND: false
+TREND_STRONG_ONLY: false
+TREND_MIN_SCORE: 0.15
+MONTHLY_DD_CIRCUIT: 0.05
+
+# ─── V6.13 SEASONAL ─────────────────────────────────────────
+SUMMER_MONTHS: [6, 7, 8, 9]
+SUMMER_SIZE_MULT: 0.60
+SUMMER_ICS_BOOST: 0.03
+TP1_CLOSE_BASE: 0.30
+TP1_CLOSE_SUMMER: 0.45
+TP1_ATR_SUMMER: 0.7
+MAX_CONSEC_LOSS_SUMMER: 2
+CONSEC_LOSS_PAUSE_SUMMER: 12
+PHASE0_SUMMER_BLOCK: 0.60
+
+SHOULDER_MONTHS: [3, 10]
+SHOULDER_SIZE_MULT: 0.50
+SHOULDER_SL_ATR: 1.4
+SHOULDER_SL_HARD_MAX: 0.016
+SHOULDER_TP1_ATR: 0.8
+SHOULDER_TP1_CLOSE: 0.45
+SHOULDER_ICS_BOOST: 0.02
+SHOULDER_MAX_TRADES_DAY: 3
+
+# ─── MODULE GATES ────────────────────────────────────────────
+M2_VETO_ENABLED: true
+M2_VETO_THRESHOLD: 0.40
+M5_FAIL_ICS_BOOST: 0.06
+M5_FAIL_HARD_THRESHOLD: 0.25
+M7_HARD_GATE: false
+M7_GATE_THRESHOLD: 0.30
+M7_GATE_STRONG_THRESHOLD: 0.60
+M7_GATE_STRONG_BOOST: 0.04
+SESSION_ASIAN_BLOCK: false
+POST_CRASH_COOLDOWN: true
+POST_CRASH_THRESHOLD: 0.10
+POST_CRASH_BARS: 48
+CASCADE_MULTIPLIER: 1.12
+CASCADE_PENALTY: 0.85
+DIR_VETO_ENABLED: true
+
+# ─── TECHNICAL INDICATORS ────────────────────────────────────
+MACD_FAST: 12
+MACD_SLOW: 26
+MACD_SIGNAL: 9
+EMA_FAST: 21
+EMA_SLOW: 55
+RSI_PERIOD: 14
+ATR_PERIOD: 14
+
+# ─── M3: VWAP ENTRY ZONE ────────────────────────────────────
+VWAP_LOOKBACK: 96
+VWAP_ZONE_PCT: 0.012
+VOL_THRESHOLD: 0.25
+TAKER_LONG: 0.52
+TAKER_SHORT: 0.48
+TAKER_FILLNA: 0.50
+SIGNAL_EXPIRY: 3
+
+# ─── M4: CVD ────────────────────────────────────────────────
+CVD_LOOKBACK: 36
+CVD_DIVERGENCE_WINDOW: 12
+M4_ZL_LOOKBACK: 18
+M4_ZL_MOMENTUM_BARS: 8
+M4_DIV_WEIGHT: 0.40
+M4_ZL_WEIGHT: 0.60
+
+# ─── M5: LIQUIDATION MAGNET ─────────────────────────────────
+M5_VP_LOOKBACK: 672
+M5_VP_BINS: 50
+M5_MIN_SCORE: 0.25
+
+# ─── STOP LOSS ───────────────────────────────────────────────
+SL_ATR_STD: 1.3
+SL_ATR_STD_SUMMER: 1.6
+SL_ATR_TRANSITION: 1.0
+TP1_ATR_TRANSITION: 1.2
+TRANSITION_SIZE_MULT: 0.50
+TRANSITION_SCORE_RANGE: 0.20
+SL_HARD_MAX_PCT: 0.018
+SL_HARD_MAX_SUMMER: 0.018
+SL_BREAKEVEN_AFTER_TP1: true
+EARLY_EXIT_BARS: 16
+EARLY_EXIT_MIN_LOSS: 0.003
+EARLY_EXIT_BARS_SUMMER: 12
+EARLY_EXIT_MIN_LOSS_SUMMER: 0.002
+
+# ─── TAKE PROFIT LADDER ─────────────────────────────────────
+TP1_ATR: 1.5
+TP2_ATR: 2.0
+TP3_ATR: 3.5
+TP1_CLOSE: 0.30
+TP2_CLOSE: 0.30
+
+# ─── POSITION SIZING ────────────────────────────────────────
+SIZE_STD: 5.0
+SIZE_LONG: 5.0
+SIZE_M2_NEUTRAL: 2.5
+SIZE_CAUTION: 3.5
+
+# ─── ENTRY FILTERS ──────────────────────────────────────────
+BAR_MOVE_ATR: 0.5
+ATR_FILTER_MAX: 0.035
+MIN_ENTRY_DIST_PCT: 0.002
+
+# ─── RISK MANAGEMENT ────────────────────────────────────────
+MAX_TRADES_DAY: 5
+MAX_TRADES_DAY_SUMMER: 3
+MAX_DAILY_LOSS: 0.05
+MAX_DAILY_LOSS_SUMMER: 0.03
+COOLDOWN_BARS: 2
+COOLDOWN_BARS_SUMMER: 4
+SHOULDER_COOLDOWN_BARS: 3
+ROLLING_WR_WINDOW: 20
+ROLLING_WR_MIN: 0.15
+MAX_CONSEC_LOSS: 3
+CONSEC_LOSS_PAUSE_BARS: 8
+
+# ─── LONG FILTER ────────────────────────────────────────────
+LONG_MIN_ICS: 0.55
+
+# ─── M6: DERIVATIVES ────────────────────────────────────────
+M6_WEIGHT: 0.10
+M3_WEIGHT_DERIV: 0.25
+M4_WEIGHT_DERIV: 0.20
+DERIV_ENABLED: true
+
+# ─── M7: MARKET REGIME ──────────────────────────────────────
+M7_ENABLED: true
+M7_WEIGHT: 0.00
+M7_SIZE_REDUCTION: 0.70
+M7_SIZE_MILD: 0.85
+
+# ─── M8: FUNDING RATE ───────────────────────────────────────
+M8_ENABLED: true
+M8_WEIGHT: 0.10
+M8_HIGH_FUNDING: 0.05
+M8_LOW_FUNDING: -0.05
+M8_FLIP_BONUS: 0.15
+
+# ─── M9: VOLATILITY REGIME ──────────────────────────────────
+M9_ENABLED: true
+M9_WEIGHT: 0.00
+M9_BLOCK_REGIMES: ["CRISIS"]
+M9_SIZE_CHOP: 0.50
+M9_SIZE_COMPRESSING: 0.80
+
+# ─── M10: CROSS-ASSET MACRO ─────────────────────────────────
+M10_ENABLED: true
+M10_WEIGHT: 0.10
+M10_FETCH_ON_BACKTEST: true
+
+# ─── M11: MULTI-TF MOMENTUM ─────────────────────────────────
+M11_ENABLED: true
+M11_WEIGHT: 0.12
+M11_RSI_PERIOD_15M: 14
+M11_RSI_PERIOD_1H: 14
+M11_REQUIRE_AGREEMENT: true
+
+# ─── M12: ORDER BOOK ────────────────────────────────────────
+M12_ENABLED: true
+M12_WEIGHT: 0.05
+M12_LIVE_ONLY: true
+
+# ─── ADAPTIVE DIRECTION BIAS ────────────────────────────────
+ADAPTIVE_DIR_ENABLED: true
+ADAPTIVE_DIR_MIN_BIAS: 0.10
+ADAPTIVE_DIR_BLOCK_THRESHOLD: 0.60
+
+# ─── DATA FRESHNESS ─────────────────────────────────────────
+DATA_FRESHNESS_ENABLED: true
+DATA_FRESHNESS_MAX_AGE_MIN: 20
+DATA_FRESHNESS_CHECK_INTERVAL: 5
+
+# ─── VETO SYSTEM ────────────────────────────────────────────
+VETO_ENABLED: true
+VETO_CRISIS_HARD: true
+VETO_CHOP_HARD: false
+VETO_STALE_DATA_HARD: true
+VETO_MONTHLY_DD_HARD: true
+VETO_DIR_CONFLICT_HARD: true
+
+# ─── ADAPTIVE WEIGHTS ───────────────────────────────────────
+ADAPTIVE_WEIGHTS_ENABLED: true
+ADAPTIVE_DECAY: 0.97
+ADAPTIVE_MIN_MULT: 0.8
+ADAPTIVE_MAX_MULT: 1.2
+ADAPTIVE_WARMUP_TRADES: 15
+
+# ─── SESSION AWARENESS ──────────────────────────────────────
+SESSION_AWARENESS_ENABLED: true
+SESSION_ASIAN_MULT: 0.85
+SESSION_EU_MULT: 1.0
+SESSION_US_MULT: 1.05
+SESSION_LATE_US_MULT: 0.90
+SESSION_US_OPEN_BOOST: 1.10
+
+# ─── MULTI-TF ENTRY CONFIRMATION ────────────────────────────
+MTF_CONFIRM_ENABLED: true
+MTF_1H_CANDLE_CHECK: true
+MTF_4H_EMA_CHECK: false
+
+# ─── M1 ENHANCEMENT ─────────────────────────────────────────
+M1_RSI_ENABLED: true
+M1_MOMENTUM_ENABLED: true
+M1_RSI_PERIOD: 14
+M1_RSI_OVERBOUGHT: 70
+M1_RSI_OVERSOLD: 30
+M1_MOMENTUM_LOOKBACK: 6
+
+# ─── CROSS-ASSET CORRELATION ────────────────────────────────
+CROSS_ASSET_ENABLED: true
+CROSS_ASSET_BTC_WEIGHT: 0.08
+CROSS_ASSET_LOOKBACK: 48
+
+# ─── DATA ────────────────────────────────────────────────────
+PAIR: "ETHUSDT"
+WARMUP_BARS_1H: 168
