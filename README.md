@@ -51,10 +51,10 @@ jimi/
 pip install -r requirements.txt
 
 # Backtest
-python scripts/backtest_runner.py data/processed/eth_15m_merged.csv --verbose
+python scripts/backtest_runner.py eth_15m_merged.csv --verbose
 
 # Backtest specific date range
-python scripts/backtest_runner.py data/processed/eth_15m_merged.csv --start 2026-03-01 --end 2026-03-31
+python scripts/backtest_runner.py eth_15m_merged.csv --start 2026-03-01 --end 2026-03-31
 
 # Fetch data + backtest
 python scripts/backtest_runner.py --fetch --start 2026-03-01 --end 2026-03-31
@@ -92,17 +92,5 @@ python scripts/backtest_runner.py data.csv --config config/v615.yaml
 All parameters live in `config/settings.yaml`. Switch between versions by passing `--config`:
 
 ```bash
-# Use v615 parameters
 python scripts/backtest_runner.py data.csv --config config/v615.yaml
-
-# Use v616 parameters (default)
-python scripts/backtest_runner.py data.csv
 ```
-
-## Legacy Files
-
-The following files are kept for reference but are superseded by the new structure:
-
-- `jimi_v6*.py` → `src/engine.py` + `src/modules/`
-- `backtest_*.py` → `scripts/backtest_runner.py`
-- `beast_modules.py` → `src/modules/m9_volatility.py` through `m12_orderbook.py`

@@ -8,8 +8,6 @@ build/
 # Data (use Git LFS for large CSVs)
 data/raw/
 data/processed/
-*.csv
-!config/
 
 # Secrets
 config/secrets.env
@@ -26,14 +24,3 @@ config/secrets.env
 # OS
 .DS_Store
 Thumbs.db
-
-# Legacy files (kept for reference, not tracked)
-/jimi_v6*.py
-/backtest_*.py
-/beast_modules.py
-/patch_v616.py
-/validate_full.py
-/run_full_analysis.py
-/fetch_eth_2021_2022.py
-/v613_full_results.json
-/jimi_m7_module.py
