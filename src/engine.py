@@ -451,7 +451,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
     daily_trades, daily_pnl = {}, {}
     last_entry_bar = -999
     deriv_df = None
-    regime_state = RegimeState()
+    regime_state = RegimeState(config=cfg)
     stats = {k: 0 for k in [
         'signals_checked', 'ics_blocked', 'filter_blocked', 'entries',
         'exits_sl', 'exits_tp1', 'exits_tp2', 'exits_tp3', 'exits_signal', 'exits_early',
@@ -629,7 +629,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         m9_details = {}
         if cfg.get('M9_ENABLED', False):
             vol_regime, m9_raw, m9_vol_details = compute_vol_regime(
-                df_15m, df_1h, idx, idx_1h, regime_state=regime_state)
+                df_15m, df_1h, idx, idx_1h, regime_state=regime_state, config=cfg)
             # Score with neutral direction first (direction not determined yet)
             m9_status, m9_score, m9_details = score_vol_regime(
                 vol_regime, m9_raw, 'NEUTRAL', trend_dir)

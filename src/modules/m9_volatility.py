@@ -22,49 +22,120 @@ import pandas as pd
 import numpy as np
 
 
+# ═══════════════════════════════════════════════════════════════
+# DEFAULT CONFIG — used when no config dict is passed
+# ═══════════════════════════════════════════════════════════════
+_M9_DEFAULTS = {
+    # Hysteresis thresholds (enter/exit for each regime)
+    'M9_CRISIS_ATR_THRESHOLD': 0.85,
+    'M9_CRISIS_BB_THRESHOLD': 0.90,
+    'M9_WHIPSAW_THRESHOLD': 0.45,
+    'M9_RETRACE_THRESHOLD': 0.50,
+    'M9_TRENDING_MIN_DIR': 0.45,
+    'M9_TRENDING_MIN_VOLUME': 0.50,
+    'M9_TRENDING_MAX_WHIPSAW': 0.35,
+    'M9_TRENDING_MAX_RETRACE': 0.45,
+    'M9_TRENDING_MIN_COHERENCE': 0.50,
+    # Regime classification thresholds
+    'M9_CHOP_HARD_CHOP_SCORE': 0.72,
+    'M9_CHOP_HARD_WHIPSAW': 0.70,
+    'M9_CHOP_HARD_RETRACE': 0.80,
+    'M9_CHOP_MILD_CHOP_SCORE': 0.50,
+    'M9_CHOP_MILD_TREND_CEILING': 0.35,
+    'M9_TRENDING_TREND_SCORE': 0.40,
+    'M9_TRENDING_MAX_WHIPSAW_SCORE': 0.65,
+    'M9_TRENDING_MAX_RETRACE_SCORE': 0.80,
+    'M9_COMPRESSING_BB': 0.30,
+    'M9_COMPRESSING_ATR': 0.40,
+    'M9_COMPRESSING_RANGE': 0.60,
+    # Hysteresis timing
+    'M9_HYSTERESIS_CONFIRM_BARS': 2,
+    'M9_TRENDING_CONFIRM_BARS': 3,
+    'M9_COMPRESSING_CONFIRM_BARS': 3,
+    'M9_CRISIS_COOLDOWN': 8,
+    'M9_TRENDING_COOLDOWN': 4,
+    'M9_COMPRESSING_COOLDOWN': 6,
+    'M9_CHOP_HARD_COOLDOWN': 6,
+    'M9_CHOP_MILD_COOLDOWN': 4,
+}
+
+
+def _cfg(config, key):
+    """Read a config key with M9_DEFAULTS fallback."""
+    if config and key in config:
+        return config[key]
+    return _M9_DEFAULTS[key]
+
+
+# ═══════════════════════════════════════════════════════════════
+# REGIME STATE — hysteresis / flickering prevention
+# ═══════════════════════════════════════════════════════════════
+
 class RegimeState:
-    """Tracks regime history with hysteresis to prevent flickering."""
+    """Tracks regime history with hysteresis to prevent flickering.
 
-    HYSTERESIS = {
-        'CRISIS': {
-            'atr_pctl_enter': 0.85, 'atr_pctl_exit': 0.75,
-            'bb_pctl_enter': 0.85, 'bb_pctl_exit': 0.75,
-            'confirm_bars': 2,
-        },
-        'TRENDING': {
-            'trend_score_enter': 0.40, 'trend_score_exit': 0.30,
-            'directionality_exit': 0.20,
-            'structure_exit': 0.20,
-            'confirm_bars': 3,
-        },
-        'COMPRESSING': {
-            'bb_pctl_enter': 0.30, 'bb_pctl_exit': 0.40,
-            'atr_pctl_enter': 0.40, 'atr_pctl_exit': 0.50,
-            'confirm_bars': 3,
-        },
-        'CHOP_HARD': {
-            'chop_score_enter': 0.72, 'chop_score_exit': 0.65,
-            'whipsaw_exit': 0.55, 'retrace_exit': 0.60,
-            'confirm_bars': 2,
-        },
-        'CHOP_MILD': {
-            'chop_score_enter': 0.50, 'chop_score_exit': 0.40,
-            'whipsaw_exit': 0.45, 'retrace_exit': 0.50,
-            'confirm_bars': 2,
-        },
-    }
+    All thresholds are read from config (settings.yaml) at init time.
+    """
 
-    TRANSITION_COOLDOWN = {
-        'CRISIS': 8, 'TRENDING': 4, 'COMPRESSING': 6, 'CHOP_HARD': 6, 'CHOP_MILD': 4,
-    }
+    def __init__(self, config=None):
+        self.config = config
 
-    def __init__(self):
+        # Build hysteresis table from config
+        confirm_default = _cfg(config, 'M9_HYSTERESIS_CONFIRM_BARS')
+        self.HYSTERESIS = {
+            'CRISIS': {
+                'atr_pctl_enter': _cfg(config, 'M9_CRISIS_ATR_THRESHOLD'),
+                'atr_pctl_exit': _cfg(config, 'M9_CRISIS_ATR_THRESHOLD') - 0.10,
+                'bb_pctl_enter': _cfg(config, 'M9_CRISIS_BB_THRESHOLD'),
+                'bb_pctl_exit': _cfg(config, 'M9_CRISIS_BB_THRESHOLD') - 0.10,
+                'confirm_bars': confirm_default,
+            },
+            'TRENDING': {
+                'trend_score_enter': _cfg(config, 'M9_TRENDING_TREND_SCORE'),
+                'trend_score_exit': _cfg(config, 'M9_TRENDING_TREND_SCORE') - 0.10,
+                'directionality_exit': _cfg(config, 'M9_TRENDING_MIN_DIR') - 0.25,
+                'structure_exit': 0.20,
+                'whipsaw_exit': _cfg(config, 'M9_TRENDING_MAX_WHIPSAW') + 0.10,
+                'retrace_exit': _cfg(config, 'M9_TRENDING_MAX_RETRACE') + 0.10,
+                'confirm_bars': _cfg(config, 'M9_TRENDING_CONFIRM_BARS'),
+            },
+            'COMPRESSING': {
+                'bb_pctl_enter': _cfg(config, 'M9_COMPRESSING_BB'),
+                'bb_pctl_exit': _cfg(config, 'M9_COMPRESSING_BB') + 0.10,
+                'atr_pctl_enter': _cfg(config, 'M9_COMPRESSING_ATR'),
+                'atr_pctl_exit': _cfg(config, 'M9_COMPRESSING_ATR') + 0.10,
+                'confirm_bars': _cfg(config, 'M9_COMPRESSING_CONFIRM_BARS'),
+            },
+            'CHOP_HARD': {
+                'chop_score_enter': _cfg(config, 'M9_CHOP_HARD_CHOP_SCORE'),
+                'chop_score_exit': _cfg(config, 'M9_CHOP_HARD_CHOP_SCORE') - 0.07,
+                'whipsaw_exit': _cfg(config, 'M9_WHIPSAW_THRESHOLD') + 0.10,
+                'retrace_exit': _cfg(config, 'M9_RETRACE_THRESHOLD') + 0.10,
+                'confirm_bars': confirm_default,
+            },
+            'CHOP_MILD': {
+                'chop_score_enter': _cfg(config, 'M9_CHOP_MILD_CHOP_SCORE'),
+                'chop_score_exit': _cfg(config, 'M9_CHOP_MILD_CHOP_SCORE') - 0.10,
+                'whipsaw_exit': _cfg(config, 'M9_WHIPSAW_THRESHOLD'),
+                'retrace_exit': _cfg(config, 'M9_RETRACE_THRESHOLD'),
+                'confirm_bars': confirm_default,
+            },
+        }
+
+        self.TRANSITION_COOLDOWN = {
+            'CRISIS': _cfg(config, 'M9_CRISIS_COOLDOWN'),
+            'TRENDING': _cfg(config, 'M9_TRENDING_COOLDOWN'),
+            'COMPRESSING': _cfg(config, 'M9_COMPRESSING_COOLDOWN'),
+            'CHOP_HARD': _cfg(config, 'M9_CHOP_HARD_COOLDOWN'),
+            'CHOP_MILD': _cfg(config, 'M9_CHOP_MILD_COOLDOWN'),
+        }
+
         self.prev_regime = 'NEUTRAL'
         self.candidate_regime = None
         self.candidate_count = 0
         self.cooldown_remaining = 0
         self.transition_log = []
-        self.regime_bar_count = 0  # how long in current regime
+        self.regime_bar_count = 0
 
     def update(self, raw_regime, signals, timestamp=None):
         details = {}
@@ -83,7 +154,7 @@ class RegimeState:
         should_transition = False
         transition_reason = ''
 
-        # Exit conditions for each regime
+        # Exit conditions for each regime (using config-driven thresholds)
         if self.prev_regime == 'CRISIS':
             hyst = self.HYSTERESIS['CRISIS']
             if signals['atr_pctl'] < hyst['atr_pctl_exit'] and signals['bb_pctl'] < hyst['bb_pctl_exit']:
@@ -94,8 +165,8 @@ class RegimeState:
             hyst = self.HYSTERESIS['TRENDING']
             dir_ok = signals['directionality'] < hyst['directionality_exit']
             struct_ok = signals['structure_score'] < hyst['structure_exit']
-            whipsaw_bad = signals['whipsaw_rate'] > 0.45
-            retrace_bad = signals['retrace_ratio'] > 0.55
+            whipsaw_bad = signals['whipsaw_rate'] > hyst['whipsaw_exit']
+            retrace_bad = signals['retrace_ratio'] > hyst['retrace_exit']
             if (dir_ok and struct_ok) or whipsaw_bad or retrace_bad:
                 should_transition = True
                 transition_reason = f"TRENDING exit: dir={signals['directionality']:.2f} whipsaw={signals['whipsaw_rate']:.2f} retrace={signals['retrace_ratio']:.2f}"
@@ -207,7 +278,6 @@ def _compute_directionality(closes, window=20):
     if len(diffs) == 0:
         return 0.5
 
-    # Count consecutive same-direction closes
     signs = np.sign(diffs.values)
     consec = 0
     max_consec = 0
@@ -218,16 +288,12 @@ def _compute_directionality(closes, window=20):
         else:
             consec = 0
 
-    # Perfect trend = all bars same direction = max_consec = window-1
-    # Random = max_consec ~ 1-2
     directionality = min(max_consec / (window - 1), 1.0)
 
-    # Also factor in net move / total move (efficiency ratio)
     net_move = abs(recent.iloc[-1] - recent.iloc[0])
     total_move = diffs.abs().sum()
     efficiency = net_move / total_move if total_move > 0 else 0.5
 
-    # Blend: 60% consecutive, 40% efficiency
     return directionality * 0.6 + efficiency * 0.4
 
 
@@ -246,7 +312,6 @@ def _compute_whipsaw_rate(closes, window=40, reversal_bars=3):
     if len(diffs) < window:
         return 0.5
 
-    # Find "moves" — consecutive same-direction bars
     moves = []
     current_dir = 0
     move_start = 0
@@ -271,7 +336,6 @@ def _compute_whipsaw_rate(closes, window=40, reversal_bars=3):
             move_start = i
             move_bars = 1
 
-    # Add last move
     if current_dir != 0 and move_bars >= 1:
         moves.append({
             'dir': current_dir, 'start': move_start, 'end': len(diffs),
@@ -281,18 +345,14 @@ def _compute_whipsaw_rate(closes, window=40, reversal_bars=3):
     if len(moves) < 3:
         return 0.5
 
-    # Check how many moves got reversed within reversal_bars
     reversed_count = 0
-    total_moves = len(moves) - 1  # exclude last (still in progress)
+    total_moves = len(moves) - 1
 
     for i in range(total_moves):
         move = moves[i]
-        # Look at the next move
         if i + 1 < len(moves):
             next_move = moves[i + 1]
-            # If next move is opposite direction and starts within reversal_bars
             if next_move['dir'] == -move['dir']:
-                # Check if it retraces most of the move
                 if next_move['magnitude'] >= move['magnitude'] * 0.5:
                     reversed_count += 1
 
@@ -315,10 +375,8 @@ def _compute_retracement_ratio(closes, window=40):
     if high == low:
         return 0.5
 
-    # How far are we from the extremes?
     range_size = high - low
 
-    # Find swing points (local highs/lows)
     values = recent.values
     swings = []
     for i in range(2, len(values) - 2):
@@ -328,12 +386,9 @@ def _compute_retracement_ratio(closes, window=40):
             swings.append(('L', values[i], i))
 
     if len(swings) < 3:
-        # Not enough swings — check position in range
         position = (current - low) / range_size
-        # If we're in the middle, it's choppy
         return 1.0 - abs(position - 0.5) * 2
 
-    # Compute retracement between consecutive swing pairs
     retracements = []
     for i in range(len(swings) - 2):
         s1 = swings[i]
@@ -341,13 +396,11 @@ def _compute_retracement_ratio(closes, window=40):
         s3 = swings[i + 2]
 
         if s1[0] == 'H' and s2[0] == 'L' and s3[0] == 'H':
-            # High-Low-High pattern
             move_down = s1[1] - s2[1]
             retrace_up = s3[1] - s2[1]
             if move_down > 0:
                 retracements.append(retrace_up / move_down)
         elif s1[0] == 'L' and s2[0] == 'H' and s3[0] == 'L':
-            # Low-High-Low pattern
             move_up = s2[1] - s1[1]
             retrace_down = s2[1] - s3[1]
             if move_up > 0:
@@ -356,7 +409,6 @@ def _compute_retracement_ratio(closes, window=40):
     if not retracements:
         return 0.5
 
-    # Average retracement ratio
     avg_retrace = np.mean(retracements)
     return min(max(avg_retrace, 0.0), 1.0)
 
@@ -379,19 +431,15 @@ def _compute_volume_confirmation(df_1h, idx_1h, window=20):
     if avg_vol <= 0:
         return 0.5
 
-    # Current volume vs average
     vol_ratio = vol.iloc[-1] / avg_vol if avg_vol > 0 else 1.0
 
-    # Price direction
     price_change = close.iloc[-1] - close.iloc[-2] if len(close) >= 2 else 0
     direction = np.sign(price_change)
 
-    # Volume on up bars vs down bars
     diffs = close.diff().dropna()
     up_vol = vol.iloc[1:][diffs > 0].mean() if (diffs > 0).any() else avg_vol
     down_vol = vol.iloc[1:][diffs < 0].mean() if (diffs < 0).any() else avg_vol
 
-    # Volume should confirm direction
     if direction > 0:
         vol_confirm = up_vol / (down_vol + 1e-10)
     elif direction < 0:
@@ -399,7 +447,6 @@ def _compute_volume_confirmation(df_1h, idx_1h, window=20):
     else:
         vol_confirm = 1.0
 
-    # Combine: current volume ratio + directional volume confirmation
     score = min(vol_ratio, 2.0) / 2.0 * 0.4 + min(vol_confirm, 2.0) / 2.0 * 0.6
     return min(max(score, 0.0), 1.0)
 
@@ -413,24 +460,18 @@ def _compute_range_tightness(closes, window=40):
         return 0.5
 
     recent = closes.iloc[-window:]
-    range_size = (recent.max() - recent.min()) / recent.mean() * 100  # as %
-
-    # ETH typical ranges on 15m:
-    # < 0.5% = very tight (compression)
-    # 0.5-1.5% = normal
-    # 1.5-3.0% = wide
-    # > 3.0% = extreme
+    range_size = (recent.max() - recent.min()) / recent.mean() * 100
 
     if range_size < 0.3:
-        return 1.0  # very tight
+        return 1.0
     elif range_size < 0.8:
-        return 0.7  # tight
+        return 0.7
     elif range_size < 1.5:
-        return 0.4  # normal
+        return 0.4
     elif range_size < 3.0:
-        return 0.2  # wide
+        return 0.2
     else:
-        return 0.0  # extreme
+        return 0.0
 
 
 def _compute_1h_15m_coherence(df_15m, df_1h, idx_15m, idx_1h):
@@ -441,13 +482,11 @@ def _compute_1h_15m_coherence(df_15m, df_1h, idx_15m, idx_1h):
     if idx_1h < 10 or idx_15m < 40:
         return 0.5
 
-    # 1H direction: last 10 bars
     close_1h = df_1h['Close'].iloc[max(0, idx_1h - 10):idx_1h + 1]
     if len(close_1h) < 5:
         return 0.5
     dir_1h = np.sign(close_1h.iloc[-1] - close_1h.iloc[0])
 
-    # 15m direction: last 40 bars (10 hours)
     close_15m = df_15m['Close'].iloc[max(0, idx_15m - 40):idx_15m + 1]
     if len(close_15m) < 10:
         return 0.5
@@ -457,23 +496,28 @@ def _compute_1h_15m_coherence(df_15m, df_1h, idx_15m, idx_1h):
         return 0.5
 
     if dir_1h == dir_15m:
-        return 1.0  # agreement
+        return 1.0
     else:
-        return 0.0  # conflict
+        return 0.0
 
 
 # ═══════════════════════════════════════════════════════════════
 # MAIN REGIME COMPUTATION
 # ═══════════════════════════════════════════════════════════════
 
-def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
+def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None, config=None):
     """
     Compute volatility regime for current bar with full signal suite.
 
+    Args:
+        df_15m: 15m OHLCV DataFrame
+        df_1h: 1H OHLCV DataFrame
+        idx_15m: current 15m bar index
+        idx_1h: current 1H bar index
+        regime_state: RegimeState instance for hysteresis
+        config: config dict (settings.yaml). If None, uses built-in defaults.
+
     Returns: (regime, score, details)
-      regime: 'CRISIS' | 'CHOP' | 'COMPRESSING' | 'TRENDING' | 'NEUTRAL' | 'UNKNOWN'
-      score: 0.0-1.0 (how tradable the regime is)
-      details: dict of all computed signals
     """
     details = {}
 
@@ -508,10 +552,9 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
     else:
         vol_ratio = 1.0
 
-    # Blend directionality: 40% 1H, 60% 15m (execution timeframe matters more)
+    # Blend directionality: 40% 1H, 60% 15m
     directionality = directionality_1h * 0.4 + directionality_15m * 0.6
 
-    # Store all signals
     signals = {
         'atr_pctl': atr_pctl,
         'bb_pctl': bb_pctl,
@@ -528,19 +571,7 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
     }
     details.update(signals)
 
-    # ── Regime Classification ──
-    # ETH on 15m is inherently choppy (median move 0.0035%/hr).
-    # Instead of binary CHOP vs TRENDING, we use a tradability spectrum.
-    #
-    # Priority: CRISIS > CHOP_HARD > CHOP_MILD > COMPRESSING > TRENDING > NEUTRAL
-    #
-    # Key insight: not all chop is equal.
-    #   CHOP_HARD: random whipsaws, no edge → block
-    #   CHOP_MILD: range-bound but predictable → trade with reduced size
-    #   TRENDING: rare but high-edge → full size
-
-    # Composite chop score (0=clean trend, 1=pure noise)
-    # Tuned weights: balanced blend, retrace reduced (it saturates ~1.0 on ETH 15m)
+    # ── Regime Classification (all thresholds from config) ──
     chop_score = (
         whipsaw_rate * 0.25 +
         retrace_ratio * 0.20 +
@@ -549,8 +580,6 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
         (1.0 - tf_coherence) * 0.15
     )
 
-    # Composite trend score (0=random, 1=strong trend)
-    # Tuned: direction-heavy, structure up, retrace reduced
     trend_score = (
         directionality * 0.30 +
         structure_score * 0.25 +
@@ -560,29 +589,43 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
         tf_coherence * 0.05
     )
 
-    if atr_pctl > 0.85 or bb_pctl > 0.90:
+    details['chop_score'] = round(chop_score, 3)
+    details['trend_score'] = round(trend_score, 3)
+
+    # Read classification thresholds from config
+    crisis_atr = _cfg(config, 'M9_CRISIS_ATR_THRESHOLD')
+    crisis_bb = _cfg(config, 'M9_CRISIS_BB_THRESHOLD')
+    chop_hard_cs = _cfg(config, 'M9_CHOP_HARD_CHOP_SCORE')
+    chop_hard_ws = _cfg(config, 'M9_CHOP_HARD_WHIPSAW')
+    chop_hard_rt = _cfg(config, 'M9_CHOP_HARD_RETRACE')
+    chop_mild_cs = _cfg(config, 'M9_CHOP_MILD_CHOP_SCORE')
+    chop_mild_tc = _cfg(config, 'M9_CHOP_MILD_TREND_CEILING')
+    trend_ts = _cfg(config, 'M9_TRENDING_TREND_SCORE')
+    trend_dir = _cfg(config, 'M9_TRENDING_MIN_DIR')
+    trend_ws = _cfg(config, 'M9_TRENDING_MAX_WHIPSAW_SCORE')
+    trend_rt = _cfg(config, 'M9_TRENDING_MAX_RETRACE_SCORE')
+    comp_bb = _cfg(config, 'M9_COMPRESSING_BB')
+    comp_atr = _cfg(config, 'M9_COMPRESSING_ATR')
+    comp_range = _cfg(config, 'M9_COMPRESSING_RANGE')
+
+    if atr_pctl > crisis_atr or bb_pctl > crisis_bb:
         raw_regime = 'CRISIS'
         score = 0.10
 
-    elif chop_score > 0.72 and whipsaw_rate > 0.70 and retrace_ratio > 0.80:
-        # CHOP_HARD: extreme whipsaw + near-total retracement → no edge
+    elif chop_score > chop_hard_cs and whipsaw_rate > chop_hard_ws and retrace_ratio > chop_hard_rt:
         raw_regime = 'CHOP_HARD'
         score = 0.10
 
-    elif chop_score > 0.50 and trend_score < 0.35:
-        # CHOP_MILD: choppy but some structure → trade small
+    elif chop_score > chop_mild_cs and trend_score < chop_mild_tc:
         raw_regime = 'CHOP_MILD'
         score = 0.35
 
-    elif bb_pctl < 0.30 and atr_pctl < 0.40 and range_tight > 0.60:
-        # COMPRESSING: low vol + tight range = breakout loading
+    elif bb_pctl < comp_bb and atr_pctl < comp_atr and range_tight > comp_range:
         raw_regime = 'COMPRESSING'
         score = 0.50
 
-    elif trend_score > 0.40 and directionality > 0.25 and \
-         whipsaw_rate < 0.65 and retrace_ratio < 0.80:
-        # TRENDING: meaningful direction with acceptable whipsaw
-        # Tuned: relaxed thresholds — ETH 15m trends are subtle
+    elif trend_score > trend_ts and directionality > trend_dir and \
+         whipsaw_rate < trend_ws and retrace_ratio < trend_rt:
         raw_regime = 'TRENDING'
         score = 0.80
 
@@ -599,7 +642,6 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
         details.update(hyst_details)
         details['is_transition'] = is_transition
 
-        # Regime score mapping
         regime_scores = {
             'CRISIS': 0.10, 'CHOP_HARD': 0.10, 'CHOP_MILD': 0.35,
             'COMPRESSING': 0.50, 'TRENDING': 0.80, 'NEUTRAL': 0.50, 'UNKNOWN': 0.50,
@@ -608,7 +650,6 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
     else:
         regime = raw_regime
 
-    # Regime strength: how long have we been in this regime?
     if regime_state is not None:
         regime_strength = min(regime_state.regime_bar_count / 20.0, 1.0)
     else:
@@ -634,13 +675,13 @@ def score_vol_regime(regime, vol_regime_score, direction, trend_dir):
             base *= 0.70
 
     if regime == 'CHOP_HARD':
-        base *= 0.20  # hard block — no edge
+        base *= 0.20
     if regime == 'CHOP_MILD':
-        base *= 0.55  # reduced size — some edge but risky
+        base *= 0.55
     if regime == 'CRISIS':
-        base *= 0.15  # hard block
+        base *= 0.15
     if regime == 'COMPRESSING':
-        base *= 0.85  # slightly reduced — waiting for breakout
+        base *= 0.85
 
     score = max(0.0, min(1.0, base))
     status = 'PASS' if score >= 0.45 else 'FAIL'
