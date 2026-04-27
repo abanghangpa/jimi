@@ -32,9 +32,9 @@ class RegimeState:
             'confirm_bars': 2,
         },
         'TRENDING': {
-            'trend_score_enter': 0.50, 'trend_score_exit': 0.40,
-            'directionality_exit': 0.30,
-            'structure_exit': 0.30,
+            'trend_score_enter': 0.40, 'trend_score_exit': 0.30,
+            'directionality_exit': 0.20,
+            'structure_exit': 0.20,
             'confirm_bars': 3,
         },
         'COMPRESSING': {
@@ -48,7 +48,7 @@ class RegimeState:
             'confirm_bars': 2,
         },
         'CHOP_MILD': {
-            'chop_score_enter': 0.55, 'chop_score_exit': 0.45,
+            'chop_score_enter': 0.50, 'chop_score_exit': 0.40,
             'whipsaw_exit': 0.45, 'retrace_exit': 0.50,
             'confirm_bars': 2,
         },
@@ -540,25 +540,27 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
     #   TRENDING: rare but high-edge → full size
 
     # Composite chop score (0=clean trend, 1=pure noise)
+    # Tuned weights: balanced blend, retrace reduced (it saturates ~1.0 on ETH 15m)
     chop_score = (
-        whipsaw_rate * 0.30 +
-        retrace_ratio * 0.25 +
+        whipsaw_rate * 0.25 +
+        retrace_ratio * 0.20 +
         (1.0 - directionality) * 0.20 +
-        (1.0 - volume_confirm) * 0.15 +
-        (1.0 - tf_coherence) * 0.10
+        (1.0 - volume_confirm) * 0.20 +
+        (1.0 - tf_coherence) * 0.15
     )
 
     # Composite trend score (0=random, 1=strong trend)
+    # Tuned: direction-heavy, structure up, retrace reduced
     trend_score = (
         directionality * 0.30 +
-        structure_score * 0.20 +
+        structure_score * 0.25 +
         (1.0 - whipsaw_rate) * 0.20 +
-        (1.0 - retrace_ratio) * 0.15 +
+        (1.0 - retrace_ratio) * 0.10 +
         volume_confirm * 0.10 +
         tf_coherence * 0.05
     )
 
-    if atr_pctl > 0.85 or bb_pctl > 0.85:
+    if atr_pctl > 0.85 or bb_pctl > 0.90:
         raw_regime = 'CRISIS'
         score = 0.10
 
@@ -567,7 +569,7 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
         raw_regime = 'CHOP_HARD'
         score = 0.10
 
-    elif chop_score > 0.55 and trend_score < 0.35:
+    elif chop_score > 0.50 and trend_score < 0.35:
         # CHOP_MILD: choppy but some structure → trade small
         raw_regime = 'CHOP_MILD'
         score = 0.35
@@ -577,9 +579,10 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None):
         raw_regime = 'COMPRESSING'
         score = 0.50
 
-    elif trend_score > 0.50 and directionality > 0.35 and \
-         whipsaw_rate < 0.55 and retrace_ratio < 0.70:
+    elif trend_score > 0.40 and directionality > 0.25 and \
+         whipsaw_rate < 0.65 and retrace_ratio < 0.80:
         # TRENDING: meaningful direction with acceptable whipsaw
+        # Tuned: relaxed thresholds — ETH 15m trends are subtle
         raw_regime = 'TRENDING'
         score = 0.80
 
