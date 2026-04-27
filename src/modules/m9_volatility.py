@@ -33,6 +33,8 @@ class RegimeState:
         },
         'TRENDING': {
             'trend_score_enter': 0.50, 'trend_score_exit': 0.40,
+            'directionality_exit': 0.30,
+            'structure_exit': 0.30,
             'confirm_bars': 3,
         },
         'COMPRESSING': {
@@ -42,10 +44,12 @@ class RegimeState:
         },
         'CHOP_HARD': {
             'chop_score_enter': 0.72, 'chop_score_exit': 0.65,
+            'whipsaw_exit': 0.55, 'retrace_exit': 0.60,
             'confirm_bars': 2,
         },
         'CHOP_MILD': {
             'chop_score_enter': 0.55, 'chop_score_exit': 0.45,
+            'whipsaw_exit': 0.45, 'retrace_exit': 0.50,
             'confirm_bars': 2,
         },
     }
@@ -102,9 +106,9 @@ class RegimeState:
                 should_transition = True
                 transition_reason = "COMPRESSING exit: expanding"
 
-        elif self.prev_regime == 'CHOP':
-            hyst = self.HYSTERESIS['CHOP']
-            if signals['whipsaw_rate'] < hyst['whipsaw_exit'] and signals['retrace_ratio'] < hyst['retrace_exit']:
+        elif self.prev_regime in ('CHOP_HARD', 'CHOP_MILD'):
+            hyst = self.HYSTERESIS.get(self.prev_regime, self.HYSTERESIS['CHOP_MILD'])
+            if signals['whipsaw_rate'] < hyst.get('whipsaw_exit', 0.45) and signals['retrace_ratio'] < hyst.get('retrace_exit', 0.50):
                 should_transition = True
                 transition_reason = "CHOP exit: becoming directional"
 
