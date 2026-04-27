@@ -81,6 +81,10 @@ def m7_prepare_data(df_15m):
         ethbtc.loc[ethbtc["ema21"] > ethbtc["ema55"], "trend"] = "BULL"
         ethbtc.loc[ethbtc["ema21"] < ethbtc["ema55"], "trend"] = "BEAR"
         ethbtc["ema_dist"] = (ethbtc["close"] - ethbtc["ema55"]) / ethbtc["ema55"]
+        ethbtc["zscore_90"] = (
+            (ethbtc["close"] - ethbtc["close"].rolling(90).mean())
+            / ethbtc["close"].rolling(90).std().replace(0, np.nan)
+        )
         ethbtc["roc_7d"] = ethbtc["close"].pct_change(7)
         ethbtc["roc_30d"] = ethbtc["close"].pct_change(30)
         ethbtc = ethbtc[(ethbtc["date"] >= start) & (ethbtc["date"] <= end)].reset_index(drop=True)

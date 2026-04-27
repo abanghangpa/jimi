@@ -181,6 +181,125 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d):
     return result
 
 
+def print_signal(result):
+    """Print detailed signal analysis with all module data."""
+    print("\n" + "═" * 60)
+    print("  JIMI — LIVE SIGNAL SCAN")
+    print("═" * 60)
+    print(f"\n  Time:   {result['timestamp']}")
+    print(f"  Price:  ${result['price']:.2f}")
+    print(f"  Bias:   {result['swing_bias']}")
+    print(f"  Phase0: {result.get('phase0', 'N/A')}")
+
+    # Market Data
+    print(f"\n  Market Data:")
+    vwap = result.get('vwap')
+    vwap_dist = result.get('vwap_dist_pct')
+    taker = result.get('taker_ratio')
+    atr = result.get('atr_1h')
+    vol_r = result.get('vol_ratio')
+    if vwap:
+        print(f"    VWAP:           ${vwap:.2f}  ({vwap_dist:+.2f}% from price)" if vwap_dist else f"    VWAP: ${vwap:.2f}")
+    if taker is not None:
+        taker_label = "buyers" if taker > 0.52 else "sellers" if taker < 0.48 else "neutral"
+        print(f"    Taker Ratio:    {taker:.4f}  ({taker_label}, {taker*100:.1f}% buy)")
+    if atr:
+        print(f"    ATR (1H):       ${atr:.2f}  ({atr/result['price']*100:.2f}% of price)")
+    if vol_r:
+        print(f"    Vol Ratio:      {vol_r:.2f}x  (24h vs 7d)")
+
+    # Module Scores
+    print(f"\n  Module Scores:")
+    print(f"    M1 (1H MACD):  {result['m1']['direction']:>8}  score={result['m1']['score']:.2f}")
+    print(f"    M2 (EMA conf): {result['m2']['status']:>8}  score={result['m2']['score']:.2f}")
+    if 'm3' in result:
+        print(f"    M3 (VWAP):     {result['m3']['status']:>8}  score={result['m3']['score']:.2f}")
+    if 'm4' in result:
+        m4 = result['m4']
+        det = m4.get('details', {})
+        if isinstance(det, dict):
+            div_str = det.get('layer_a_div', 'NONE')
+            zl_str = det.get('layer_b_cross', 'NONE')
+            la = det.get('layer_a_score', 0)
+            lb = det.get('layer_b_score', 0)
+            bars = det.get('layer_b_bars_since', '')
+            print(f"    M4 (CVD):      {m4['status']:>8}  score={m4['score']:.2f}  "
+                  f"div={div_str}({la:.2f})  zl={zl_str}({lb:.2f}) {bars}bars")
+        else:
+            print(f"    M4 (CVD):      {m4['status']:>8}  score={m4['score']:.2f}")
+    if 'm5' in result:
+        m5 = result['m5']
+        print(f"    M5 (LiqtMag):  {m5['status']:>8}  score={m5['score']:.2f}  "
+              f"nearest={m5['details'].get('nearest_magnet')} ({m5['details'].get('magnet_dist_pct')}%)")
+    if 'cascade' in result and result['cascade'].get('cascade'):
+        c = result['cascade']
+        print(f"    ⚡ CASCADE:    momentum={c['momentum']}% vol_spike={c['vol_spike']}x range={c['range_expansion']}x")
+
+    # Liquidation Magnets
+    magnets = result.get('magnets', [])
+    if magnets:
+        print(f"\n  Liquidation Magnets (volume clusters):")
+        price = result['price']
+        for i, (p, s) in enumerate(magnets[:5]):
+            dist = (p - price) / price * 100
+            direction = "↑" if dist > 0 else "↓"
+            print(f"    #{i+1}: ${p:.2f}  strength={s:.2f}x  ({direction}{abs(dist):.2f}%)")
+
+    # Support / Resistance
+    sr = result.get('sr_levels', [])
+    if sr:
+        supports = [(p, s, t, tb, bb) for p, s, t, tb, bb in sr if t == 'SUPPORT']
+        resistances = [(p, s, t, tb, bb) for p, s, t, tb, bb in sr if t == 'RESISTANCE']
+        supports.sort(key=lambda x: x[1], reverse=True)
+        resistances.sort(key=lambda x: x[1], reverse=True)
+        if supports:
+            print(f"  Support Levels:")
+            for i, (p, s, _, touches, bounces) in enumerate(supports[:4]):
+                dist = (p - price) / price * 100
+                print(f"    #{i+1}: ${p:.2f}  strength={s:.1f}  touches={touches} bounces={bounces}  ({dist:+.2f}%)")
+        if resistances:
+            print(f"  Resistance Levels:")
+            for i, (p, s, _, touches, bounces) in enumerate(resistances[:4]):
+                dist = (p - price) / price * 100
+                print(f"    #{i+1}: ${p:.2f}  strength={s:.1f}  touches={touches} bounces={bounces}  ({dist:+.2f}%)")
+
+    # Derivatives
+    deriv = result.get('derivatives', {})
+    if deriv and 'error' not in deriv:
+        print(f"\n  Derivatives Data:")
+        oi_usd = deriv.get('oi_usd', 0)
+        print(f"    OI:             {deriv.get('oi', 0):,.0f} ETH  (${oi_usd/1e9:.2f}B)  1h Δ: {deriv.get('oi_roc_1h', 0):+.3f}%")
+        print(f"    L/S Ratio:      {deriv.get('ls_ratio', 0):.4f}  (long {deriv.get('long_pct', 0):.1f}% / short {deriv.get('short_pct', 0):.1f}%)  z={deriv.get('ls_zscore', 0):.2f}")
+        pos = deriv.get('positioning', 'NEUTRAL')
+        pos_icon = {'CROWDED_LONG': '🔴', 'CROWDED_SHORT': '🟢'}.get(pos, '⚪')
+        print(f"    Positioning:    {pos_icon} {pos}")
+        print(f"    Top Traders:    L/S={deriv.get('top_ls_ratio', 0):.4f}  whale={deriv.get('whale_signal', 'NEUTRAL')}  gap={deriv.get('whale_retail_gap', 0):+.4f}")
+        print(f"    Futures Taker:  {deriv.get('futures_taker_ratio', 0):.4f}  flow={deriv.get('futures_flow', 'NEUTRAL')}")
+        fr = deriv.get('funding_rate')
+        if fr is not None:
+            fr_label = "longs pay" if fr > 0 else "shorts pay"
+            print(f"    Funding Rate:   {fr*100:+.4f}%  ({fr_label})")
+        oi_div = deriv.get('oi_price_div', 'NONE')
+        if oi_div != 'NONE':
+            print(f"    ⚡ OI Divergence: {oi_div}")
+
+    # ICS & Signal
+    if 'ics' in result:
+        print(f"\n  ICS: {result['ics']:.3f}  (floor={result['effective_floor']:.3f})")
+
+    status = result['status']
+    if status == 'SIGNAL':
+        print(f"\n  ✅ SIGNAL: {result['direction']}")
+        print(f"    Entry: ${result['entry']:.2f}")
+        print(f"    SL:    ${result['sl']:.2f}  ({result['sl_pct']:.2f}%)")
+        print(f"    TP1:   ${result['tp1']:.2f}  ({result['tp1_pct']:.2f}%)")
+        print(f"    TP2:   ${result['tp2']:.2f}")
+        print(f"    TP3:   ${result['tp3']:.2f}")
+    else:
+        print(f"\n  ⛔ {status}: {result.get('reason', 'N/A')}")
+    print("═" * 60)
+
+
 def main():
     parser = argparse.ArgumentParser(description='JIMI Live Scanner')
     parser.add_argument('--json', action='store_true', help='Output JSON only')
@@ -202,37 +321,7 @@ def main():
     if args.json:
         print(json.dumps(result, indent=2, default=str))
     else:
-        # Pretty print
-        print("\n" + "═" * 60)
-        print("  JIMI — LIVE SIGNAL SCAN")
-        print("═" * 60)
-        print(f"\n  Time:   {result['timestamp']}")
-        print(f"  Price:  ${result['price']:.2f}")
-        print(f"  Bias:   {result['swing_bias']}")
-        print(f"  Phase0: {result.get('phase0', 'N/A')}")
-        print(f"\n  Module Scores:")
-        print(f"    M1 (1H MACD):  {result['m1']['direction']:>8}  score={result['m1']['score']:.2f}")
-        print(f"    M2 (EMA conf): {result['m2']['status']:>8}  score={result['m2']['score']:.2f}")
-        if 'm3' in result:
-            print(f"    M3 (VWAP):     {result['m3']['status']:>8}  score={result['m3']['score']:.2f}")
-        if 'm4' in result:
-            print(f"    M4 (CVD):      {result['m4']['status']:>8}  score={result['m4']['score']:.2f}")
-        if 'm5' in result:
-            print(f"    M5 (LiqtMag):  {result['m5']['status']:>8}  score={result['m5']['score']:.2f}")
-        if 'ics' in result:
-            print(f"\n  ICS: {result['ics']:.3f}  (floor={result['effective_floor']:.3f})")
-
-        status = result['status']
-        if status == 'SIGNAL':
-            print(f"\n  ✅ SIGNAL: {result['direction']}")
-            print(f"    Entry: ${result['entry']:.2f}")
-            print(f"    SL:    ${result['sl']:.2f}  ({result['sl_pct']:.2f}%)")
-            print(f"    TP1:   ${result['tp1']:.2f}  ({result['tp1_pct']:.2f}%)")
-            print(f"    TP2:   ${result['tp2']:.2f}")
-            print(f"    TP3:   ${result['tp3']:.2f}")
-        else:
-            print(f"\n  ⛔ {status}: {result.get('reason', 'N/A')}")
-        print("═" * 60)
+        print_signal(result)
 
 
 if __name__ == '__main__':

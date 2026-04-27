@@ -122,3 +122,30 @@ def check_data_freshness(df_deriv=None, max_age_minutes=20, current_time=None):
 
     details['status'] = 'FRESH'
     return True, age_minutes, details
+
+
+def check_data_continuity(df_deriv, max_gap_minutes=30):
+    """Check for gaps in derivatives data timeline.
+    Returns: (is_continuous: bool, gaps: list)
+    """
+    import pandas as pd
+    if df_deriv is None or len(df_deriv) < 2:
+        return True, []
+
+    if 'timestamp' not in df_deriv.columns:
+        return True, []
+
+    ts = pd.to_datetime(df_deriv['timestamp'])
+    diffs = ts.diff().dt.total_seconds() / 60
+
+    gaps = []
+    for i, diff in enumerate(diffs):
+        if diff > max_gap_minutes:
+            gaps.append({
+                'index': i,
+                'gap_minutes': round(diff, 1),
+                'from': str(ts.iloc[i-1]) if i > 0 else 'N/A',
+                'to': str(ts.iloc[i]),
+            })
+
+    return len(gaps) == 0, gaps

@@ -60,8 +60,14 @@ def print_report(trades, stats):
     tp3_count = len([t for t in trades if t.exit_reason == 'TP3'])
     sl_count = len([t for t in trades if t.exit_reason == 'SL'])
 
+    m4_pass = len([t for t in trades if t.m4_status == 'PASS'])
+    m4_fail = len([t for t in trades if t.m4_status == 'FAIL'])
+    m5_pass = len([t for t in trades if t.m5_status == 'PASS'])
+    m5_fail = len([t for t in trades if t.m5_status == 'FAIL'])
+    m5_avg = np.mean([t.m5_score for t in trades])
+
     print("\n" + "═" * 70)
-    print("  JIMI — BACKTEST RESULTS")
+    print("  JIMI — BACKTEST RESULTS (M1-M12 + Adaptive Direction)")
     print("═" * 70)
 
     print(f"\n  {'Total Trades:':<28} {total}")
@@ -77,6 +83,10 @@ def print_report(trades, stats):
     print(f"\n  Direction Breakdown:")
     print(f"    LONG:  {len(longs)} trades, WR {long_wr:.1f}%")
     print(f"    SHORT: {len(shorts)} trades, WR {short_wr:.1f}%")
+    print(f"\n  M4 CVD Status:")
+    print(f"    PASS: {m4_pass}  |  FAIL: {m4_fail}")
+    print(f"\n  M5 Liquidation Magnet:")
+    print(f"    PASS: {m5_pass}  |  FAIL: {m5_fail}  |  Avg score: {m5_avg:.3f}")
     print(f"\n  Exit Breakdown:")
     print(f"    TP1: {tp1_count} ({tp1_count/total*100:.1f}%)  TP2: {tp2_count} ({tp2_count/total*100:.1f}%)  TP3: {tp3_count} ({tp3_count/total*100:.1f}%)  SL: {sl_count} ({sl_count/total*100:.1f}%)")
     early_count = len([t for t in trades if t.exit_reason == 'EARLY_EXIT'])
@@ -88,8 +98,13 @@ def print_report(trades, stats):
               'ics_blocked', 'ics_ceiling_skip', 'm4_required_skip', 'm4_false_anchored',
               'm5_pass', 'm5_fail', 'cascade_detected', 'dedup_skip', 'filter_blocked',
               'consec_pause', 'rolling_wr_skip', 'bias_gate_skip', 'adaptive_dir_block',
-              'gate_block', 'm2_veto_block', 'm5_hard_block', 'post_crash_block',
-              'veto_hard_block', 'veto_soft_applied', 'entries']:
+              'gate_block', 'gate_m7_block', 'gate_m10_block', 'gate_trend_block',
+              'm2_veto_block', 'm5_hard_block', 'session_asian_block', 'post_crash_block',
+              'veto_hard_block', 'veto_soft_applied', 'data_stale_block',
+              'm9_block', 'm10_pass', 'm10_fail',
+              'm11_pass', 'm11_fail', 'm11_skip',
+              'm12_pass', 'm12_fail', 'm12_skip',
+              'entries']:
         if k in stats and stats[k] > 0:
             print(f"    {k+':':<26} {stats[k]}")
 
@@ -135,9 +150,14 @@ def export_trades(trades, filepath):
 
 
 def export_forensic(trades, filepath):
-    """Export full module state snapshot for every trade."""
+    """Export full module state snapshot for every trade — forensic audit."""
     rows = []
     for t in trades:
+        eth_btc_trend = t.m7_details.get('eth_btc_trend', 'N/A') if isinstance(t.m7_details, dict) else 'N/A'
+        btc_trend = t.m7_details.get('btc_trend', 'N/A') if isinstance(t.m7_details, dict) else 'N/A'
+        btc_atr_pctl = t.m7_details.get('btc_atr_pctl', None) if isinstance(t.m7_details, dict) else None
+        m7_composite = t.m7_details.get('m7_score', None) if isinstance(t.m7_details, dict) else None
+
         rows.append({
             'entry_time': t.entry_time, 'exit_time': t.exit_time,
             'direction': t.direction, 'exit_reason': t.exit_reason,
@@ -150,7 +170,9 @@ def export_forensic(trades, filepath):
             'm3_score': round(t.m3_score, 4),
             'm4_status': t.m4_status, 'm4_score': round(t.m4_score, 4),
             'm5_status': t.m5_status, 'm5_score': round(t.m5_score, 4),
-            'm7_score': round(t.m7_score, 4),
+            'm7_score': round(t.m7_score, 4), 'm7_composite': m7_composite,
+            'eth_btc_trend': eth_btc_trend, 'btc_trend': btc_trend,
+            'btc_atr_pctl': btc_atr_pctl,
             'm8_status': t.m8_status, 'm8_score': round(t.m8_score, 4),
             'm9_status': t.m9_status, 'm9_score': round(t.m9_score, 4),
             'vol_regime': t.vol_regime,

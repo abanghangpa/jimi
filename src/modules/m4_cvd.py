@@ -13,7 +13,7 @@ def calc_cvd_15m(df_15m):
     return delta.rolling(8).sum()
 
 
-def detect_cvd_divergence_15m(df_15m, lookback=36, window=12):
+def detect_cvd_divergence_15m(df_15m, lookback=24, window=12):
     """Detect CVD divergence on 15m bars."""
     cvd = df_15m['cvd_15m'].values
     close = df_15m['Close'].values
