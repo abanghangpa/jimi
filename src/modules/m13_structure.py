@@ -382,6 +382,10 @@ def compute_structure_bias(df_1h, idx_1h, df_15m=None, idx_15m=None):
     details['ob_bullish'] = sum(1 for o in obs if o['type'] == 'BULLISH')
     details['ob_bearish'] = sum(1 for o in obs if o['type'] == 'BEARISH')
 
+    # Export full lists for M5 consumption
+    details['fvgs'] = fvgs
+    details['order_blocks'] = obs
+
     # Nearest OB
     if obs:
         current_price = df_15m['Close'].iloc[idx_15m] if df_15m is not None else df_1h['Close'].iloc[idx_1h]

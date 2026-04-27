@@ -757,7 +757,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         m5_cache_key = idx // 4
         if not hasattr(run_backtest, '_m5_cache') or run_backtest._m5_cache_key != m5_cache_key:
             m5_status, m5_score, m5_details = score_m5(df_15m, idx, direction, cfg,
-                n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
+                n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'],
+                m13_details=m13_details)
             cascade = detect_cascade_setup(df_15m, idx)
             run_backtest._m5_cache = (m5_status, m5_score, m5_details, cascade)
             run_backtest._m5_cache_key = m5_cache_key

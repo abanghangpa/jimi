@@ -1,4 +1,11 @@
-"""M5: Liquidation Magnet — Volume Profile + Cascade Detection."""
+"""M5: Liquidation Magnet — Volume Profile + Cascade + Structural Targets.
+
+Signal taxonomy:
+  - Swing H/L  → Stop liquidity targets (magnets) — where stops cluster
+  - HVNs       → Absorption zones — momentum dies here, use for SL/invalidation
+  - FVGs       → Inefficiency — price reverts to fill these
+  - Order Blocks → Institutional rejection zones — ideal SL placement
+"""
 
 import numpy as np
 import pandas as pd
@@ -29,6 +36,7 @@ def build_volume_profile(highs, lows, closes, volumes, n_bins=50, lookback=672):
 
 
 def find_magnets(bin_centers, vol_profile, n_magnets=5, min_gap_pct=0.005):
+    """Find High Volume Nodes (HVNs) — absorption zones, NOT targets."""
     if vol_profile is None or len(vol_profile) == 0:
         return []
     mean_vol = np.mean(vol_profile)
@@ -51,6 +59,7 @@ def find_magnets(bin_centers, vol_profile, n_magnets=5, min_gap_pct=0.005):
 
 
 def find_gaps(bin_centers, vol_profile, n_gaps=5):
+    """Find Low Volume Nodes (LVNs) — vacuum zones."""
     if vol_profile is None or len(vol_profile) == 0:
         return []
     mean_vol = np.mean(vol_profile)
@@ -63,6 +72,7 @@ def find_gaps(bin_centers, vol_profile, n_gaps=5):
 
 
 def calc_magnetic_pull(current_price, magnets, direction):
+    """HVN pull — kept for backward compatibility. See calc_swing_magnetic_pull for real targets."""
     if not magnets:
         return 0.0, None, None
     relevant = []
@@ -102,6 +112,149 @@ def calc_gap_acceleration(current_price, gaps, direction):
         return 0.0, False
     return max(0, 1.0 - nearest_dist / 0.01), gap_between
 
+
+# ═══════════════════════════════════════════════════════════════
+# STRUCTURAL SIGNALS — Swing, FVG, OB, HVN
+# ═══════════════════════════════════════════════════════════════
+
+def calc_swing_magnetic_pull(current_price, swings, direction):
+    """Calculate magnetic pull toward swing highs/lows (stop liquidity targets).
+
+    Swing H/Ls are where stop-loss clusters accumulate — the real 'magnets'.
+    Unlike HVNs (which are traded zones), swings are structural extremes
+    where breakout stops and protective stops pile up.
+
+    Returns: (pull_score, nearest_target, distance_pct)
+    """
+    if not swings:
+        return 0.0, None, None
+
+    relevant = []
+    for s in swings:
+        price = s['price']
+        if direction == 'LONG' and price > current_price:
+            dist = (price - current_price) / current_price
+            relevant.append((price, dist, s.get('type', 'H')))
+        elif direction == 'SHORT' and price < current_price:
+            dist = (current_price - price) / current_price
+            relevant.append((price, dist, s.get('type', 'L')))
+
+    if not relevant:
+        return 0.0, None, None
+
+    relevant.sort(key=lambda x: x[1])
+    nearest_price, nearest_dist, swing_type = relevant[0]
+
+    dist_factor = max(0, 1.0 - nearest_dist / 0.03)
+    pull = dist_factor * 0.7 + 0.3  # base 0.3 for any valid target
+
+    return min(pull, 1.0), nearest_price, nearest_dist
+
+
+def calc_fvg_reversion_score(current_price, fvgs, direction):
+    """Score reversion potential toward unfilled Fair Value Gaps.
+
+    FVGs are inefficiencies — price tends to revert to fill them.
+    For LONG: bullish FVGs above are targets (price pulls up to fill)
+    For SHORT: bearish FVGs below are targets (price pulls down to fill)
+    """
+    if not fvgs:
+        return 0.0, None, None
+
+    relevant = []
+    for fvg in fvgs:
+        if fvg.get('filled', False):
+            continue
+        mid = fvg['mid']
+        if direction == 'LONG' and mid > current_price:
+            dist = (mid - current_price) / current_price
+            relevant.append((mid, dist, fvg.get('gap_pct', 0)))
+        elif direction == 'SHORT' and mid < current_price:
+            dist = (current_price - mid) / current_price
+            relevant.append((mid, dist, fvg.get('gap_pct', 0)))
+
+    if not relevant:
+        return 0.0, None, None
+
+    relevant.sort(key=lambda x: x[1])
+    nearest_price, nearest_dist, gap_pct = relevant[0]
+
+    dist_factor = max(0, 1.0 - nearest_dist / 0.02)
+    size_factor = min(gap_pct / 0.5, 1.0)
+    score = dist_factor * 0.6 + size_factor * 0.4
+
+    return min(score, 1.0), nearest_price, nearest_dist
+
+
+def calc_ob_sl_zone(current_price, order_blocks, direction):
+    """Evaluate order block proximity for stop-loss placement.
+
+    OBs are institutional rejection zones — ideal SL levels.
+    For LONG: bullish OBs below are support (SL just below OB)
+    For SHORT: bearish OBs above are resistance (SL just above OB)
+    """
+    if not order_blocks:
+        return 0.0, None, None
+
+    relevant = []
+    for ob in order_blocks:
+        ob_type = ob.get('type', '')
+        if direction == 'LONG' and ob_type == 'BULLISH' and ob['top'] < current_price:
+            dist = (current_price - ob['top']) / current_price
+            relevant.append((ob, dist))
+        elif direction == 'SHORT' and ob_type == 'BEARISH' and ob['bottom'] > current_price:
+            dist = (ob['bottom'] - current_price) / current_price
+            relevant.append((ob, dist))
+
+    if not relevant:
+        return 0.0, None, None
+
+    relevant.sort(key=lambda x: x[1])
+    nearest_ob, nearest_dist = relevant[0]
+
+    dist_factor = max(0, 1.0 - nearest_dist / 0.02)
+    strength_factor = min(nearest_ob.get('strength', 1.0) / 3.0, 1.0)
+    score = dist_factor * 0.6 + strength_factor * 0.4
+
+    sl_price = nearest_ob['bottom'] if direction == 'LONG' else nearest_ob['top']
+    return min(score, 1.0), sl_price, nearest_dist
+
+
+def calc_hvn_absorption(current_price, magnets, direction):
+    """Evaluate HVN proximity as absorption/invalidation zones.
+
+    HVNs are high-volume traded zones — price tends to get absorbed here.
+    NOT targets. These are where momentum dies and reversals happen.
+    Used as warnings: if trade enters a HVN, expect resistance.
+    """
+    if not magnets:
+        return 0.0, None
+
+    hazards = []
+    for price, vol, strength in magnets:
+        if direction == 'LONG' and price > current_price:
+            dist = (price - current_price) / current_price
+            hazards.append((price, dist, strength))
+        elif direction == 'SHORT' and price < current_price:
+            dist = (current_price - price) / current_price
+            hazards.append((price, dist, strength))
+
+    if not hazards:
+        return 0.0, None
+
+    hazards.sort(key=lambda x: x[1])
+    nearest_price, nearest_dist, strength = hazards[0]
+
+    dist_factor = max(0, 1.0 - nearest_dist / 0.02)
+    strength_factor = min(strength / 3.0, 1.0)
+    absorption_risk = dist_factor * 0.6 + strength_factor * 0.4
+
+    return min(absorption_risk, 1.0), nearest_price
+
+
+# ═══════════════════════════════════════════════════════════════
+# CASCADE DETECTION
+# ═══════════════════════════════════════════════════════════════
 
 def find_support_resistance(df_15m, idx=None, lookback=672, n_levels=10,
                              bin_pct=0.002, touch_pct=0.004, bounce_pct=0.003,
@@ -256,8 +409,19 @@ def detect_cascade_mode(df_15m, idx, magnets, direction):
     return is_cascade, cascade_dir, cascade_strength, details
 
 
-def score_m5(df_15m, idx, direction, config, n_bins=50, lookback=672):
-    """Score M5: Liquidation Magnet + Cascade."""
+# ═══════════════════════════════════════════════════════════════
+# MAIN SCORING
+# ═══════════════════════════════════════════════════════════════
+
+def score_m5(df_15m, idx, direction, config, n_bins=50, lookback=672, m13_details=None):
+    """Score M5: Structural Targets + Volume Profile + Cascade.
+
+    Signal taxonomy:
+      - Swing H/L  → Stop liquidity targets (magnets)
+      - HVNs       → Absorption zones (SL/invalidation)
+      - FVGs       → Inefficiency / reversion targets
+      - Order Blocks → Institutional rejection (SL placement)
+    """
     if idx < lookback:
         return 'FAIL', 0.0, {'reason': 'insufficient data'}
 
@@ -267,17 +431,48 @@ def score_m5(df_15m, idx, direction, config, n_bins=50, lookback=672):
     volumes = df_15m['Volume'].values.astype(float)
     current_price = closes[idx]
 
+    # ── Volume Profile (for HVN/LVN identification) ──
     bin_centers, vol_profile, bin_edges = build_volume_profile(
         highs[:idx+1], lows[:idx+1], closes[:idx+1], volumes[:idx+1],
         n_bins=n_bins, lookback=lookback)
     if bin_centers is None:
         return 'FAIL', 0.0, {'reason': 'profile build failed'}
 
-    magnets = find_magnets(bin_centers, vol_profile)
-    gaps = find_gaps(bin_centers, vol_profile)
-    pull_score, nearest_magnet, magnet_dist = calc_magnetic_pull(current_price, magnets, direction)
-    accel_score, gap_between = calc_gap_acceleration(current_price, gaps, direction)
+    hvns = find_magnets(bin_centers, vol_profile)  # HVNs = absorption zones
+    lvns = find_gaps(bin_centers, vol_profile)      # LVNs = vacuum zones
 
+    # ── Extract M13 structural data ──
+    swings = []
+    fvgs = []
+    order_blocks = []
+    if m13_details:
+        # Reconstruct swing list from M13 details
+        for item in m13_details.get('swing_highs', []):
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                swings.append({'price': item[0], 'idx': item[1], 'type': 'H'})
+        for item in m13_details.get('swing_lows', []):
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                swings.append({'price': item[0], 'idx': item[1], 'type': 'L'})
+
+        fvgs = m13_details.get('fvgs', [])
+        order_blocks = m13_details.get('order_blocks', [])
+
+    # ── Signal 1: Swing Magnet (stop liquidity targets) ──
+    swing_pull, swing_target, swing_dist = calc_swing_magnetic_pull(
+        current_price, swings, direction)
+
+    # ── Signal 2: FVG Reversion (inefficiency targets) ──
+    fvg_score, fvg_target, fvg_dist = calc_fvg_reversion_score(
+        current_price, fvgs, direction)
+
+    # ── Signal 3: HVN Absorption (risk zones, not targets) ──
+    hvn_risk, hvn_zone = calc_hvn_absorption(current_price, hvns, direction)
+
+    # ── Signal 4: OB SL Zone (institutional levels) ──
+    ob_score, ob_sl, ob_dist = calc_ob_sl_zone(current_price, order_blocks, direction)
+
+    # ── Signal 5: Volume Profile Skew ──
+    accel_score, gap_between = calc_gap_acceleration(current_price, lvns, direction)
     current_bin = np.searchsorted(bin_edges, current_price) - 1
     current_bin = max(0, min(current_bin, len(vol_profile) - 1))
     vol_above = np.sum(vol_profile[current_bin+1:])
@@ -286,32 +481,68 @@ def score_m5(df_15m, idx, direction, config, n_bins=50, lookback=672):
     skew = (vol_above / total_vol if direction == 'LONG' else vol_below / total_vol) if total_vol > 0 else 0.5
     skew_score = min(skew / 0.7, 1.0)
 
+    # ── Signal 6: Cascade Detection ──
     is_cascade, cascade_dir, cascade_strength, cascade_details = detect_cascade_mode(
-        df_15m, idx, magnets, direction)
+        df_15m, idx, hvns, direction)
 
+    # ── Composite Score ──
+    # Swing targets (stop liquidity) = primary magnet
+    # FVG reversion = secondary target
+    # VP skew + accel = flow confirmation
+    # OB proximity = SL quality bonus
+    # HVN absorption = penalty (momentum risk)
+    score = (
+        swing_pull * 0.40 +
+        fvg_score * 0.20 +
+        skew_score * 0.15 +
+        accel_score * 0.15 +
+        ob_score * 0.10
+    )
+
+    # Cascade modifier
     if is_cascade:
         if cascade_dir == 'WITH':
-            cascade_bonus = cascade_strength * 0.4
-            pull_score = min(pull_score + cascade_bonus, 1.0)
+            cascade_bonus = cascade_strength * 0.3
+            score = min(score + cascade_bonus, 1.0)
         elif cascade_dir == 'AGAINST':
-            cascade_penalty = cascade_strength * 0.6
-            pull_score = max(pull_score - cascade_penalty, 0.0)
+            cascade_penalty = cascade_strength * 0.5
+            score = max(score - cascade_penalty, 0.0)
 
-    score = pull_score * 0.5 + accel_score * 0.3 + skew_score * 0.2
+    # HVN absorption penalty: if a strong HVN sits between entry and target
+    if hvn_risk > 0.5:
+        score *= (1.0 - hvn_risk * 0.3)
+
     details = {
-        'magnets': [(round(p, 2), round(s, 2)) for p, _, s in magnets[:3]],
-        'gaps': [round(p, 2) for p, _ in gaps[:3]],
-        'nearest_magnet': round(nearest_magnet, 2) if nearest_magnet else None,
-        'magnet_dist_pct': round(magnet_dist * 100, 3) if magnet_dist else None,
-        'pull_score': round(pull_score, 3),
+        # Swing targets (stop liquidity)
+        'swing_pull': round(swing_pull, 3),
+        'swing_target': round(swing_target, 2) if swing_target else None,
+        'swing_target_dist': round(swing_dist * 100, 3) if swing_dist else None,
+        # FVG reversion
+        'fvg_score': round(fvg_score, 3),
+        'fvg_target': round(fvg_target, 2) if fvg_target else None,
+        'fvg_target_dist': round(fvg_dist * 100, 3) if fvg_dist else None,
+        # HVN absorption (risk, not target)
+        'hvn_risk': round(hvn_risk, 3),
+        'hvn_zone': round(hvn_zone, 2) if hvn_zone else None,
+        # OB SL zone
+        'ob_score': round(ob_score, 3),
+        'ob_sl': round(ob_sl, 2) if ob_sl else None,
+        'ob_dist': round(ob_dist * 100, 3) if ob_dist else None,
+        # Volume profile
         'accel_score': round(accel_score, 3),
         'skew_score': round(skew_score, 3),
         'gap_between': gap_between,
+        # Cascade
         'cascade': is_cascade,
         'cascade_dir': cascade_dir,
         'cascade_strength': round(cascade_strength, 3),
         'cascade_details': cascade_details,
+        # Legacy (VP magnets = HVNs, kept for backward compat)
+        'magnets': [(round(p, 2), round(s, 2)) for p, _, s in hvns[:3]],
+        'nearest_magnet': round(hvn_zone, 2) if hvn_zone else None,
+        'pull_score': round(swing_pull, 3),
     }
+
     return ('PASS', score, details) if score >= config['M5_MIN_SCORE'] else ('FAIL', score, details)
 
 
