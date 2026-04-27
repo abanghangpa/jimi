@@ -26,6 +26,8 @@ from src.modules.m9_volatility import RegimeState, compute_vol_regime, score_vol
 from src.modules.m10_macro import m10_prepare_data, m10_get_row, m10_compute_emas, score_m10_macro
 from src.modules.m11_momentum import score_m11_mtf_momentum
 from src.modules.m12_orderbook import score_m12_orderbook
+from src.modules.m13_structure import score_m13
+from src.modules.direction_resolver import resolve_direction
 from src.modules.adaptive_direction import compute_adaptive_direction
 from src.modules.veto_system import evaluate_vetoes, check_data_freshness
 from src.modules.adaptive_weights import AdaptiveWeights
@@ -43,7 +45,8 @@ class Trade:
                  ics, phase0, reason, m1_score=0.5, m2_score=0.5, m4_score=0.5, m7_score=0.5,
                  m8_score=0.5, m8_status='SKIP', m9_score=0.5, m9_status='SKIP',
                  m10_score=0.5, m10_status='SKIP', m11_score=0.5, m11_status='SKIP',
-                 m12_score=0.5, m12_status='SKIP', vol_regime='NEUTRAL',
+                 m12_score=0.5, m12_status='SKIP', m13_score=0.5, m13_status='SKIP',
+                 vol_regime='NEUTRAL',
                  trend_dir='NEUTRAL', trend_val=0.0, cross_asset_score=0.5,
                  session_name='UNKNOWN', veto_soft_penalty=0.0,
                  gatekeeper_passed=True, m7_details=None):
@@ -78,6 +81,8 @@ class Trade:
         self.m11_status = m11_status
         self.m12_score = m12_score
         self.m12_status = m12_status
+        self.m13_score = m13_score
+        self.m13_status = m13_status
         self.vol_regime = vol_regime
         self.trend_dir = trend_dir
         self.trend_val = trend_val
@@ -128,7 +133,8 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
              use_derivatives=False, use_m7=False, use_m8=False, use_cross_asset=False,
              cascade_dir='NONE', cascade_strength=0.0,
              m9_score=0.5, use_m9=False, m10_score=0.5, use_m10=False,
-             m11_score=0.5, use_m11=False, m12_score=0.5, use_m12=False, config=None):
+             m11_score=0.5, use_m11=False, m12_score=0.5, use_m12=False,
+             m13_score=0.5, use_m13=False, config=None):
     cfg = config or CONFIG
     m4_contrib = m4_score if m4_status == 'PASS' else 0.5
 
@@ -147,6 +153,8 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
         extra_modules.append(('M11', m11_score, cfg.get('M11_WEIGHT', 0.12)))
     if use_m12 and cfg.get('M12_ENABLED', False):
         extra_modules.append(('M12', m12_score, cfg.get('M12_WEIGHT', 0.05)))
+    if use_m13 and cfg.get('M13_ENABLED', False):
+        extra_modules.append(('M13', m13_score, cfg.get('M13_WEIGHT', 0.10)))
 
     if extra_modules:
         extra_w = sum(w for _, _, w in extra_modules)
@@ -238,6 +246,8 @@ def run_gatekeepers(direction, vol_regime, m7_score, m7_status, m7_details,
             return result
 
     # M9 Regime Block — hard block on CRISIS and CHOP_HARD
+    # M9 Regime Block — already handled in Phase 1 before direction resolution
+    # (kept here as safety net for any edge case where regime changes mid-bar)
     if cfg.get('M9_ENABLED', False):
         block_regimes = cfg.get('M9_BLOCK_REGIMES', ['CRISIS'])
         if vol_regime in block_regimes:
@@ -454,6 +464,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'm9_pass', 'm9_fail', 'm9_block',
         'm10_pass', 'm10_fail', 'm11_pass', 'm11_fail', 'm11_skip',
         'm12_pass', 'm12_fail', 'm12_skip',
+        'm13_pass', 'm13_fail', 'm13_skip',
+        'dir_resolved',
         'adaptive_dir_block', 'veto_hard_block', 'veto_hard_m9', 'veto_hard_data',
         'veto_hard_risk', 'veto_hard_dir', 'gate_block', 'gate_m7_block',
         'gate_m10_block', 'gate_trend_block', 'm2_veto_block', 'm5_hard_block',
@@ -610,19 +622,69 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         stats['signals_checked'] += 1
         veto_soft_penalty = 0.0
 
-        # Module Scoring
+        # ═══════════════════════════════════════════════════════════
+        # PHASE 1: REGIME (M9) — What's the market climate?
+        # ═══════════════════════════════════════════════════════════
+        m9_score = 0.5; m9_status = 'SKIP'; vol_regime = 'NEUTRAL'; use_m9 = False
+        m9_details = {}
+        if cfg.get('M9_ENABLED', False):
+            vol_regime, m9_raw, m9_vol_details = compute_vol_regime(
+                df_15m, df_1h, idx, idx_1h, regime_state=regime_state)
+            # Score with neutral direction first (direction not determined yet)
+            m9_status, m9_score, m9_details = score_vol_regime(
+                vol_regime, m9_raw, 'NEUTRAL', trend_dir)
+            use_m9 = True
+
+            # Hard block on CRISIS — skip immediately
+            block_regimes = cfg.get('M9_BLOCK_REGIMES', ['CRISIS'])
+            if vol_regime in block_regimes:
+                stats['m9_block'] += 1
+                continue
+
+        # ═══════════════════════════════════════════════════════════
+        # PHASE 2: DIRECTION (M13) — What's the structural bias?
+        # ═══════════════════════════════════════════════════════════
+        m13_score = 0.5; m13_status = 'SKIP'; m13_details = {}
+        m13_bias = 'NEUTRAL'
+        if cfg.get('M13_ENABLED', True):
+            m13_status, m13_score, m13_details = score_m13(
+                df_1h, idx_1h, 'NEUTRAL', df_15m, idx)
+            m13_bias = m13_details.get('m13_bias', 'NEUTRAL')
+
+        # M7 macro (needed for direction resolver)
+        m7_score = 0.5; m7_status = 'SKIP'; m7_details = {}
+        if cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
+            eb_row, bt_row = m7_get_row(m7_ethbtc_df, m7_btc_df, ts)
+            m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), 'NEUTRAL')
+
+        # ═══════════════════════════════════════════════════════════
+        # PHASE 2c: RESOLVE DIRECTION — Climate + Structure + Macro
+        # ═══════════════════════════════════════════════════════════
+        direction, dir_size_mult, dir_details = resolve_direction(
+            vol_regime, m9_score, m13_bias, m13_score, m13_details,
+            m7_score=m7_score, m7_status=m7_status,
+            swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
+        )
+
+        if direction == 'NEUTRAL':
+            stats['bias_gate_skip'] += 1
+            continue
+
+        # Re-score M9 and M7 with actual direction now that we know it
+        if cfg.get('M9_ENABLED', False):
+            m9_status, m9_score, m9_details = score_vol_regime(
+                vol_regime, m9_raw, direction, trend_dir)
+        if cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
+            m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), direction)
+        if cfg.get('M13_ENABLED', True):
+            m13_status, m13_score, m13_details = score_m13(
+                df_1h, idx_1h, direction, df_15m, idx)
+
+        # M1 + M2 still scored for ICS (not direction source)
         m1_dir, m1_score = score_m1(df_1h, idx_1h, cfg)
         m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
 
-        if m1_dir == 'BULLISH':
-            direction = 'LONG'
-        elif m1_dir == 'BEARISH':
-            direction = 'SHORT'
-        else:
-            stats['m1_neutral_skip'] += 1
-            continue
-
-        # M2 Veto
+        # M2 Veto (still applies)
         if cfg.get('M2_VETO_ENABLED', False):
             m2_veto_thresh = cfg.get('M2_VETO_THRESHOLD', 0.40)
             if direction == 'LONG' and m2_status == 'BEARISH' and m2_score < m2_veto_thresh:
@@ -712,26 +774,16 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         cascade_dir = m5_details.get('cascade_dir', 'NONE') if isinstance(m5_details, dict) else 'NONE'
         cascade_strength = m5_details.get('cascade_strength', 0.0) if isinstance(m5_details, dict) else 0.0
 
-        # M7
-        m7_score = 0.5; m7_status = 'SKIP'; m7_details = {}
-        if cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
-            eb_row, bt_row = m7_get_row(m7_ethbtc_df, m7_btc_df, ts)
-            m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), direction)
+        # M7 already computed above (Phase 2)
 
-        # M8
-        m8_score = 0.5; m8_status = 'SKIP'; use_m8 = False
+        # M10
         if cfg.get('M8_ENABLED', False) and cached_funding_rate is not None:
             m8_status, m8_score, m8_details = score_m8_funding(cached_funding_rate, direction, cfg)
             use_m8 = True
 
-        # M9
-        m9_score = 0.5; m9_status = 'SKIP'; vol_regime = 'NEUTRAL'; use_m9 = False
-        if cfg.get('M9_ENABLED', False):
-            vol_regime, m9_raw, m9_vol_details = compute_vol_regime(df_15m, df_1h, idx, idx_1h, regime_state=regime_state)
-            m9_status, m9_score, m9_details = score_vol_regime(vol_regime, m9_raw, direction, trend_dir)
-            use_m9 = True
-
-        # M10
+        # M9 already computed above (Phase 1)
+        # M7 already computed above (Phase 2)
+        # M13 already computed above (Phase 2)
         m10_score = 0.5; m10_status = 'SKIP'; use_m10 = False
         if cfg.get('M10_ENABLED', False) and m10_data is not None:
             macro_row = m10_get_row(m10_data, ts)
@@ -823,12 +875,14 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             continue
 
         # ICS
+        use_m13 = cfg.get('M13_ENABLED', False)
         ics, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
                                         m7_score=m7_score, m8_score=m8_score, cross_asset_score=cross_asset_score,
                                         use_m7=use_m7, use_m8=use_m8, use_cross_asset=use_cross_asset,
                                         cascade_dir=cascade_dir, cascade_strength=cascade_strength,
                                         m9_score=m9_score, use_m9=use_m9, m10_score=m10_score, use_m10=use_m10,
-                                        m11_score=m11_score, use_m11=use_m11, m12_score=m12_score, use_m12=use_m12, config=cfg)
+                                        m11_score=m11_score, use_m11=use_m11, m12_score=m12_score, use_m12=use_m12,
+                                        m13_score=m13_score, use_m13=use_m13, config=cfg)
         ics += gatekeeper.ics_boost
 
         # Session
@@ -911,6 +965,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         is_transition = abs(trend_val) < transition_range
 
         size = cfg.get('SIZE_LONG', cfg['SIZE_STD']) if direction == 'LONG' else cfg['SIZE_STD']
+        # Direction resolver regime-based size multiplier (primary sizing factor)
+        size *= dir_size_mult
         if m2_status == 'NEUTRAL':
             size *= cfg['SIZE_M2_NEUTRAL']
         if phase0_val >= 0.40:
@@ -978,11 +1034,12 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         trade = Trade(ts, direction, entry_price, sl, tp1, tp2, tp3, size,
                       m1_dir, m2_status, m3_score, m4_status, m5_status, m5_score,
                       ics, phase0_val,
-                      f"M1={m1_dir} M2={m2_status} M3={m3_status} M4={m4_status} M5={m5_status} M7={m7_status}({m7_score:.2f}) ICS={ics:.3f}",
+                      f"M9={vol_regime} M13={m13_bias} M1={m1_dir} M2={m2_status} M3={m3_status} M4={m4_status} M5={m5_status} ICS={ics:.3f}",
                       m1_score=m1_score, m2_score=m2_score, m4_score=m4_score, m7_score=m7_score,
                       m8_score=m8_score, m8_status=m8_status, m9_score=m9_score, m9_status=m9_status,
                       m10_score=m10_score, m10_status=m10_status, m11_score=m11_score, m11_status=m11_status,
                       m12_score=m12_score, m12_status=m12_status,
+                      m13_score=m13_score, m13_status=m13_status,
                       vol_regime=vol_regime, trend_dir=trend_dir, trend_val=trend_val,
                       cross_asset_score=cross_asset_score, session_name=session_name,
                       veto_soft_penalty=veto_soft_penalty, gatekeeper_passed=gatekeeper.passed,
