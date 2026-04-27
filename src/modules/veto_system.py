@@ -60,11 +60,13 @@ def evaluate_vetoes(
 
     if vol_regime == 'CRISIS' and config.get('VETO_CRISIS_HARD', True):
         result.add_hard_veto('M9', 'crisis_regime')
-    elif vol_regime == 'CHOP':
-        if config.get('VETO_CHOP_HARD', False):
-            result.add_hard_veto('M9', 'chop_regime_hard')
+    elif vol_regime == 'CHOP_HARD':
+        result.add_hard_veto('M9', 'chop_hard_regime')
+    elif vol_regime == 'CHOP_MILD':
+        if config.get('VETO_CHOP_MILD_HARD', False):
+            result.add_hard_veto('M9', 'chop_mild_regime_hard')
         else:
-            result.add_soft_veto('M9', 'chop_regime', penalty=0.08)
+            result.add_soft_veto('M9', 'chop_mild_regime', penalty=0.10)
 
     if monthly_dd_hit and config.get('VETO_MONTHLY_DD_HARD', True):
         result.add_hard_veto('RISK', 'monthly_dd_circuit_breaker')

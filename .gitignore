@@ -24,3 +24,6 @@ config/secrets.env
 # OS
 .DS_Store
 Thumbs.db
+
+jimi_trades.csv
+direction_optimization.json

@@ -237,6 +237,13 @@ def run_gatekeepers(direction, vol_regime, m7_score, m7_status, m7_details,
             result.block('M10', f'M10 {m10_score:.3f} strongly bullish')
             return result
 
+    # M9 Regime Block — hard block on CRISIS and CHOP_HARD
+    if cfg.get('M9_ENABLED', False):
+        block_regimes = cfg.get('M9_BLOCK_REGIMES', ['CRISIS'])
+        if vol_regime in block_regimes:
+            result.block('M9', f'regime={vol_regime}')
+            return result
+
     if cfg.get('TREND_FILTER_ENABLED', False):
         if direction == 'LONG' and trend_dir == 'STRONG_DOWN':
             result.block('TREND', 'STRONG_DOWN vs LONG')
@@ -920,10 +927,12 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             elif m7_score < 0.45:
                 size *= cfg.get('M7_SIZE_MILD', 0.85)
         if cfg.get('M9_ENABLED', False):
-            if vol_regime == 'CHOP':
-                size *= cfg.get('M9_SIZE_CHOP', 0.60)
+            if vol_regime == 'CHOP_HARD':
+                size *= cfg.get('M9_SIZE_CHOP_HARD', 0.0)  # blocked
+            elif vol_regime == 'CHOP_MILD':
+                size *= cfg.get('M9_SIZE_CHOP_MILD', 0.55)
             elif vol_regime == 'COMPRESSING':
-                size *= cfg.get('M9_SIZE_COMPRESSING', 0.80)
+                size *= cfg.get('M9_SIZE_COMPRESSING', 0.85)
         if adaptive_tracker is not None:
             size *= adaptive_tracker.size_multiplier(direction, m1_dir, m2_status, m3_score, m4_status, m5_status)
         if size < 0.01:
