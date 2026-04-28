@@ -85,15 +85,23 @@ def classify_swing_sequence(swings, min_swings=4):
 
     Uses the last N swing points to determine the dominant pattern.
     """
-    if len(swings) < min_swings:
-        return 'NEUTRAL', 0.0, {}
-
-    # Separate highs and lows
     swing_highs = [s for s in swings if s['type'] == 'H']
     swing_lows = [s for s in swings if s['type'] == 'L']
 
+    # Always export available swings for downstream modules (M14, wick reclaim)
+    recent_highs = swing_highs[-3:] if len(swing_highs) >= 3 else swing_highs[-2:]
+    recent_lows = swing_lows[-3:] if len(swing_lows) >= 3 else swing_lows[-2:]
+
+    base_details = {
+        'swing_highs': [(s['price'], s['idx']) for s in recent_highs[-3:]],
+        'swing_lows': [(s['price'], s['idx']) for s in recent_lows[-3:]],
+    }
+
+    if len(swings) < min_swings:
+        return 'NEUTRAL', 0.0, base_details
+
     if len(swing_highs) < 2 or len(swing_lows) < 2:
-        return 'NEUTRAL', 0.0, {}
+        return 'NEUTRAL', 0.0, base_details
 
     # Check last 3 swing highs: are they ascending or descending?
     recent_highs = swing_highs[-3:] if len(swing_highs) >= 3 else swing_highs[-2:]
@@ -119,7 +127,7 @@ def classify_swing_sequence(swings, min_swings=4):
 
     total_pairs = (len(recent_highs) - 1) + (len(recent_lows) - 1)
     if total_pairs == 0:
-        return 'NEUTRAL', 0.0, {}
+        return 'NEUTRAL', 0.0, base_details
 
     # Classify
     bull_score = (hh_count + hl_count) / total_pairs
@@ -338,6 +346,11 @@ def compute_structure_bias(df_1h, idx_1h, df_15m=None, idx_15m=None):
     details['swing_confidence'] = swing_confidence
     details['swing_count'] = len(swings_1h)
     details.update({f'swing_{k}': v for k, v in swing_details.items()})
+    # Export swing levels without prefix for downstream modules (M14, wick reclaim)
+    if 'swing_highs' in swing_details:
+        details['swing_highs'] = swing_details['swing_highs']
+    if 'swing_lows' in swing_details:
+        details['swing_lows'] = swing_details['swing_lows']
 
     # ── 2. Swing Structure on 15m (execution TF) ──
     swing_bias_15m = 'NEUTRAL'

@@ -672,10 +672,19 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         _chop_regimes = ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD')
         _m13_defer_in_chop = cfg.get('M13_DEFER_IN_CHOP', True)
         _in_chop = _m13_defer_in_chop and vol_regime in _chop_regimes
-        if cfg.get('M13_ENABLED', True) and not _in_chop:
-            m13_status, m13_score, m13_details = score_m13(
+        if cfg.get('M13_ENABLED', True):
+            # Always compute structural data (swing levels, FVGs, OBs)
+            # so M14 and wick reclaim have access even during chop.
+            # Directional bias and ICS score are suppressed during chop
+            # (M13 is anti-predictive when it agrees with M9 during chop).
+            _m13_status, _m13_score_raw, m13_details = score_m13(
                 df_1h, idx_1h, 'NEUTRAL', df_15m, idx)
-            m13_bias = m13_details.get('m13_bias', 'NEUTRAL')
+            if not _in_chop:
+                m13_status = _m13_status
+                m13_score = _m13_score_raw
+                m13_bias = m13_details.get('m13_bias', 'NEUTRAL')
+            # else: m13_score stays 0.5, m13_bias stays NEUTRAL
+            # but m13_details has swing levels for M14/wick reclaim
 
         # M7 macro (needed for direction resolver)
         m7_score = 0.5; m7_status = 'SKIP'; m7_details = {}
@@ -702,9 +711,14 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 vol_regime, m9_raw, direction, trend_dir)
         if cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
             m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), direction)
-        if cfg.get('M13_ENABLED', True) and not _in_chop:
-            m13_status, m13_score, m13_details = score_m13(
+        if cfg.get('M13_ENABLED', True):
+            _m13_status2, _m13_score2, m13_details = score_m13(
                 df_1h, idx_1h, direction, df_15m, idx)
+            if not _in_chop:
+                m13_status = _m13_status2
+                m13_score = _m13_score2
+            # During chop: keep m13_score at 0.5 for ICS, but m13_details
+            # is updated with direction-aware swing levels for M14
 
         # M1 + M2 still scored for ICS (not direction source)
         m1_dir, m1_score = score_m1(df_1h, idx_1h, cfg)
@@ -835,12 +849,17 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         m14_score = 0.5; m14_status = 'SKIP'; m14_details = {}; use_m14 = False
         if cfg.get('M14_ENABLED', True):
             _swing_levels = m13_details.get('swing_lows', []) if direction == 'LONG' else m13_details.get('swing_highs', [])
-            if not _in_chop and _swing_levels:
+            if _swing_levels:
                 m14_status, m14_score, m14_details = score_m14(
                     df_15m, idx, direction, _swing_levels, config=cfg)
-                use_m14 = True
-            elif _in_chop:
-                m14_status, m14_score, m14_details = 'SKIP', 0.5, {'reason': 'deferred_in_chop'}
+                if m14_status == 'PASS':
+                    # Sweep detected + reclaimed → boost ICS
+                    use_m14 = True
+                elif m14_status == 'FAIL':
+                    # Sweep detected but price sliced through → block entry
+                    stats['m14_fail'] += 1
+                    continue
+                # SKIP (no sweep detected) → invisible, don't affect ICS
 
         # Veto System
         if cfg.get('VETO_ENABLED', False):

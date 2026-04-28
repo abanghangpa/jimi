@@ -288,11 +288,14 @@ def score_m14(df_15m, idx, direction, swing_levels, config=None):
         return 'PASS', cfg['M14_WEAK_SCORE'], details
 
     else:
-        # No reclaim — check if it sliced through
-        if sweep_details.get('reclaimed_same_bar') is False:
-            # Price swept and didn't reclaim — slice through
+        # No reclaim after sweep — sweep happened but conviction missing
+        # This is a warning: institutional stop-hunt without follow-through
+        if sweep_details.get('reclaimed_same_bar'):
+            # Sweep bar itself closed on correct side (wick rejection)
+            # but subsequent bars didn't confirm — weak signal
+            details['signal'] = 'NO_RECLAIM'
+            return 'FAIL', cfg['M14_SLICE_PENALTY'], details
+        else:
+            # Price swept through without any reaction — pure stop-hunt
             details['signal'] = 'SLICE_THROUGH'
             return 'FAIL', cfg['M14_SLICE_PENALTY'], details
-
-        details['signal'] = 'NO_RECLAIM'
-        return 'SKIP', cfg['M14_NO_SWEEP_SCORE'], details
