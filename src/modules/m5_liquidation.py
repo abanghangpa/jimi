@@ -512,7 +512,16 @@ def score_m5(df_15m, idx, direction, config, n_bins=50, lookback=672, m13_detail
     if hvn_risk > 0.5:
         score *= (1.0 - hvn_risk * 0.3)
 
+    # ── Inversion ──
+    # Calibration across 2017-2026 shows M5 score is anti-predictive:
+    # the 0.3-0.5 bucket consistently outperforms 0.6+. High raw scores
+    # indicate price is near structural targets (already moved), not that
+    # a good setup exists. Invert so low raw → high normalized score.
+    inverted_score = 1.0 - score
+
     details = {
+        # Raw (pre-inversion) for diagnostics
+        'raw_score': round(score, 3),
         # Swing targets (stop liquidity)
         'swing_pull': round(swing_pull, 3),
         'swing_target': round(swing_target, 2) if swing_target else None,
@@ -543,7 +552,7 @@ def score_m5(df_15m, idx, direction, config, n_bins=50, lookback=672, m13_detail
         'pull_score': round(swing_pull, 3),
     }
 
-    return ('PASS', score, details) if score >= config['M5_MIN_SCORE'] else ('FAIL', score, details)
+    return ('PASS', inverted_score, details) if inverted_score >= config['M5_MIN_SCORE'] else ('FAIL', inverted_score, details)
 
 
 def detect_cascade_setup(df_15m, idx, lookback=96):
