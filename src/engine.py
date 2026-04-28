@@ -33,6 +33,7 @@ from src.modules.veto_system import evaluate_vetoes, check_data_freshness
 from src.modules.adaptive_weights import AdaptiveWeights
 from src.modules.cross_asset import score_cross_asset
 from src.modules.session import get_session
+from src.modules.coherence_liquidity import check_coherence, compute_liquidity_aware_tp, compute_stop_risk
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -49,7 +50,8 @@ class Trade:
                  vol_regime='NEUTRAL',
                  trend_dir='NEUTRAL', trend_val=0.0, cross_asset_score=0.5,
                  session_name='UNKNOWN', veto_soft_penalty=0.0,
-                 gatekeeper_passed=True, m7_details=None):
+                 gatekeeper_passed=True, m7_details=None,
+                 tp1_close_frac=None, tp2_close_frac=None):
         self.entry_time = entry_time
         self.direction = direction
         self.entry_price = entry_price
@@ -57,6 +59,8 @@ class Trade:
         self.tp1 = tp1
         self.tp2 = tp2
         self.tp3 = tp3
+        self.tp1_close_frac = tp1_close_frac  # liquidity-adjusted
+        self.tp2_close_frac = tp2_close_frac  # liquidity-adjusted
         self.size_pct = size_pct
         self.m1_dir = m1_dir
         self.m2_status = m2_status
@@ -470,6 +474,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'veto_hard_risk', 'veto_hard_dir', 'gate_block', 'gate_m7_block',
         'gate_m10_block', 'gate_trend_block', 'm2_veto_block', 'm5_hard_block',
         'session_asian_block', 'post_crash_block', 'veto_soft_applied', 'data_stale_block',
+        'coherence_block', 'coherence_penalty',
     ]}
 
     adaptive_tracker = None
@@ -539,10 +544,14 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
             if trade.tp1_hit and not trade.tp2_hit:
                 if trade.direction == 'LONG' and high >= trade.tp2:
-                    frac = cfg['TP2_CLOSE'] / (1 - cfg['TP1_CLOSE'])
+                    _tp2_frac = trade.tp2_close_frac if trade.tp2_close_frac is not None else cfg['TP2_CLOSE']
+                    _tp1_frac = trade.tp1_close_frac if trade.tp1_close_frac is not None else cfg['TP1_CLOSE']
+                    frac = _tp2_frac / (1 - _tp1_frac)
                     trade.close(trade.tp2, ts, 'TP2', frac); trade.tp2_hit = True; trade.update_sl_trail(); stats['exits_tp2'] += 1
                 elif trade.direction == 'SHORT' and low <= trade.tp2:
-                    frac = cfg['TP2_CLOSE'] / (1 - cfg['TP1_CLOSE'])
+                    _tp2_frac = trade.tp2_close_frac if trade.tp2_close_frac is not None else cfg['TP2_CLOSE']
+                    _tp1_frac = trade.tp1_close_frac if trade.tp1_close_frac is not None else cfg['TP1_CLOSE']
+                    frac = _tp2_frac / (1 - _tp1_frac)
                     trade.close(trade.tp2, ts, 'TP2', frac); trade.tp2_hit = True; trade.update_sl_trail(); stats['exits_tp2'] += 1
 
             if not trade.tp1_hit:
@@ -551,7 +560,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 elif is_shoulder:
                     tp1_close_frac = cfg.get('SHOULDER_TP1_CLOSE', cfg['TP1_CLOSE'])
                 else:
-                    tp1_close_frac = cfg['TP1_CLOSE']
+                    tp1_close_frac = trade.tp1_close_frac if trade.tp1_close_frac is not None else cfg['TP1_CLOSE']
                 if trade.direction == 'LONG' and high >= trade.tp1:
                     trade.close(trade.tp1, ts, 'TP1', tp1_close_frac); trade.tp1_hit = True; trade.update_sl_trail(); stats['exits_tp1'] += 1
                 elif trade.direction == 'SHORT' and low <= trade.tp1:
@@ -1002,6 +1011,24 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         if size < 0.01:
             continue
 
+        # ═══════════════════════════════════════════════════════════
+        # COHERENCE CHECK — do module states tell a consistent story?
+        # ═══════════════════════════════════════════════════════════
+        if cfg.get('COHERENCE_CHECK_ENABLED', True):
+            m4_div_for_check = m4_div if 'm4_div' in dir() else 'NONE'
+            is_coherent, coherence_conflicts, coherence_penalty = check_coherence(
+                direction, m4_div_for_check, m5_details if isinstance(m5_details, dict) else {},
+                m13_bias if not _in_chop else 'NEUTRAL', vol_regime,
+                m7_score=m7_score, m2_status=m2_status, config=cfg,
+            )
+            if not is_coherent:
+                stats['coherence_block'] += 1
+                continue
+            if coherence_penalty > 0:
+                stats['coherence_penalty'] += 1
+        else:
+            coherence_penalty = 0.0
+
         # Entry
         entry_price = row['Close']
         atr_for_sl = atr_1h if not pd.isna(atr_1h) else row['atr']
@@ -1039,6 +1066,50 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         else:
             sl, tp1, tp2, tp3 = entry_price + sl_dist, entry_price - tp1_dist, entry_price - tp2_dist, entry_price - tp3_dist
 
+        # ═══════════════════════════════════════════════════════════
+        # LIQUIDITY-AWARE TP — adjust TP fractions based on volume terrain
+        # ═══════════════════════════════════════════════════════════
+        if cfg.get('LIQUIDITY_TP_ENABLED', True):
+            # Cache volume profile alongside M5 (same cadence)
+            vp_cache_key = idx // 4
+            if not hasattr(run_backtest, '_vp_cache') or run_backtest._vp_cache_key != vp_cache_key:
+                _highs = df_15m['High'].values.astype(float)
+                _lows = df_15m['Low'].values.astype(float)
+                _closes = df_15m['Close'].values.astype(float)
+                _volumes = df_15m['Volume'].values.astype(float)
+                from src.modules.m5_liquidation import build_volume_profile
+                _vp_centers, _vp_profile, _vp_edges = build_volume_profile(
+                    _highs[:idx+1], _lows[:idx+1], _closes[:idx+1], _volumes[:idx+1],
+                    n_bins=cfg.get('M5_VP_BINS', 50), lookback=cfg.get('M5_VP_LOOKBACK', 672))
+                run_backtest._vp_cache = (_vp_centers, _vp_profile)
+                run_backtest._vp_cache_key = vp_cache_key
+            else:
+                _vp_centers, _vp_profile = run_backtest._vp_cache
+
+            liq_tp = compute_liquidity_aware_tp(
+                entry_price, tp1, tp2, tp3, direction,
+                _vp_centers, _vp_profile, config=cfg)
+
+            stop_risk = compute_stop_risk(
+                entry_price, sl, direction,
+                _vp_centers, _vp_profile, config=cfg)
+
+            # Apply adjusted TP fractions
+            tp1_close_frac = liq_tp['tp1_close_frac']
+            tp2_close_frac = liq_tp['tp2_close_frac']
+
+            # Tighten stop if liquidity grab risk detected
+            if stop_risk['has_stop_risk'] and cfg.get('STOP_RISK_TIGHTEN', True):
+                tighten_factor = cfg.get('STOP_RISK_TIGHTEN_FACTOR', 0.85)
+                sl_dist_tightened = sl_dist * tighten_factor
+                if direction == 'LONG':
+                    sl = entry_price - sl_dist_tightened
+                else:
+                    sl = entry_price + sl_dist_tightened
+        else:
+            tp1_close_frac = cfg['TP1_CLOSE']
+            tp2_close_frac = cfg['TP2_CLOSE']
+
         trade = Trade(ts, direction, entry_price, sl, tp1, tp2, tp3, size,
                       m1_dir, m2_status, m3_score, m4_status, m5_status, m5_score,
                       ics, phase0_val,
@@ -1051,7 +1122,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                       vol_regime=vol_regime, trend_dir=trend_dir, trend_val=trend_val,
                       cross_asset_score=cross_asset_score, session_name=session_name,
                       veto_soft_penalty=veto_soft_penalty, gatekeeper_passed=gatekeeper.passed,
-                      m7_details=m7_details)
+                      m7_details=m7_details,
+                      tp1_close_frac=tp1_close_frac, tp2_close_frac=tp2_close_frac)
         open_trades.append(trade); trades.append(trade)
         daily_trades[today] += 1; stats['entries'] += 1
         last_entry_bar = idx
