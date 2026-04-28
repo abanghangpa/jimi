@@ -78,10 +78,14 @@ def regime_module_cross_analysis(trades):
     Cross-tab: Regime × Module Confluence combinations.
     Answers: "In NEUTRAL regime, when M4>0.6 and M5>0.6, what's the WR?"
     """
-    # Define the regime groups (collapse CHOP variants)
+    # Define the regime groups (keep bull/bear chop separate, collapse mild variants)
     def regime_group(regime):
-        if regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD'):
-            return 'CHOP'
+        if regime in ('CHOP_MILD_BEAR', 'CHOP_HARD'):
+            return 'CHOP_BEAR'
+        if regime in ('CHOP_MILD_BULL',):
+            return 'CHOP_BULL'
+        if regime == 'CHOP_MILD':
+            return 'CHOP_MILD'
         return regime
 
     # Define confluence conditions to test per regime
