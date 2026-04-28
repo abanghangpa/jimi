@@ -33,6 +33,7 @@ from src.modules.veto_system import evaluate_vetoes, check_data_freshness
 from src.modules.adaptive_weights import AdaptiveWeights
 from src.modules.cross_asset import score_cross_asset
 from src.modules.session import get_session
+from src.modules.phase_diagnostics import PhaseDiagnostics
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -472,6 +473,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'session_asian_block', 'post_crash_block', 'veto_soft_applied', 'data_stale_block',
     ]}
 
+    # ── Phase Diagnostics ──
+    phase_diag = PhaseDiagnostics()
+
     adaptive_tracker = None
     if cfg.get('ADAPTIVE_WEIGHTS_ENABLED', False):
         adaptive_tracker = AdaptiveWeights(
@@ -564,6 +568,14 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         open_trades = [t for t in open_trades if t.is_open]
 
+        # Backfill trade outcomes into diagnostics
+        for t in trades:
+            if t.exit_time is not None and t.exit_time == ts:
+                phase_diag.log_trade_outcome(
+                    ts, t.direction, t.entry_time, t.pnl_pct,
+                    t.vol_regime, getattr(t, 'm13_score', 0)
+                )
+
         # Risk checks
         today = ts.date()
         if today not in daily_trades:
@@ -638,6 +650,28 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             # Hard block on CRISIS — skip immediately
             block_regimes = cfg.get('M9_BLOCK_REGIMES', ['CRISIS'])
             if vol_regime in block_regimes:
+                phase_diag.log({
+                    'timestamp': ts, 'bar_index': idx,
+                    'm9_regime': vol_regime, 'm9_score': m9_score,
+                    'm9_raw_regime': m9_vol_details.get('raw_regime'),
+                    'm9_is_transition': m9_vol_details.get('is_transition'),
+                    'm9_regime_strength': m9_vol_details.get('regime_strength'),
+                    'm9_atr_pctl': m9_vol_details.get('atr_pctl'),
+                    'm9_bb_pctl': m9_vol_details.get('bb_pctl'),
+                    'm9_directionality': m9_vol_details.get('directionality'),
+                    'm9_whipsaw_rate': m9_vol_details.get('whipsaw_rate'),
+                    'm9_retrace_ratio': m9_vol_details.get('retrace_ratio'),
+                    'm9_volume_confirm': m9_vol_details.get('volume_confirm'),
+                    'm9_range_tight': m9_vol_details.get('range_tight'),
+                    'm9_tf_coherence': m9_vol_details.get('tf_coherence'),
+                    'm9_chop_score': m9_vol_details.get('chop_score'),
+                    'm9_trend_score': m9_vol_details.get('trend_score'),
+                    'block_reason': f'm9_regime_{vol_regime}',
+                    'block_module': 'M9',
+                    'swing_bias_1d': swing_bias,
+                    'trend_dir': trend_dir, 'trend_val': trend_val,
+                    'phase0': phase0_val,
+                })
                 stats['m9_block'] += 1
                 continue
 
@@ -667,6 +701,43 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         )
 
         if direction == 'NEUTRAL':
+            phase_diag.log({
+                'timestamp': ts, 'bar_index': idx,
+                'm9_regime': vol_regime, 'm9_score': m9_score,
+                'm9_raw_regime': m9_vol_details.get('raw_regime'),
+                'm9_is_transition': m9_vol_details.get('is_transition'),
+                'm9_regime_strength': m9_vol_details.get('regime_strength'),
+                'm9_atr_pctl': m9_vol_details.get('atr_pctl'),
+                'm9_bb_pctl': m9_vol_details.get('bb_pctl'),
+                'm9_directionality': m9_vol_details.get('directionality'),
+                'm9_whipsaw_rate': m9_vol_details.get('whipsaw_rate'),
+                'm9_retrace_ratio': m9_vol_details.get('retrace_ratio'),
+                'm9_volume_confirm': m9_vol_details.get('volume_confirm'),
+                'm9_range_tight': m9_vol_details.get('range_tight'),
+                'm9_tf_coherence': m9_vol_details.get('tf_coherence'),
+                'm9_chop_score': m9_vol_details.get('chop_score'),
+                'm9_trend_score': m9_vol_details.get('trend_score'),
+                'm13_bias': m13_bias, 'm13_score': m13_score,
+                'm13_swing_bias_1h': m13_details.get('swing_bias'),
+                'm13_swing_bias_15m': m13_details.get('swing_bias_15m'),
+                'm13_swing_confidence': m13_details.get('swing_confidence'),
+                'm13_fvg_count': m13_details.get('fvg_count'),
+                'm13_ob_count': m13_details.get('ob_count'),
+                'm13_bull_points': m13_details.get('bull_points'),
+                'm13_bear_points': m13_details.get('bear_points'),
+                'm7_score': m7_score, 'm7_status': m7_status,
+                'm7_eth_btc_trend': m7_details.get('eth_btc_trend'),
+                'm7_btc_trend': m7_details.get('btc_trend'),
+                'm7_btc_atr_pctl': m7_details.get('btc_atr_pctl'),
+                'direction': 'NEUTRAL',
+                'dir_action': dir_details.get('action'),
+                'dir_reason': dir_details.get('reason'),
+                'block_reason': 'no_direction',
+                'block_module': 'DIRECTION_RESOLVER',
+                'swing_bias_1d': swing_bias,
+                'trend_dir': trend_dir, 'trend_val': trend_val,
+                'phase0': phase0_val,
+            })
             stats['bias_gate_skip'] += 1
             continue
 
@@ -1032,6 +1103,54 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         else:
             sl, tp1, tp2, tp3 = entry_price + sl_dist, entry_price - tp1_dist, entry_price - tp2_dist, entry_price - tp3_dist
 
+        # ── Phase 1+2 Diagnostic Log (tradeable bar) ──
+        phase_diag.log({
+            'timestamp': ts, 'bar_index': idx,
+            'm9_regime': vol_regime, 'm9_score': m9_score,
+            'm9_raw_regime': m9_vol_details.get('raw_regime'),
+            'm9_is_transition': m9_vol_details.get('is_transition'),
+            'm9_regime_strength': m9_vol_details.get('regime_strength'),
+            'm9_atr_pctl': m9_vol_details.get('atr_pctl'),
+            'm9_bb_pctl': m9_vol_details.get('bb_pctl'),
+            'm9_directionality': m9_vol_details.get('directionality'),
+            'm9_whipsaw_rate': m9_vol_details.get('whipsaw_rate'),
+            'm9_retrace_ratio': m9_vol_details.get('retrace_ratio'),
+            'm9_volume_confirm': m9_vol_details.get('volume_confirm'),
+            'm9_range_tight': m9_vol_details.get('range_tight'),
+            'm9_tf_coherence': m9_vol_details.get('tf_coherence'),
+            'm9_chop_score': m9_vol_details.get('chop_score'),
+            'm9_trend_score': m9_vol_details.get('trend_score'),
+            'm13_bias': m13_bias, 'm13_score': m13_score,
+            'm13_swing_bias_1h': m13_details.get('swing_bias'),
+            'm13_swing_bias_15m': m13_details.get('swing_bias_15m'),
+            'm13_swing_confidence': m13_details.get('swing_confidence'),
+            'm13_fvg_count': m13_details.get('fvg_count'),
+            'm13_ob_count': m13_details.get('ob_count'),
+            'm13_bull_points': m13_details.get('bull_points'),
+            'm13_bear_points': m13_details.get('bear_points'),
+            'm7_score': m7_score, 'm7_status': m7_status,
+            'm7_eth_btc_trend': m7_details.get('eth_btc_trend'),
+            'm7_btc_trend': m7_details.get('btc_trend'),
+            'm7_btc_atr_pctl': m7_details.get('btc_atr_pctl'),
+            'direction': direction,
+            'dir_size_mult': dir_size_mult,
+            'dir_action': dir_details.get('action'),
+            'dir_reason': dir_details.get('reason'),
+            'dir_m7_direction': dir_details.get('m7_direction'),
+            'dir_daily_swing': dir_details.get('daily_swing'),
+            'dir_trend_dir': dir_details.get('trend_dir'),
+            'dir_m7_penalty': dir_details.get('m7_conflict_penalty'),
+            'dir_m7_bonus': dir_details.get('m7_agree_bonus'),
+            'dir_daily_penalty': dir_details.get('daily_conflict_penalty'),
+            'dir_daily_bonus': dir_details.get('daily_agree_bonus'),
+            'dir_trend_penalty': dir_details.get('trend_conflict_penalty'),
+            'dir_trend_bonus': dir_details.get('trend_agree_bonus'),
+            'dir_trending_structure_bonus': dir_details.get('trending_structure_bonus'),
+            'swing_bias_1d': swing_bias,
+            'trend_dir': trend_dir, 'trend_val': trend_val,
+            'phase0': phase0_val,
+        })
+
         trade = Trade(ts, direction, entry_price, sl, tp1, tp2, tp3, size,
                       m1_dir, m2_status, m3_score, m4_status, m5_status, m5_score,
                       ics, phase0_val,
@@ -1067,4 +1186,4 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
     print("\n[7/7] Computing results...")
     if adaptive_tracker is not None:
         print(adaptive_tracker.summary())
-    return trades, stats, df_15m
+    return trades, stats, df_15m, phase_diag

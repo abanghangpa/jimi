@@ -239,6 +239,7 @@ def main():
     parser.add_argument('--export', default='jimi_trades.csv', help='Trade log output path')
     parser.add_argument('--forensic', help='Forensic audit output path')
     parser.add_argument('--fetch', action='store_true', help='Fetch data from exchange first')
+    parser.add_argument('--diagnostic', help='Phase diagnostics output CSV path')
     parser.add_argument('--symbol', default='ETH/USDT', help='Trading pair')
     parser.add_argument('--timeframe', default='15m', help='Timeframe')
     args = parser.parse_args()
@@ -262,14 +263,18 @@ def main():
         print(f"ERROR: File not found: {csv_path}")
         sys.exit(1)
 
-    trades, stats, df = run_backtest(csv_path, config=cfg, verbose=args.verbose,
-                                      date_start=args.start, date_end=args.end)
+    trades, stats, df, phase_diag = run_backtest(csv_path, config=cfg, verbose=args.verbose,
+                                                  date_start=args.start, date_end=args.end)
     result = print_report(trades, stats)
 
     if trades:
         export_trades(trades, args.export)
     if args.forensic and trades:
         export_forensic(trades, args.forensic)
+
+    if args.diagnostic and phase_diag:
+        phase_diag.export_csv(args.diagnostic)
+        phase_diag.export_summary(args.diagnostic.replace('.csv', '_summary.json'))
 
     print("\nDone.")
 
