@@ -11,7 +11,7 @@ from src.utils.indicators import (
     calc_ema, calc_macd, calc_rsi, calc_atr, calc_vwap, calc_vol_ratio,
     calc_swing_bias, calc_phase0, calc_trend_state, compute_btc_correlation,
 )
-from src.modules.m1_macd import score_m1
+from src.modules.m1_macd_v2 import score_m1_v2 as score_m1
 from src.modules.m2_ema import score_m2
 from src.modules.m3_vwap import score_m3
 from src.modules.m4_cvd import calc_cvd_15m, detect_cvd_divergence_15m, calc_cvd_2h, detect_cvd_zero_cross, score_m4
@@ -721,7 +721,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             # is updated with direction-aware swing levels for M14
 
         # M1 + M2 still scored for ICS (not direction source)
-        m1_dir, m1_score = score_m1(df_1h, idx_1h, cfg)
+        m1_dir, m1_score, _m1_details = score_m1(df_1h, idx_1h, cfg, df_15m=df_15m, idx_15m=idx)
         m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
 
         # M2 Veto (still applies)
