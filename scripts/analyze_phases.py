@@ -504,8 +504,6 @@ def main():
         detailed_view(df)
 
     if args.export:
-        diag = PhaseDiagnostics()
-        # Reconstruct summary from df
         summary = {}
         if 'm9_regime' in df.columns:
             summary['regime_distribution'] = df['m9_regime'].value_counts().to_dict()

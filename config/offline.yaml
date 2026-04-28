@@ -1,0 +1,16 @@
+# Offline config — disables modules that need live exchange data
+# Used for backtesting with CSV data only
+
+M7_ENABLED: false
+M8_ENABLED: false
+M10_ENABLED: false
+CROSS_ASSET_ENABLED: false
+DERIV_ENABLED: false
+DATA_FRESHNESS_ENABLED: false
+VETO_STALE_DATA_HARD: false
+
+# Keep M9, M11, M13, M5 (all compute from local CSV data)
+M9_ENABLED: true
+M11_ENABLED: true
+M13_ENABLED: true
+M5_VP_LOOKBACK: 672

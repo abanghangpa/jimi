@@ -1,0 +1,78 @@
+{
+  "regime_distribution": {
+    "CHOP_MILD": {
+      "count": 2863,
+      "pct": 99.03
+    },
+    "CRISIS": {
+      "count": 28,
+      "pct": 0.97
+    }
+  },
+  "regime_transitions": 2,
+  "transition_pairs": {
+    "None\u2192CRISIS": 1,
+    "CRISIS\u2192CHOP_MILD": 1
+  },
+  "m13_bias_distribution": {
+    "NEUTRAL": 2811,
+    "BEARISH": 46,
+    "BULLISH": 6
+  },
+  "direction_distribution": {
+    "NEUTRAL": 2811,
+    "SHORT": 46,
+    "LONG": 6
+  },
+  "block_analysis": {
+    "total_bars": 2891,
+    "passed": 52,
+    "blocked": 2839,
+    "pass_rate": 1.8,
+    "by_module": {
+      "DIRECTION_RESOLVER": 2811,
+      "M9": 28
+    }
+  },
+  "size_multiplier": {
+    "mean": 0.5455,
+    "median": 0.5775,
+    "p10": 0.4125,
+    "p25": 0.5775,
+    "p75": 0.5775,
+    "p90": 0.5775,
+    "zeros": 0
+  },
+  "wr_by_regime": {
+    "CHOP_MILD": {
+      "trades": 52,
+      "wins": 28,
+      "win_rate": 53.8,
+      "avg_pnl": 0.4089
+    }
+  },
+  "wr_by_m13_bias": {
+    "BEARISH": {
+      "trades": 46,
+      "wins": 25,
+      "win_rate": 54.3
+    },
+    "BULLISH": {
+      "trades": 6,
+      "wins": 3,
+      "win_rate": 50.0
+    }
+  },
+  "wr_by_direction": {
+    "LONG": {
+      "trades": 6,
+      "wins": 3,
+      "win_rate": 50.0
+    },
+    "SHORT": {
+      "trades": 46,
+      "wins": 25,
+      "win_rate": 54.3
+    }
+  }
+}

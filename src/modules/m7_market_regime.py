@@ -61,6 +61,8 @@ def m7_fetch_daily(symbol, since_ms, until_ms):
 
     with open(cache_file, "w") as f:
         json.dump(candles, f)
+    if not candles:
+        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
     df = pd.DataFrame(candles)
     df["date"] = pd.to_datetime(df["date"]).dt.normalize()
     return df

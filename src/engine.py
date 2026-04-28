@@ -848,7 +848,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         # M7 already computed above (Phase 2)
 
-        # M10
+        # M8 Funding
+        m8_score = 0.5; m8_status = 'SKIP'; use_m8 = False; m8_details = {}
         if cfg.get('M8_ENABLED', False) and cached_funding_rate is not None:
             m8_status, m8_score, m8_details = score_m8_funding(cached_funding_rate, direction, cfg)
             use_m8 = True
