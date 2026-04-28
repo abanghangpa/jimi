@@ -19,71 +19,71 @@ python3 scripts/analyze_phases.py phase_diag_6m.csv --detailed
 
 ---
 
-## What Changed from Baseline
+## Summary of Changes
+
+### ✅ M9 Fix (Applied — Major Impact)
 
 | Metric | Before | After | Δ |
 |--------|--------|-------|---|
 | Trades | 52 | 62 | +19% |
-| Win Rate | 53.8% | 62.9% | +9.1pp |
-| Net PnL | 74.59% | 162.62% | +118% |
-| Profit Factor | 3.58 | 4.22 | +18% |
+| Win Rate | 53.8% | **62.9%** | +9.1pp |
+| Net PnL | 74.59% | **162.62%** | +118% |
+| Profit Factor | 3.58 | **4.22** | +18% |
 | Max DD | 6.49% | 15.17% | +8.68pp |
 | Return/DD | 11.5× | 10.7× | -7% |
-| Avg Win | 1.49% | 1.51% | +1.3% |
-| Avg Loss | -0.85% | -0.91% | -7% |
 
-### Fixes Applied
+**Fixes applied:**
+1. **CHOP_MILD directional split** → CHOP_MILD_BEAR / CHOP_MILD_BULL based on TF coherence + price direction
+2. **Time-based CHOP exit** → 96 bars max in any chop regime, then force NEUTRAL
 
-#### 1. CHOP_MILD Directional Split
-- CHOP_MILD now splits into **CHOP_MILD_BEAR** and **CHOP_MILD_BULL** based on:
-  - 1H/15m timeframe coherence direction
-  - Recent 20-bar price direction on 15m
-  - Price position within recent range (fallback)
-- Direction resolver uses the regime direction as a hint when M13 is NEUTRAL
-- Scoring: aligned direction gets ×1.25 boost, conflicting gets ×0.75 penalty
+### ❌ M13 Fix (Attempted — Negative Impact — Reverted)
 
-#### 2. Time-Based CHOP Exit
-- After **96 bars** (24h) in any chop regime, forces transition to NEUTRAL
-- 12-bar cooldown after forced exit to prevent immediate re-entry
-- Applies to CHOP_MILD, CHOP_MILD_BEAR, CHOP_MILD_BULL, and CHOP_HARD
+Tested 3 approaches, all degraded performance:
+
+| M13 Approach | Trades | WR | PnL | PF |
+|---|---|---|---|---|
+| **M9 only (best)** | **62** | **62.9%** | **162.62%** | **4.22** |
+| Aggressive (gap=0.05, threshold=0.50) | 77 | 54.5% | 126.53% | 2.67 |
+| Conservative (gap=0.10, threshold=0.55) | 54 | 51.9% | 78.30% | 2.53 |
+| Recency only (original thresholds) | 55 | 56.4% | 76.43% | 2.37 |
+
+**Root cause: M13 direction is anti-predictive when it agrees with M9.**
+
+Cross-tab evidence:
+| Combination | Trades | WR |
+|---|---|---|
+| CHOP_MILD_BULL + M13=NEUTRAL | 2 | **100%** |
+| NEUTRAL + M13=BEARISH | 20 | 60% |
+| CHOP_MILD_BEAR + M13=BEARISH | 17 | 53% |
+| CHOP_MILD_BULL + M13=BULLISH | 3 | **33%** |
+| CHOP_MILD_BULL + M13=BEARISH | 6 | **33%** |
+
+**Conclusion:** M13 should stay NEUTRAL during CHOP regimes. The M9 directional split is the primary direction source during chop. M13 only adds value when M9 is NEUTRAL.
+
+**M13 reverted to original.** Future improvement: make M13 defer to M9 during chop (skip scoring when regime is CHOP_MILD_*).
 
 ---
 
-## Regime Distribution (After Fix)
+## Regime Distribution (After M9 Fix)
 
-| Regime | Bars | Pct | Avg Score |
-|--------|------|-----|-----------|
-| CRISIS | 714 | 47.7% | 0.015 |
-| CHOP_HARD | 384 | 25.6% | 0.020 |
-| NEUTRAL | 360 | 24.0% | 0.500 |
-| CHOP_MILD_BEAR | 24 | 1.6% | 0.241 |
-| CHOP_MILD_BULL | 16 | 1.1% | 0.186 |
+| Regime | Bars | Pct |
+|--------|------|-----|
+| CRISIS | 714 | 47.7% |
+| CHOP_HARD | 384 | 25.6% |
+| NEUTRAL | 360 | 24.0% |
+| CHOP_MILD_BEAR | 24 | 1.6% |
+| CHOP_MILD_BULL | 16 | 1.1% |
 
-**Key observations:**
-- M9 is no longer stuck — **52 regime transitions** in 6 months (vs 1 before)
-- Time-based exit works: CHOP_HARD avg stickiness = exactly 96 bars
-- CHOP_MILD_BEAR/BULL are short-lived (avg 1.8 bars each) — correctly transient
-- CRISIS blocks 714 bars (was 28 before) — more accurate crisis detection
+- **52 regime transitions** in 6 months (vs 1 before)
+- M9 no longer stuck
 
 ## Win Rate by Regime
 
-| Regime | Trades | WR | Avg PnL | Avg Size |
-|--------|--------|-----|---------|----------|
-| NEUTRAL | 22 | 68.2% | +0.67% | 0.751 |
-| CHOP_MILD_BEAR | 24 | 58.3% | +0.56% | 0.606 |
-| CHOP_MILD_BULL | 16 | 62.5% | +0.62% | 0.567 |
-
-**Directional chop trades work:** 40 trades from CHOP_MILD variants with 60% WR. The directional split gives the direction resolver a bias when M13 is NEUTRAL.
-
-## Regime × Direction Cross-Tab
-
-| | LONG | SHORT |
-|---|---|---|
-| NEUTRAL | - (0) | 68% (22) |
-| CHOP_MILD_BEAR | - (0) | 58% (24) |
-| CHOP_MILD_BULL | 71% (7) | 56% (9) |
-
-**CHOP_MILD_BULL LONG** has the highest WR (71%) — bullish chop correctly identifies long opportunities.
+| Regime | Trades | WR | Avg PnL |
+|--------|--------|-----|---------|
+| NEUTRAL | 22 | 68.2% | +0.67% |
+| CHOP_MILD_BEAR | 24 | 58.3% | +0.56% |
+| CHOP_MILD_BULL | 16 | 62.5% | +0.62% |
 
 ## Monthly Performance
 
@@ -97,14 +97,7 @@ python3 scripts/analyze_phases.py phase_diag_6m.csv --detailed
 | Mar 2026 | 6 | 50.0% | -0.10% |
 | Apr 2026 | 4 | 75.0% | +8.25% |
 
-**6/7 months profitable** (85.7%), only January 2026 negative (-2.39%).
-
-## Remaining Issues
-
-1. **M13 still mostly NEUTRAL (26.3%)** — but now has BULLISH (9.9%) and BEARISH (16.2%) due to regime transitions allowing more structure to form
-2. **M7 still SKIP (100%)** — needs live exchange data
-3. **CHOP_HARD is sticky (96 bars)** — time-based exit is the only escape; consider lowering thresholds
-4. **Higher max DD (15.17%)** — more trades = more exposure; consider tighter risk limits
+**6/7 profitable months** (85.7%)
 
 ## Signal Flow
 
@@ -118,9 +111,10 @@ python3 scripts/analyze_phases.py phase_diag_6m.csv --detailed
   → 62 entries
 ```
 
-## Next Steps
+## Remaining Issues & Next Steps
 
-1. **M13 improvement**: Lower gap threshold (0.10→0.05), add recency weighting for swing points
-2. **M7 integration**: Wire as secondary direction source when M13 is NEUTRAL
-3. **CHOP_HARD tuning**: Consider time-based exit with lower threshold or directional split
-4. **Risk management**: Consider reducing max daily loss limit given higher DD
+1. **M13 during CHOP**: Make M13 defer to M9 direction during chop regimes (skip scoring when regime is CHOP_MILD_*)
+2. **M7 integration**: Wire as secondary direction source when M9 is NEUTRAL and M13 is NEUTRAL
+3. **CHOP_HARD**: Still sticky (96 bars); consider directional split or lower thresholds
+4. **Higher DD**: 15.17% vs 6.49% baseline; consider tighter monthly DD circuit
+5. **M13 anti-predictive agreement**: Investigate why M13+M9 same-direction trades underperform
