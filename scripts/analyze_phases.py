@@ -57,7 +57,7 @@ def regime_analysis(df):
     print(f"\n  Regime Distribution ({total:,} bars):")
     print(f"  {'Regime':<15} {'Bars':>8} {'Pct':>8} {'Avg Score':>10}")
     print(f"  {'─'*15} {'─'*8} {'─'*8} {'─'*10}")
-    for regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_HARD', 'CRISIS']:
+    for regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD', 'CRISIS']:
         subset = df[df['m9_regime'] == regime]
         if len(subset) > 0:
             avg_score = subset['m9_score'].mean() if 'm9_score' in subset.columns else 0
@@ -66,7 +66,7 @@ def regime_analysis(df):
     # Regime strength
     if 'm9_regime_strength' in df.columns:
         print(f"\n  Regime Strength (how established the current regime is):")
-        for regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD']:
+        for regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL']:
             subset = df[df['m9_regime'] == regime]
             if len(subset) > 0:
                 strength = subset['m9_regime_strength'].dropna()
@@ -82,7 +82,7 @@ def regime_analysis(df):
 
     if available_signals:
         print(f"\n  Signal Profiles by Regime (mean values):")
-        regimes = ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_HARD', 'CRISIS']
+        regimes = ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD', 'CRISIS']
         header = f"  {'Signal':<22}" + "".join(f"{r:>13}" for r in regimes)
         print(header)
         print(f"  {'─'*22}" + "".join(f"{'─'*13}" for _ in regimes))
@@ -104,7 +104,7 @@ def regime_analysis(df):
     if len(df) > 10:
         print(f"\n  Regime Stickiness (avg consecutive bars in same regime):")
         regimes = df['m9_regime'].values
-        for target_regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_HARD', 'CRISIS']:
+        for target_regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD', 'CRISIS']:
             streaks = []
             current_streak = 0
             for r in regimes:
@@ -341,7 +341,7 @@ def outcome_analysis(df):
         print(f"\n  Win Rate by Regime:")
         print(f"  {'Regime':<15} {'Trades':>7} {'WR':>7} {'Avg PnL':>10} {'Avg Size':>10}")
         print(f"  {'─'*15} {'─'*7} {'─'*7} {'─'*10} {'─'*10}")
-        for regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_HARD']:
+        for regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD', 'CRISIS']:
             r = traded[traded['m9_regime'] == regime]
             if len(r) > 0:
                 wr = (r['trade_outcome'] == 'WIN').mean() * 100
@@ -394,7 +394,7 @@ def outcome_analysis(df):
         print(f"\n  Regime × Direction Cross-Tab (Win Rate):")
         print(f"  {'':>15} {'LONG':>10} {'SHORT':>10}")
         print(f"  {'─'*15} {'─'*10} {'─'*10}")
-        for regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD']:
+        for regime in ['TRENDING', 'NEUTRAL', 'COMPRESSING', 'CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL']:
             row_vals = []
             for d in ['LONG', 'SHORT']:
                 subset = traded[(traded['m9_regime'] == regime) & (traded['direction'] == d)]

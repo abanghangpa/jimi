@@ -57,6 +57,9 @@ _M9_DEFAULTS = {
     'M9_COMPRESSING_COOLDOWN': 6,
     'M9_CHOP_HARD_COOLDOWN': 6,
     'M9_CHOP_MILD_COOLDOWN': 4,
+    'M9_CHOP_SPLIT_ENABLED': True,
+    'M9_CHOP_MAX_BARS': 96,
+    'M9_CHOP_EXIT_COOLDOWN': 12,
 }
 
 
@@ -128,6 +131,9 @@ class RegimeState:
             'COMPRESSING': _cfg(config, 'M9_COMPRESSING_COOLDOWN'),
             'CHOP_HARD': _cfg(config, 'M9_CHOP_HARD_COOLDOWN'),
             'CHOP_MILD': _cfg(config, 'M9_CHOP_MILD_COOLDOWN'),
+            'CHOP_MILD_BEAR': _cfg(config, 'M9_CHOP_MILD_COOLDOWN'),
+            'CHOP_MILD_BULL': _cfg(config, 'M9_CHOP_MILD_COOLDOWN'),
+            'NEUTRAL': 2,
         }
 
         self.prev_regime = 'NEUTRAL'
@@ -136,15 +142,77 @@ class RegimeState:
         self.cooldown_remaining = 0
         self.transition_log = []
         self.regime_bar_count = 0
+        self.consecutive_chop_bars = 0
+        self._chop_max_bars = _cfg(config, 'M9_CHOP_MAX_BARS')
+        self._chop_exit_cooldown = _cfg(config, 'M9_CHOP_EXIT_COOLDOWN')
+
+    @staticmethod
+    def _chop_family(regime):
+        """Return True if regime is any CHOP variant."""
+        return regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD')
+
+    @staticmethod
+    def _chop_base(regime):
+        """Return CHOP_MILD or CHOP_HARD family name."""
+        if regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL'):
+            return 'CHOP_MILD'
+        if regime == 'CHOP_HARD':
+            return 'CHOP_HARD'
+        return regime
 
     def update(self, raw_regime, signals, timestamp=None):
         details = {}
         self.regime_bar_count += 1
 
+        # Track time in chop regimes
+        if self._chop_family(self.prev_regime):
+            self.consecutive_chop_bars += 1
+        else:
+            self.consecutive_chop_bars = 0
+
         if self.cooldown_remaining > 0:
             self.cooldown_remaining -= 1
             details['cooldown_remaining'] = self.cooldown_remaining
             return self.prev_regime, False, details
+
+        # ── Directional transition within CHOP_MILD family ──
+        # Both CHOP_MILD_BEAR and CHOP_MILD_BULL share hysteresis.
+        # Allow instant flip between them (no confirmation delay).
+        if (self._chop_base(self.prev_regime) == 'CHOP_MILD' and
+            self._chop_base(raw_regime) == 'CHOP_MILD' and
+            raw_regime != self.prev_regime and
+            raw_regime in ('CHOP_MILD_BEAR', 'CHOP_MILD_BULL') and
+            self.prev_regime in ('CHOP_MILD_BEAR', 'CHOP_MILD_BULL')):
+            old = self.prev_regime
+            self.prev_regime = raw_regime
+            self.regime_bar_count = 0
+            entry = {
+                'timestamp': timestamp, 'from': old, 'to': raw_regime,
+                'reason': f'CHOP direction flip: {old} → {raw_regime}',
+                'signals': {k: round(v, 3) if isinstance(v, float) else v for k, v in signals.items()},
+            }
+            self.transition_log.append(entry)
+            details['transition'] = entry
+            return raw_regime, True, details
+
+        # ── Time-based exit for chop regimes ──
+        if self._chop_family(self.prev_regime) and self.consecutive_chop_bars >= self._chop_max_bars:
+            old = self.prev_regime
+            self.prev_regime = 'NEUTRAL'
+            self.candidate_regime = None
+            self.candidate_count = 0
+            self.regime_bar_count = 0
+            self.consecutive_chop_bars = 0
+            self.cooldown_remaining = self._chop_exit_cooldown
+            entry = {
+                'timestamp': timestamp, 'from': old, 'to': 'NEUTRAL',
+                'reason': f'Time-based exit: {self.consecutive_chop_bars} bars in {old}',
+                'signals': {k: round(v, 3) if isinstance(v, float) else v for k, v in signals.items()},
+            }
+            self.transition_log.append(entry)
+            details['transition'] = entry
+            details['time_exit'] = True
+            return 'NEUTRAL', True, details
 
         if raw_regime == self.prev_regime:
             self.candidate_regime = None
@@ -177,8 +245,9 @@ class RegimeState:
                 should_transition = True
                 transition_reason = "COMPRESSING exit: expanding"
 
-        elif self.prev_regime in ('CHOP_HARD', 'CHOP_MILD'):
-            hyst = self.HYSTERESIS.get(self.prev_regime, self.HYSTERESIS['CHOP_MILD'])
+        elif self._chop_family(self.prev_regime):
+            # Both CHOP_MILD_BEAR/BULL and CHOP_HARD use same exit logic
+            hyst = self.HYSTERESIS.get(self._chop_base(self.prev_regime), self.HYSTERESIS['CHOP_MILD'])
             if signals['whipsaw_rate'] < hyst.get('whipsaw_exit', 0.45) and signals['retrace_ratio'] < hyst.get('retrace_exit', 0.50):
                 should_transition = True
                 transition_reason = "CHOP exit: becoming directional"
@@ -206,6 +275,7 @@ class RegimeState:
             self.candidate_regime = None
             self.candidate_count = 0
             self.regime_bar_count = 0
+            self.consecutive_chop_bars = 0
             self.cooldown_remaining = self.TRANSITION_COOLDOWN.get(raw_regime, 4)
 
             entry = {
@@ -592,6 +662,33 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None, config
     details['chop_score'] = round(chop_score, 3)
     details['trend_score'] = round(trend_score, 3)
 
+    # ── Compute chop direction signal (used for CHOP_MILD split) ──
+    # Combines: 1H/15m coherence direction + recent price direction
+    chop_split_enabled = _cfg(config, 'M9_CHOP_SPLIT_ENABLED')
+    chop_direction = 0.0  # -1.0 = bearish, +1.0 = bullish
+    if chop_split_enabled and idx_15m >= 20:
+        # tf_coherence direction: which way do 1H and 15m agree?
+        close_1h = df_1h['Close'].iloc[max(0, idx_1h - 10):idx_1h + 1]
+        close_15m = df_15m['Close'].iloc[max(0, idx_15m - 20):idx_15m + 1]
+        dir_1h = np.sign(close_1h.iloc[-1] - close_1h.iloc[0]) if len(close_1h) >= 2 else 0
+        dir_15m = np.sign(close_15m.iloc[-1] - close_15m.iloc[0]) if len(close_15m) >= 2 else 0
+
+        # When TFs agree, use that direction strongly
+        if tf_coherence > 0.7 and dir_1h != 0 and dir_1h == dir_15m:
+            chop_direction = dir_1h * 0.8
+        # Otherwise use 15m recent direction (softer signal)
+        elif dir_15m != 0:
+            chop_direction = dir_15m * 0.5
+        # Fallback: price position in recent range
+        if chop_direction == 0.0 and len(close_15m) >= 20:
+            recent_high = close_15m.max()
+            recent_low = close_15m.min()
+            if recent_high > recent_low:
+                pos = (close_15m.iloc[-1] - recent_low) / (recent_high - recent_low)
+                chop_direction = (pos - 0.5) * 0.6  # -0.3 to +0.3
+
+    details['chop_direction'] = round(chop_direction, 3)
+
     # Read classification thresholds from config
     crisis_atr = _cfg(config, 'M9_CRISIS_ATR_THRESHOLD')
     crisis_bb = _cfg(config, 'M9_CRISIS_BB_THRESHOLD')
@@ -617,7 +714,15 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None, config
         score = 0.10
 
     elif chop_score > chop_mild_cs and trend_score < chop_mild_tc:
-        raw_regime = 'CHOP_MILD'
+        if chop_split_enabled:
+            if chop_direction < -0.1:
+                raw_regime = 'CHOP_MILD_BEAR'
+            elif chop_direction > 0.1:
+                raw_regime = 'CHOP_MILD_BULL'
+            else:
+                raw_regime = 'CHOP_MILD'
+        else:
+            raw_regime = 'CHOP_MILD'
         score = 0.35
 
     elif bb_pctl < comp_bb and atr_pctl < comp_atr and range_tight > comp_range:
@@ -644,6 +749,7 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None, config
 
         regime_scores = {
             'CRISIS': 0.10, 'CHOP_HARD': 0.10, 'CHOP_MILD': 0.35,
+            'CHOP_MILD_BEAR': 0.35, 'CHOP_MILD_BULL': 0.35,
             'COMPRESSING': 0.50, 'TRENDING': 0.80, 'NEUTRAL': 0.50, 'UNKNOWN': 0.50,
         }
         score = regime_scores.get(regime, 0.50)
@@ -676,8 +782,17 @@ def score_vol_regime(regime, vol_regime_score, direction, trend_dir):
 
     if regime == 'CHOP_HARD':
         base *= 0.20
-    if regime == 'CHOP_MILD':
+    if regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL'):
         base *= 0.55
+        # Directional chop: boost aligned, penalize conflicting
+        if regime == 'CHOP_MILD_BEAR' and direction == 'SHORT':
+            base = min(base * 1.25, 1.0)
+        elif regime == 'CHOP_MILD_BEAR' and direction == 'LONG':
+            base *= 0.75
+        elif regime == 'CHOP_MILD_BULL' and direction == 'LONG':
+            base = min(base * 1.25, 1.0)
+        elif regime == 'CHOP_MILD_BULL' and direction == 'SHORT':
+            base *= 0.75
     if regime == 'CRISIS':
         base *= 0.15
     if regime == 'COMPRESSING':

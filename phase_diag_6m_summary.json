@@ -1,78 +1,121 @@
 {
   "regime_distribution": {
-    "CHOP_MILD": {
-      "count": 2863,
-      "pct": 99.03
-    },
     "CRISIS": {
-      "count": 28,
-      "pct": 0.97
+      "count": 714,
+      "pct": 47.66
+    },
+    "CHOP_HARD": {
+      "count": 384,
+      "pct": 25.63
+    },
+    "NEUTRAL": {
+      "count": 360,
+      "pct": 24.03
+    },
+    "CHOP_MILD_BEAR": {
+      "count": 24,
+      "pct": 1.6
+    },
+    "CHOP_MILD_BULL": {
+      "count": 16,
+      "pct": 1.07
     }
   },
-  "regime_transitions": 2,
+  "regime_transitions": 76,
   "transition_pairs": {
+    "NEUTRAL\u2192CRISIS": 13,
+    "CRISIS\u2192NEUTRAL": 12,
+    "NEUTRAL\u2192CHOP_MILD_BEAR": 11,
+    "CHOP_MILD_BEAR\u2192NEUTRAL": 11,
+    "CHOP_MILD_BULL\u2192NEUTRAL": 8,
+    "NEUTRAL\u2192CHOP_MILD_BULL": 7,
+    "CHOP_HARD\u2192NEUTRAL": 3,
+    "CRISIS\u2192CHOP_HARD": 2,
+    "NEUTRAL\u2192CHOP_HARD": 2,
     "None\u2192CRISIS": 1,
-    "CRISIS\u2192CHOP_MILD": 1
+    "CHOP_HARD\u2192CHOP_MILD_BEAR": 1,
+    "CHOP_MILD_BULL\u2192CRISIS": 1,
+    "CRISIS\u2192CHOP_MILD_BEAR": 1,
+    "CHOP_MILD_BEAR\u2192CHOP_MILD_BULL": 1,
+    "CHOP_MILD_BEAR\u2192CRISIS": 1,
+    "CRISIS\u2192CHOP_MILD_BULL": 1
   },
   "m13_bias_distribution": {
-    "NEUTRAL": 2811,
-    "BEARISH": 46,
-    "BULLISH": 6
+    "NEUTRAL": 394,
+    "BEARISH": 242,
+    "BULLISH": 148
   },
   "direction_distribution": {
-    "NEUTRAL": 2811,
-    "SHORT": 46,
-    "LONG": 6
+    "NEUTRAL": 722,
+    "SHORT": 55,
+    "LONG": 7
   },
   "block_analysis": {
-    "total_bars": 2891,
-    "passed": 52,
-    "blocked": 2839,
-    "pass_rate": 1.8,
+    "total_bars": 1498,
+    "passed": 62,
+    "blocked": 1436,
+    "pass_rate": 4.14,
     "by_module": {
-      "DIRECTION_RESOLVER": 2811,
-      "M9": 28
+      "DIRECTION_RESOLVER": 722,
+      "M9": 714
     }
   },
   "size_multiplier": {
-    "mean": 0.5455,
-    "median": 0.5775,
-    "p10": 0.4125,
-    "p25": 0.5775,
-    "p75": 0.5775,
-    "p90": 0.5775,
+    "mean": 0.6475,
+    "median": 0.6353,
+    "p10": 0.4538,
+    "p25": 0.6353,
+    "p75": 0.7508,
+    "p90": 0.7508,
     "zeros": 0
   },
   "wr_by_regime": {
-    "CHOP_MILD": {
-      "trades": 52,
-      "wins": 28,
-      "win_rate": 53.8,
-      "avg_pnl": 0.4089
+    "NEUTRAL": {
+      "trades": 22,
+      "wins": 15,
+      "win_rate": 68.2,
+      "avg_pnl": 0.6725
+    },
+    "CHOP_MILD_BEAR": {
+      "trades": 24,
+      "wins": 14,
+      "win_rate": 58.3,
+      "avg_pnl": 0.5579
+    },
+    "CHOP_MILD_BULL": {
+      "trades": 16,
+      "wins": 10,
+      "win_rate": 62.5,
+      "avg_pnl": 0.618
     }
   },
   "wr_by_m13_bias": {
     "BEARISH": {
-      "trades": 46,
-      "wins": 25,
-      "win_rate": 54.3
+      "trades": 50,
+      "wins": 32,
+      "win_rate": 64.0
+    },
+    "NEUTRAL": {
+      "trades": 7,
+      "wins": 4,
+      "win_rate": 57.1
     },
     "BULLISH": {
-      "trades": 6,
+      "trades": 5,
       "wins": 3,
-      "win_rate": 50.0
+      "win_rate": 60.0
     }
   },
   "wr_by_direction": {
     "LONG": {
-      "trades": 6,
-      "wins": 3,
-      "win_rate": 50.0
+      "trades": 7,
+      "wins": 5,
+      "win_rate": 71.4
     },
     "SHORT": {
-      "trades": 46,
-      "wins": 25,
-      "win_rate": 54.3
+      "trades": 55,
+      "wins": 34,
+      "win_rate": 61.8
     }
   }
 }

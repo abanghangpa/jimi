@@ -62,7 +62,7 @@ def evaluate_vetoes(
         result.add_hard_veto('M9', 'crisis_regime')
     elif vol_regime == 'CHOP_HARD':
         result.add_hard_veto('M9', 'chop_hard_regime')
-    elif vol_regime == 'CHOP_MILD':
+    elif vol_regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL'):
         if config.get('VETO_CHOP_MILD_HARD', False):
             result.add_hard_veto('M9', 'chop_mild_regime_hard')
         else:

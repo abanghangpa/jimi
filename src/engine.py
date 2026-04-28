@@ -1058,7 +1058,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         if cfg.get('M9_ENABLED', False):
             if vol_regime == 'CHOP_HARD':
                 size *= cfg.get('M9_SIZE_CHOP_HARD', 0.0)  # blocked
-            elif vol_regime == 'CHOP_MILD':
+            elif vol_regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL'):
                 size *= cfg.get('M9_SIZE_CHOP_MILD', 0.55)
             elif vol_regime == 'COMPRESSING':
                 size *= cfg.get('M9_SIZE_COMPRESSING', 0.85)
