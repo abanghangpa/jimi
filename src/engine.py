@@ -34,6 +34,8 @@ from src.modules.adaptive_weights import AdaptiveWeights
 from src.modules.cross_asset import score_cross_asset
 from src.modules.session import get_session
 from src.modules.coherence_liquidity import check_coherence, compute_liquidity_aware_tp, compute_stop_risk
+from src.modules.m14_sweep import score_m14
+from src.modules.entry_optimizer import detect_wick_reclaim
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -47,6 +49,7 @@ class Trade:
                  m8_score=0.5, m8_status='SKIP', m9_score=0.5, m9_status='SKIP',
                  m10_score=0.5, m10_status='SKIP', m11_score=0.5, m11_status='SKIP',
                  m12_score=0.5, m12_status='SKIP', m13_score=0.5, m13_status='SKIP',
+                 m14_score=0.5, m14_status='SKIP',
                  vol_regime='NEUTRAL',
                  trend_dir='NEUTRAL', trend_val=0.0, cross_asset_score=0.5,
                  session_name='UNKNOWN', veto_soft_penalty=0.0,
@@ -87,6 +90,8 @@ class Trade:
         self.m12_status = m12_status
         self.m13_score = m13_score
         self.m13_status = m13_status
+        self.m14_score = m14_score
+        self.m14_status = m14_status
         self.vol_regime = vol_regime
         self.trend_dir = trend_dir
         self.trend_val = trend_val
@@ -138,7 +143,8 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
              cascade_dir='NONE', cascade_strength=0.0,
              m9_score=0.5, use_m9=False, m10_score=0.5, use_m10=False,
              m11_score=0.5, use_m11=False, m12_score=0.5, use_m12=False,
-             m13_score=0.5, use_m13=False, config=None):
+             m13_score=0.5, use_m13=False, m14_score=0.5, use_m14=False,
+             config=None):
     cfg = config or CONFIG
     m4_contrib = m4_score if m4_status == 'PASS' else 0.5
 
@@ -159,6 +165,8 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
         extra_modules.append(('M12', m12_score, cfg.get('M12_WEIGHT', 0.05)))
     if use_m13 and cfg.get('M13_ENABLED', False):
         extra_modules.append(('M13', m13_score, cfg.get('M13_WEIGHT', 0.10)))
+    if use_m14 and cfg.get('M14_ENABLED', False):
+        extra_modules.append(('M14', m14_score, cfg.get('M14_WEIGHT', 0.08)))
 
     if extra_modules:
         extra_w = sum(w for _, _, w in extra_modules)
@@ -475,6 +483,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'gate_m10_block', 'gate_trend_block', 'm2_veto_block', 'm5_hard_block',
         'session_asian_block', 'post_crash_block', 'veto_soft_applied', 'data_stale_block',
         'coherence_block', 'coherence_penalty',
+        'm14_pass', 'm14_fail', 'm14_skip',
+        'wick_reclaim_bonus', 'wick_reclaim_penalty', 'wick_slice_block',
     ]}
 
     adaptive_tracker = None
@@ -821,6 +831,17 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             m12_status, m12_score, m12_details = score_m12_orderbook(direction, live=False)
             use_m12 = True
 
+        # M14: Sweep-Retest-Reclaim
+        m14_score = 0.5; m14_status = 'SKIP'; m14_details = {}; use_m14 = False
+        if cfg.get('M14_ENABLED', True):
+            _swing_levels = m13_details.get('swing_lows', []) if direction == 'LONG' else m13_details.get('swing_highs', [])
+            if not _in_chop and _swing_levels:
+                m14_status, m14_score, m14_details = score_m14(
+                    df_15m, idx, direction, _swing_levels, config=cfg)
+                use_m14 = True
+            elif _in_chop:
+                m14_status, m14_score, m14_details = 'SKIP', 0.5, {'reason': 'deferred_in_chop'}
+
         # Veto System
         if cfg.get('VETO_ENABLED', False):
             data_fresh = True; data_age = 0
@@ -899,8 +920,55 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                                         cascade_dir=cascade_dir, cascade_strength=cascade_strength,
                                         m9_score=m9_score, use_m9=use_m9, m10_score=m10_score, use_m10=use_m10,
                                         m11_score=m11_score, use_m11=use_m11, m12_score=m12_score, use_m12=use_m12,
-                                        m13_score=m13_score, use_m13=use_m13, config=cfg)
+                                        m13_score=m13_score, use_m13=use_m13, m14_score=m14_score, use_m14=use_m14,
+                                        config=cfg)
         ics += gatekeeper.ics_boost
+
+        # ═══════════════════════════════════════════════════════════
+        # COHERENCE CHECK — do module states tell a consistent story?
+        # ═══════════════════════════════════════════════════════════
+        coherence_penalty = 0.0
+        if cfg.get('COHERENCE_CHECK_ENABLED', True):
+            is_coherent, coherence_conflicts, coherence_penalty = check_coherence(
+                direction, m4_div, m5_details if isinstance(m5_details, dict) else {},
+                m13_bias if not _in_chop else 'NEUTRAL', vol_regime,
+                m7_score=m7_score, m2_status=m2_status, config=cfg,
+            )
+            if not is_coherent:
+                stats['coherence_block'] += 1
+                continue
+            if coherence_penalty > 0:
+                stats['coherence_penalty'] += 1
+
+        # ═══════════════════════════════════════════════════════════
+        # WICK RECLAIM — sweep-and-reclaim bonus/penalty
+        # ═══════════════════════════════════════════════════════════
+        wick_adj = 0.0
+        if cfg.get('WICK_RECLAIM_ENABLED', True) and not _in_chop:
+            _sr_levels = m13_details.get('swing_lows', []) if direction == 'LONG' else m13_details.get('swing_highs', [])
+            if _sr_levels:
+                wick_action, wick_adj, wick_details = detect_wick_reclaim(
+                    df_15m, idx, direction, _sr_levels, config=cfg)
+                if wick_action == 'RECLAIM':
+                    stats['wick_reclaim_bonus'] += 1
+                elif wick_action == 'SLICE_THROUGH':
+                    if cfg.get('WICK_SLICE_BLOCK', False):
+                        stats['wick_slice_block'] += 1
+                        continue
+                    stats['wick_reclaim_penalty'] += 1
+
+        # Apply coherence + wick adjustments to ICS
+        ics -= coherence_penalty
+        ics += wick_adj
+
+        # Track M14 stats
+        if cfg.get('M14_ENABLED', True):
+            if m14_status == 'PASS':
+                stats['m14_pass'] += 1
+            elif m14_status == 'FAIL':
+                stats['m14_fail'] += 1
+            else:
+                stats['m14_skip'] += 1
 
         # Session
         session_mult = 1.0; session_name = 'UNKNOWN'
@@ -1011,23 +1079,14 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         if size < 0.01:
             continue
 
-        # ═══════════════════════════════════════════════════════════
-        # COHERENCE CHECK — do module states tell a consistent story?
-        # ═══════════════════════════════════════════════════════════
-        if cfg.get('COHERENCE_CHECK_ENABLED', True):
-            m4_div_for_check = m4_div if 'm4_div' in dir() else 'NONE'
-            is_coherent, coherence_conflicts, coherence_penalty = check_coherence(
-                direction, m4_div_for_check, m5_details if isinstance(m5_details, dict) else {},
-                m13_bias if not _in_chop else 'NEUTRAL', vol_regime,
-                m7_score=m7_score, m2_status=m2_status, config=cfg,
-            )
-            if not is_coherent:
-                stats['coherence_block'] += 1
-                continue
-            if coherence_penalty > 0:
-                stats['coherence_penalty'] += 1
-        else:
-            coherence_penalty = 0.0
+        # Track M14 stats
+        if cfg.get('M14_ENABLED', True):
+            if m14_status == 'PASS':
+                stats['m14_pass'] += 1
+            elif m14_status == 'FAIL':
+                stats['m14_fail'] += 1
+            else:
+                stats['m14_skip'] += 1
 
         # Entry
         entry_price = row['Close']
@@ -1119,6 +1178,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                       m10_score=m10_score, m10_status=m10_status, m11_score=m11_score, m11_status=m11_status,
                       m12_score=m12_score, m12_status=m12_status,
                       m13_score=m13_score, m13_status=m13_status,
+                      m14_score=m14_score, m14_status=m14_status,
                       vol_regime=vol_regime, trend_dir=trend_dir, trend_val=trend_val,
                       cross_asset_score=cross_asset_score, session_name=session_name,
                       veto_soft_penalty=veto_soft_penalty, gatekeeper_passed=gatekeeper.passed,

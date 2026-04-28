@@ -15,6 +15,7 @@ Output actions:
 """
 
 import numpy as np
+import pandas as pd
 
 
 # Default thresholds
@@ -28,6 +29,13 @@ _DEFAULTS = {
     'MAGNET_DANGER_DIST_PCT': 2.0,
     'MAGNET_PULL_STRENGTH': 2.0,
     'BREAKOUT_BUFFER_PCT': 0.10,
+    # Wick reclaim
+    'WICK_RECLAIM_ENABLED': True,
+    'WICK_RECLAIM_ZONE_PCT': 0.50,      # how close to swing level (% of price)
+    'WICK_RECLAIM_MIN_WICK_RATIO': 0.5, # wick must be >= 50% of bar range
+    'WICK_RECLAIM_BONUS': 0.08,         # ICS bonus for confirmed reclaim
+    'WICK_REJECT_PENALTY': 0.06,        # ICS penalty for slice-through (no reclaim)
+    'WICK_RECLAIM_VOLUME_MULT': 1.3,    # volume must be 1.3x avg for confirmation
 }
 
 
@@ -286,3 +294,125 @@ def format_entry_advice(action, details):
     if 'rr_ratio' in details:
         lines.append(f"     R:R: {details['rr_ratio']:.2f}")
     return '\n'.join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════
+# WICK RECLAIM DETECTION
+# ═══════════════════════════════════════════════════════════════
+
+def detect_wick_reclaim(df_15m, idx, direction, swing_levels, config=None):
+    """
+    Detect sweep-and-reclaim pattern near swing levels.
+
+    Bullish reclaim (LONG):
+      - Price sweeps below a recent swing low (wick extends past)
+      - Closes back above the swing low (reclaim)
+      - Strong lower wick = buying pressure after stop-hunt
+
+    Bearish reclaim (SHORT):
+      - Price sweeps above a recent swing high (wick extends past)
+      - Closes back below the swing high (reclaim)
+      - Strong upper wick = selling pressure after stop-hunt
+
+    Args:
+        df_15m: 15m DataFrame
+        idx: current bar index
+        direction: 'LONG' or 'SHORT'
+        swing_levels: list of (price, idx) tuples from M13
+        config: optional config dict
+
+    Returns:
+        (action, score_adj, details)
+        action: 'RECLAIM' | 'SLICE_THROUGH' | 'NONE'
+        score_adj: ICS adjustment (positive = bonus, negative = penalty)
+    """
+    cfg = {**_DEFAULTS, **(config or {})}
+    details = {}
+
+    if not cfg.get('WICK_RECLAIM_ENABLED', True) or not swing_levels:
+        return 'NONE', 0.0, details
+
+    row = df_15m.iloc[idx]
+    o, h, l, c = row['Open'], row['High'], row['Low'], row['Close']
+    bar_range = h - l
+    if bar_range <= 0:
+        return 'NONE', 0.0, details
+
+    body = abs(c - o)
+    lower_wick = min(o, c) - l
+    upper_wick = h - max(o, c)
+    vol = row.get('Volume', 0)
+    vol_ma = row.get('vol_ma20', 0)
+
+    # Find nearest swing level within zone
+    zone_pct = cfg['WICK_RECLAIM_ZONE_PCT'] / 100
+    nearest_level = None
+    nearest_dist = float('inf')
+
+    for level_price, level_idx in swing_levels:
+        if isinstance(level_price, (list, tuple)):
+            level_price = level_price[0]
+        dist_pct = abs(row['Close'] - level_price) / row['Close']
+        if dist_pct < zone_pct and dist_pct < nearest_dist:
+            # Only consider levels that are "in the right direction"
+            if direction == 'LONG' and level_price < row['Close']:
+                nearest_level = level_price
+                nearest_dist = dist_pct
+            elif direction == 'SHORT' and level_price > row['Close']:
+                nearest_level = level_price
+                nearest_dist = dist_pct
+
+    if nearest_level is None:
+        return 'NONE', 0.0, details
+
+    details['nearest_swing_level'] = round(nearest_level, 2)
+    details['distance_pct'] = round(nearest_dist * 100, 3)
+
+    wick_ratio = cfg['WICK_RECLAIM_MIN_WICK_RATIO']
+    vol_mult = cfg['WICK_RECLAIM_VOLUME_MULT']
+
+    if direction == 'LONG':
+        # Bullish reclaim: wick swept below swing low, closed above
+        swept = l < nearest_level
+        reclaimed = c > nearest_level
+        has_wick = lower_wick >= bar_range * wick_ratio
+
+        if swept and reclaimed and has_wick:
+            # Volume confirmation (optional boost)
+            vol_confirmed = vol > vol_ma * vol_mult if vol_ma > 0 else True
+            details['pattern'] = 'SWEEP_RECLAIM'
+            details['wick_ratio'] = round(lower_wick / bar_range, 2)
+            details['vol_confirmed'] = vol_confirmed
+            bonus = cfg['WICK_RECLAIM_BONUS']
+            if vol_confirmed:
+                bonus *= 1.25  # extra boost for volume confirmation
+            return 'RECLAIM', bonus, details
+
+        elif swept and not reclaimed:
+            # Price sliced through — no reclaim, bearish
+            details['pattern'] = 'SLICE_THROUGH'
+            details['wick_ratio'] = round(lower_wick / bar_range, 2)
+            return 'SLICE_THROUGH', -cfg['WICK_REJECT_PENALTY'], details
+
+    elif direction == 'SHORT':
+        # Bearish reclaim: wick swept above swing high, closed below
+        swept = h > nearest_level
+        reclaimed = c < nearest_level
+        has_wick = upper_wick >= bar_range * wick_ratio
+
+        if swept and reclaimed and has_wick:
+            vol_confirmed = vol > vol_ma * vol_mult if vol_ma > 0 else True
+            details['pattern'] = 'SWEEP_RECLAIM'
+            details['wick_ratio'] = round(upper_wick / bar_range, 2)
+            details['vol_confirmed'] = vol_confirmed
+            bonus = cfg['WICK_RECLAIM_BONUS']
+            if vol_confirmed:
+                bonus *= 1.25
+            return 'RECLAIM', bonus, details
+
+        elif swept and not reclaimed:
+            details['pattern'] = 'SLICE_THROUGH'
+            details['wick_ratio'] = round(upper_wick / bar_range, 2)
+            return 'SLICE_THROUGH', -cfg['WICK_REJECT_PENALTY'], details
+
+    return 'NONE', 0.0, details
