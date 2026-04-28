@@ -21,6 +21,8 @@ REGIME_SIZE_MAP = {
     'CRISIS': 0.0,        # Hard block — no trades
     'CHOP_HARD': 0.15,    # Near-block — tiny size if anything
     'CHOP_MILD': 0.50,    # Reduced — trade small
+    'CHOP_MILD_BEAR': 0.55,  # Directional chop — slightly more confident
+    'CHOP_MILD_BULL': 0.55,  # Directional chop — slightly more confident
     'COMPRESSING': 0.80,  # Slightly reduced — waiting for breakout
     'TRENDING': 1.0,      # Full size — this is the edge
     'NEUTRAL': 0.65,      # Moderate — some uncertainty
@@ -79,6 +81,16 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
         direction = 'LONG'
     elif m13_bias in ('BEARISH', 'LEAN_BEAR'):
         direction = 'SHORT'
+
+    # ── Phase 2a: Regime Direction Hint (CHOP_MILD_BEAR/BULL) ──
+    # When M13 is NEUTRAL and regime has a directional lean, use it
+    if direction == 'NEUTRAL' and regime in ('CHOP_MILD_BEAR', 'CHOP_MILD_BULL'):
+        if regime == 'CHOP_MILD_BEAR':
+            direction = 'SHORT'
+            details['regime_direction_hint'] = 'CHOP_MILD_BEAR → SHORT'
+        elif regime == 'CHOP_MILD_BULL':
+            direction = 'LONG'
+            details['regime_direction_hint'] = 'CHOP_MILD_BULL → LONG'
 
     # ── Phase 2b: Macro Confirmation (M7) ──
     # If M7 strongly disagrees with structure, downgrade
@@ -161,7 +173,7 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
             # FVGs present near squeeze — breakout is loading
             details['squeeze_fvg_hint'] = True
 
-    elif regime == 'CHOP_MILD':
+    elif regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL'):
         # In chop, only trade at structure extremes
         # This is handled by entry_optimizer, but flag it
         details['chop_mode'] = True
