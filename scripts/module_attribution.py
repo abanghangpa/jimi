@@ -73,6 +73,107 @@ def module_bucket_analysis(trades, module_name, score_fn, buckets):
     return results
 
 
+def regime_module_cross_analysis(trades):
+    """
+    Cross-tab: Regime × Module Confluence combinations.
+    Answers: "In NEUTRAL regime, when M4>0.6 and M5>0.6, what's the WR?"
+    """
+    # Define the regime groups (collapse CHOP variants)
+    def regime_group(regime):
+        if regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD'):
+            return 'CHOP'
+        return regime
+
+    # Define confluence conditions to test per regime
+    confluences = [
+        ('M4>0.6 & M5>0.6',
+         lambda t: t.m4_score > 0.6 and t.m5_score > 0.6),
+        ('M4>0.6 only',
+         lambda t: t.m4_score > 0.6 and t.m5_score <= 0.6),
+        ('M5>0.6 only',
+         lambda t: t.m5_score > 0.6 and t.m4_score <= 0.6),
+        ('M3+M4+M5 all >0.5',
+         lambda t: t.m3_score > 0.5 and t.m4_score > 0.5 and t.m5_score > 0.5),
+        ('ICS>0.65',
+         lambda t: t.ics > 0.65),
+        ('ICS>0.65 + M4>0.6',
+         lambda t: t.ics > 0.65 and t.m4_score > 0.6),
+        ('M11 PASS + M4>0.5',
+         lambda t: t.m11_status == 'PASS' and t.m4_score > 0.5),
+    ]
+
+    regimes = sorted(set(regime_group(t.vol_regime) for t in trades))
+    results = []
+
+    for regime in regimes:
+        regime_trades = [t for t in trades if regime_group(t.vol_regime) == regime]
+        if not regime_trades:
+            continue
+
+        # Baseline for this regime (all trades)
+        base_wr = len([t for t in regime_trades if t.pnl_pct > 0]) / len(regime_trades)
+        base_avg = np.mean([t.pnl_pct * 100 for t in regime_trades])
+        results.append({
+            'regime': regime,
+            'confluence': '— ALL (baseline)',
+            'trades': len(regime_trades),
+            'win_rate': base_wr,
+            'avg_pnl': base_avg,
+            'total_pnl': sum(t.pnl_pct * 100 for t in regime_trades),
+            'lift_vs_base': 0.0,
+        })
+
+        for conf_name, conf_fn in confluences:
+            matching = [t for t in regime_trades if conf_fn(t)]
+            if len(matching) < 2:
+                continue
+            wr = len([t for t in matching if t.pnl_pct > 0]) / len(matching)
+            avg_pnl = np.mean([t.pnl_pct * 100 for t in matching])
+            total_pnl = sum(t.pnl_pct * 100 for t in matching)
+            lift = (wr - base_wr) * 100  # percentage point lift
+
+            results.append({
+                'regime': regime,
+                'confluence': conf_name,
+                'trades': len(matching),
+                'win_rate': wr,
+                'avg_pnl': avg_pnl,
+                'total_pnl': total_pnl,
+                'lift_vs_base': lift,
+            })
+
+    return results
+
+
+def print_regime_cross_table(results):
+    """Print the regime × module confluence cross-tab."""
+    if not results:
+        print(f"\n  Regime × Module Cross-Tab: No data")
+        return
+
+    print(f"\n{'='*90}")
+    print(f"  REGIME × MODULE CONFLUENCE CROSS-TAB")
+    print(f"{'='*90}")
+    print(f"  {'Regime':>16} {'Confluence':>24} {'Trades':>7} {'WR%':>8} {'Avg PnL':>10} {'Tot PnL':>10} {'Lift':>8}")
+    print(f"  {'-'*84}")
+
+    current_regime = None
+    for r in results:
+        if r['regime'] != current_regime:
+            if current_regime is not None:
+                print(f"  {'-'*84}")
+            current_regime = r['regime']
+
+        is_baseline = 'baseline' in r['confluence']
+        wr_emoji = '🟢' if r['win_rate'] >= 0.6 else ('🟡' if r['win_rate'] >= 0.5 else '🔴')
+        lift_str = f"{r['lift_vs_base']:+.1f}pp" if not is_baseline else '  —'
+        prefix = '►' if is_baseline else ' '
+
+        print(f"  {prefix}{r['regime']:>15} {r['confluence']:>24} {r['trades']:>7d} "
+              f"{wr_emoji}{r['win_rate']*100:>6.1f}% {r['avg_pnl']:>+10.2f} "
+              f"{r['total_pnl']:>+10.2f} {lift_str:>8}")
+
+
 def ics_bucket_analysis(trades, buckets):
     """Special bucketing for ICS (composite score)."""
     return module_bucket_analysis(trades, 'ICS', lambda t: t.ics, buckets)
@@ -320,10 +421,14 @@ def run_attribution(csv_path, date_start=None, date_end=None):
     print_attribution_table(regime_results,
         "Market Regime — P&L by Regime State")
 
-    # 5. Weight Calibration
+    # 5. Regime × Module Confluence Cross-Tab
+    regime_cross_results = regime_module_cross_analysis(trades)
+    print_regime_cross_table(regime_cross_results)
+
+    # 6. Weight Calibration
     weight_calibration_check(trades)
 
-    # 6. Summary
+    # 7. Summary
     print(f"\n{'='*80}")
     print(f"  KEY FINDINGS")
     print(f"{'='*80}")
