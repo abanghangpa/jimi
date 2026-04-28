@@ -644,9 +644,16 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         # ═══════════════════════════════════════════════════════════
         # PHASE 2: DIRECTION (M13) — What's the structural bias?
         # ═══════════════════════════════════════════════════════════
+        # M13 defers to M9 during chop regimes — diagnostic data shows
+        # M13 is anti-predictive when it agrees with M9 during chop.
+        # The CHOP_MILD_BEAR/BULL directional split is the primary
+        # direction source during chop; M13 only adds value when M9 is NEUTRAL.
         m13_score = 0.5; m13_status = 'SKIP'; m13_details = {}
         m13_bias = 'NEUTRAL'
-        if cfg.get('M13_ENABLED', True):
+        _chop_regimes = ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD')
+        _m13_defer_in_chop = cfg.get('M13_DEFER_IN_CHOP', True)
+        _in_chop = _m13_defer_in_chop and vol_regime in _chop_regimes
+        if cfg.get('M13_ENABLED', True) and not _in_chop:
             m13_status, m13_score, m13_details = score_m13(
                 df_1h, idx_1h, 'NEUTRAL', df_15m, idx)
             m13_bias = m13_details.get('m13_bias', 'NEUTRAL')
@@ -676,7 +683,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 vol_regime, m9_raw, direction, trend_dir)
         if cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
             m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), direction)
-        if cfg.get('M13_ENABLED', True):
+        if cfg.get('M13_ENABLED', True) and not _in_chop:
             m13_status, m13_score, m13_details = score_m13(
                 df_1h, idx_1h, direction, df_15m, idx)
 

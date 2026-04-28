@@ -174,6 +174,7 @@ _DEFAULTS = {
     # M13 Structure (HTF swing direction)
     "M13_ENABLED": True,
     "M13_WEIGHT": 0.10,
+    "M13_DEFER_IN_CHOP": True,
     # Adaptive direction
     "ADAPTIVE_DIR_ENABLED": True,
     "ADAPTIVE_DIR_MIN_BIAS": 0.10,

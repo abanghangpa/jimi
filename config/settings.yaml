@@ -263,6 +263,9 @@ MTF_CONFIRM_ENABLED: true
 MTF_1H_CANDLE_CHECK: true
 MTF_4H_EMA_CHECK: false
 
+# M13 defers to M9 during chop (anti-predictive when agreeing)
+M13_DEFER_IN_CHOP: true
+
 # ─── M1 ENHANCEMENT ─────────────────────────────────────────
 M1_RSI_ENABLED: true
 M1_MOMENTUM_ENABLED: true
