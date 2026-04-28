@@ -361,6 +361,173 @@ def print_attribution_table(results, title):
         print(row)
 
 
+def recompute_ics(trades, cfg=None):
+    """
+    Recompute ICS for all trades using the same weighted-sum logic as calc_ics.
+    Returns array of ICS values aligned with trades list.
+    Uses the base 5-module formula (M1+M2+M3+M4+M5) with extra modules added
+    when their weight > 0 and the trade has a non-default score.
+    """
+    cfg = cfg or CONFIG
+    ics_arr = np.zeros(len(trades))
+
+    base_w = (cfg['M1_WEIGHT'] + cfg['M2_WEIGHT'] +
+              cfg['M3_WEIGHT'] + cfg['M4_WEIGHT'] + cfg['M5_WEIGHT'])
+
+    for i, t in enumerate(trades):
+        m4_contrib = t.m4_score if t.m4_status == 'PASS' else 0.5
+
+        # Base 5 modules
+        ics = (t.m1_score * cfg['M1_WEIGHT'] +
+               0.5 * cfg['M2_WEIGHT'] +  # M2 is always 0.5 in trades
+               t.m3_score * cfg['M3_WEIGHT'] +
+               m4_contrib * cfg['M4_WEIGHT'] +
+               t.m5_score * cfg['M5_WEIGHT'])
+
+        # Extra modules (check if weight > 0 and score is non-default)
+        extras = []
+        if cfg.get('M7_WEIGHT', 0) > 0 and t.m7_score != 0.5:
+            extras.append(('M7', t.m7_score, cfg['M7_WEIGHT']))
+        if cfg.get('M9_WEIGHT', 0) > 0 and t.m9_score != 0.5:
+            extras.append(('M9', t.m9_score, cfg['M9_WEIGHT']))
+        if cfg.get('M10_WEIGHT', 0) > 0 and t.m10_score != 0.5:
+            extras.append(('M10', t.m10_score, cfg['M10_WEIGHT']))
+        if cfg.get('M11_WEIGHT', 0) > 0 and t.m11_score != 0.5:
+            extras.append(('M11', t.m11_score, cfg['M11_WEIGHT']))
+        if cfg.get('M12_WEIGHT', 0) > 0 and t.m12_score != 0.5:
+            extras.append(('M12', t.m12_score, cfg['M12_WEIGHT']))
+        if cfg.get('CROSS_ASSET_ENABLED', False) and t.cross_asset_score != 0.5:
+            extras.append(('CA', t.cross_asset_score,
+                           cfg.get('CROSS_ASSET_BTC_WEIGHT', 0.08)))
+
+        if extras:
+            extra_w = sum(w for _, _, w in extras)
+            other_w = 1.0 - extra_w
+            ics = (t.m1_score * (cfg['M1_WEIGHT'] / base_w * other_w) +
+                   0.5 * (cfg['M2_WEIGHT'] / base_w * other_w) +
+                   t.m3_score * (cfg['M3_WEIGHT'] / base_w * other_w) +
+                   m4_contrib * (cfg['M4_WEIGHT'] / base_w * other_w) +
+                   t.m5_score * (cfg['M5_WEIGHT'] / base_w * other_w))
+            for _, score, weight in extras:
+                ics += score * weight
+
+        ics_arr[i] = ics
+
+    return ics_arr
+
+
+def permutation_importance(trades, n_permutations=1000, seed=42):
+    """
+    Permutation importance: for each module, shuffle its scores across trades,
+    recompute ICS, measure degradation in ICS↔PnL correlation.
+
+    Returns list of dicts with module importance metrics.
+    """
+    rng = np.random.RandomState(seed)
+    pnl_arr = np.array([t.pnl_pct * 100 for t in trades])
+    real_ics = recompute_ics(trades)
+    real_corr = np.corrcoef(real_ics, pnl_arr)[0, 1] if len(trades) >= 5 else 0
+
+    # Also measure real WR at ICS>threshold
+    ics_threshold = CONFIG.get('ICS_THRESHOLD_NORMAL', 0.50)
+    real_above = real_ics >= ics_threshold
+    real_above_trades = pnl_arr[real_above]
+    real_wr = (np.sum(real_above_trades > 0) / len(real_above_trades)
+               if len(real_above_trades) > 0 else 0)
+    real_avg = np.mean(real_above_trades) if len(real_above_trades) > 0 else 0
+
+    modules = [
+        ('M1',  lambda t: t.m1_score,  lambda t, v: setattr(t, 'm1_score', v)),
+        ('M3',  lambda t: t.m3_score,  lambda t, v: setattr(t, 'm3_score', v)),
+        ('M4',  lambda t: t.m4_score,  lambda t, v: setattr(t, 'm4_score', v)),
+        ('M5',  lambda t: t.m5_score,  lambda t, v: setattr(t, 'm5_score', v)),
+        ('M10', lambda t: t.m10_score, lambda t, v: setattr(t, 'm10_score', v)),
+        ('M11', lambda t: t.m11_score, lambda t, v: setattr(t, 'm11_score', v)),
+        ('M12', lambda t: t.m12_score, lambda t, v: setattr(t, 'm12_score', v)),
+    ]
+
+    print(f"\n{'='*80}")
+    print(f"  PERMUTATION IMPORTANCE — Does this module actually matter?")
+    print(f"{'='*80}")
+    print(f"  Method: shuffle module scores → recompute ICS → measure degradation")
+    print(f"  Permutations per module: {n_permutations}")
+    print(f"  Real ICS↔PnL correlation: {real_corr:+.4f}")
+    print(f"  Real WR (ICS≥{ics_threshold}): {real_wr*100:.1f}%  "
+          f"Avg PnL: {real_avg:+.2f}%  Trades: {int(real_above.sum())}")
+    print()
+    print(f"  {'Module':>6} {'Δ Corr':>10} {'Δ WR':>8} {'Δ AvgPnL':>10} {'95% CI ΔCorr':>18} {'Verdict':>12}")
+    print(f"  {'-'*70}")
+
+    results = []
+    for mod_name, get_fn, set_fn in modules:
+        corr_drops = []
+        wr_drops = []
+        avg_drops = []
+
+        orig_scores = [get_fn(t) for t in trades]
+
+        for _ in range(n_permutations):
+            # Shuffle
+            shuffled = rng.permutation(orig_scores)
+            for t, v in zip(trades, shuffled):
+                set_fn(t, v)
+
+            # Recompute ICS
+            perm_ics = recompute_ics(trades)
+            perm_corr = np.corrcoef(perm_ics, pnl_arr)[0, 1] if len(trades) >= 5 else 0
+            corr_drops.append(real_corr - perm_corr)
+
+            # WR at threshold
+            perm_above = perm_ics >= ics_threshold
+            perm_above_trades = pnl_arr[perm_above]
+            if len(perm_above_trades) > 0:
+                perm_wr = np.sum(perm_above_trades > 0) / len(perm_above_trades)
+                perm_avg = np.mean(perm_above_trades)
+                wr_drops.append(real_wr - perm_wr)
+                avg_drops.append(real_avg - perm_avg)
+
+            # Restore originals
+            for t, v in zip(trades, orig_scores):
+                set_fn(t, v)
+
+        mean_drop = np.mean(corr_drops)
+        ci_low = np.percentile(corr_drops, 2.5)
+        ci_high = np.percentile(corr_drops, 97.5)
+        mean_wr_drop = np.mean(wr_drops)
+        mean_avg_drop = np.mean(avg_drops)
+
+        # Verdict
+        if ci_low > 0:
+            verdict = '✓ MATTERS'
+        elif ci_high < 0:
+            verdict = '⚠ HURTS'
+        else:
+            verdict = '≈ NOISE'
+
+        print(f"  {mod_name:>6} {mean_drop:>+10.4f} {mean_wr_drop*100:>+7.1f}% "
+              f"{mean_avg_drop:>+10.2f} [{ci_low:+.4f}, {ci_high:+.4f}] {verdict:>12}")
+
+        results.append({
+            'module': mod_name,
+            'mean_corr_drop': mean_drop,
+            'wr_drop': mean_wr_drop,
+            'avg_pnl_drop': mean_avg_drop,
+            'ci_low': ci_low,
+            'ci_high': ci_high,
+            'verdict': verdict,
+        })
+
+    # Summary
+    print(f"\n  {'─'*70}")
+    print(f"  Interpretation: Δ Corr > 0 means shuffling this module REDUCED correlation,")
+    print(f"  i.e. the module was contributing real signal. Larger drop = more important.")
+    print(f"  '✓ MATTERS' = 95% CI entirely above zero (statistically significant)")
+    print(f"  '≈ NOISE'   = CI crosses zero (module could be random)")
+    print(f"  '⚠ HURTS'   = CI entirely below zero (module is inversely predictive)")
+
+    return results
+
+
 def run_attribution(csv_path, date_start=None, date_end=None):
     """Run the full attribution analysis."""
     print(f"╔══════════════════════════════════════════════════════════════════╗")
@@ -432,7 +599,10 @@ def run_attribution(csv_path, date_start=None, date_end=None):
     # 6. Weight Calibration
     weight_calibration_check(trades)
 
-    # 7. Summary
+    # 7. Permutation Importance
+    permutation_importance(trades, n_permutations=1000)
+
+    # 8. Summary
     print(f"\n{'='*80}")
     print(f"  KEY FINDINGS")
     print(f"{'='*80}")
