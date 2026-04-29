@@ -370,29 +370,40 @@ def estimate_liquidity_levels(df_15m, idx, sr_levels, oi_usd, ls_ratio,
             if zone['strength'] > deduped[-1]['strength']:
                 deduped[-1] = zone
 
-    # Check if zones have been swept by recent price action
-    recent_high = float(np.max(df_15m['High'].values[max(0, idx-95):idx+1].astype(float)))
-    recent_low = float(np.min(df_15m['Low'].values[max(0, idx-95):idx+1].astype(float)))
-    recent_times = df_15m['Open time'].values[max(0, idx-95):idx+1]
+    # Check if zones have been swept by recent price action.
+    # Use a short lookback (4h = 16 bars on 15m) so a single wick
+    # doesn't permanently invalidate a level that may have rebuilt.
+    # Skip live order book walls — if they're in the current book, they exist.
+    sweep_lookback = 16  # 4h
+    recent_high = float(np.max(df_15m['High'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)))
+    recent_low = float(np.min(df_15m['Low'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)))
+    recent_times = df_15m['Open time'].values[max(0, idx - sweep_lookback + 1):idx+1]
 
     for zone in deduped:
         zp = zone['price']
         swept = False
         swept_at = None
+
+        # Live order book walls are by definition not swept — skip
+        if zone['type'] in ('BID_WALL', 'ASK_WALL'):
+            zone['swept'] = False
+            zone['swept_at'] = None
+            continue
+
         # Zone above price: swept if recent high passed it
         if zp > current_price and recent_high >= zp:
             swept = True
+            highs_arr = df_15m['High'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)
             for i in range(len(recent_times)):
-                highs = df_15m['High'].values[max(0, idx-95):idx+1].astype(float)
-                if highs[i] >= zp:
+                if highs_arr[i] >= zp:
                     swept_at = str(recent_times[i])
                     break
         # Zone below price: swept if recent low passed it
         elif zp < current_price and recent_low <= zp:
             swept = True
+            lows_arr = df_15m['Low'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)
             for i in range(len(recent_times)):
-                lows = df_15m['Low'].values[max(0, idx-95):idx+1].astype(float)
-                if lows[i] <= zp:
+                if lows_arr[i] <= zp:
                     swept_at = str(recent_times[i])
                     break
         zone['swept'] = swept
