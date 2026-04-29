@@ -80,6 +80,49 @@ def compute_indicators(df_15m):
 from src.utils.data_handler import resample_ohlcv
 
 
+def _check_swept_magnets(df_15m, idx, magnets, lookback_bars=96):
+    """Check if magnets have been swept by recent price action.
+
+    A magnet is 'swept' if price has already traded through it in the
+    last `lookback_bars` candles (default: 96 = 24h on 15m).
+    Returns list of (price, strength, swept: bool, swept_at) tuples.
+    """
+    if not magnets:
+        return []
+
+    start = max(0, idx - lookback_bars + 1)
+    recent_highs = df_15m['High'].values[start:idx+1].astype(float)
+    recent_lows = df_15m['Low'].values[start:idx+1].astype(float)
+    recent_times = df_15m['Open time'].values[start:idx+1]
+    session_high = np.max(recent_highs)
+    session_low = np.min(recent_lows)
+
+    result = []
+    for price, vol, strength in magnets:
+        swept = False
+        swept_at = None
+        # For magnets above current price: swept if recent high already passed it
+        # For magnets below current price: swept if recent low already passed it
+        current = df_15m['Close'].values[idx]
+        if price > current and session_high >= price:
+            swept = True
+            # Find the first candle that swept it
+            for i in range(len(recent_highs)):
+                if recent_highs[i] >= price:
+                    swept_at = str(recent_times[i])
+                    break
+        elif price < current and session_low <= price:
+            swept = True
+            for i in range(len(recent_lows)):
+                if recent_lows[i] <= price:
+                    swept_at = str(recent_times[i])
+                    break
+
+        result.append((round(price, 2), round(strength, 2), swept, swept_at))
+
+    return result
+
+
 def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d):
     """Scan current market for trading signals."""
     idx = len(df_15m) - 1
@@ -112,7 +155,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d):
         n_bins=CONFIG['M5_VP_BINS'], lookback=CONFIG['M5_VP_LOOKBACK'])
     magnets = find_magnets(bin_centers, vol_profile) if bin_centers is not None else []
     gaps = find_gaps(bin_centers, vol_profile) if bin_centers is not None else []
-    result['magnets'] = [(round(p, 2), round(s, 2)) for p, _, s in magnets[:5]]
+    # Check which magnets have already been swept by recent price action
+    swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5])
+    result['magnets'] = swept_magnets
     result['gaps'] = [round(p, 2) for p, _ in gaps[:5]]
 
     # S/R Levels
@@ -240,10 +285,16 @@ def print_signal(result):
     if magnets:
         print(f"\n  Liquidation Magnets (volume clusters):")
         price = result['price']
-        for i, (p, s) in enumerate(magnets[:5]):
+        for i, mag in enumerate(magnets[:5]):
+            if len(mag) == 4:
+                p, s, swept, swept_at = mag
+            else:
+                p, s = mag[0], mag[1]
+                swept, swept_at = False, None
             dist = (p - price) / price * 100
             direction = "↑" if dist > 0 else "↓"
-            print(f"    #{i+1}: ${p:.2f}  strength={s:.2f}x  ({direction}{abs(dist):.2f}%)")
+            swept_tag = f"  ✅ SWEPT @ {swept_at}" if swept else ""
+            print(f"    #{i+1}: ${p:.2f}  strength={s:.2f}x  ({direction}{abs(dist):.2f}%){swept_tag}")
 
     # Support / Resistance
     sr = result.get('sr_levels', [])
