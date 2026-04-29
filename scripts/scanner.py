@@ -265,10 +265,33 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         'trend_dir': trend_dir, 'trend_val': float(trend_val),
     }
 
+    # ── Prepare 15m data for M9/M13 (they expect 15m bars, not base TF) ──
+    base_tf = cfg.get('_base_timeframe', '15m')
+    if base_tf == '15m':
+        df_15m_for_m9 = df_15m
+        idx_15m_for_m9 = idx
+    elif base_tf == '1h':
+        # 1h data — M13 uses it directly as df_1h, pass same as df_15m (FVGs/OBs on 1h bars)
+        df_15m_for_m9 = df_15m
+        idx_15m_for_m9 = idx
+    else:
+        # 5m/1m — resample to 15m for M9/M13
+        df_tmp = df_15m.copy().set_index('Open time')
+        agg = {
+            'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last',
+            'Volume': 'sum', 'Quote asset volume': 'sum',
+            'Number of trades': 'sum',
+            'Taker buy base asset volume': 'sum',
+            'Taker buy quote asset volume': 'sum',
+        }
+        df_15m_for_m9 = df_tmp.resample('15min').agg(agg).dropna(subset=['Open']).reset_index()
+        df_15m_for_m9['atr'] = calc_atr(df_15m_for_m9['High'], df_15m_for_m9['Low'], df_15m_for_m9['Close'], cfg['ATR_PERIOD'])
+        idx_15m_for_m9 = len(df_15m_for_m9) - 1
+
     # ── Phase 1: M9 Volatility Regime ──
     regime_state = RegimeState(config=cfg)
     vol_regime, m9_raw, m9_vol_details = compute_vol_regime(
-        df_15m, df_1h, idx, idx_1h, regime_state=regime_state, config=cfg)
+        df_15m_for_m9, df_1h, idx_15m_for_m9, idx_1h, regime_state=regime_state, config=cfg)
     result['m9'] = {'regime': vol_regime, 'raw': round(float(m9_raw), 3) if m9_raw else None}
 
     # Hard block on CRISIS
@@ -279,7 +302,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         return result
 
     # ── Phase 2: M13 Structural Bias ──
-    m13_status, m13_score_raw, m13_details = score_m13(df_1h, idx_1h, 'NEUTRAL', df_15m, idx)
+    m13_status, m13_score_raw, m13_details = score_m13(df_1h, idx_1h, 'NEUTRAL', df_15m_for_m9, idx_15m_for_m9)
     m13_bias = m13_details.get('m13_bias', 'NEUTRAL')
     result['m13'] = {'bias': m13_bias, 'score': round(float(m13_score_raw), 3), 'status': m13_status}
 
@@ -321,7 +344,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     if cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
         eb_row, bt_row = m7_get_row(m7_ethbtc_df, m7_btc_df, ts)
         m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), direction)
-    m13_status, m13_score, m13_details = score_m13(df_1h, idx_1h, direction, df_15m, idx)
+    m13_status, m13_score, m13_details = score_m13(df_1h, idx_1h, direction, df_15m_for_m9, idx_15m_for_m9)
     result['m9']['score'] = round(float(m9_score), 3)
     result['m9']['status'] = m9_status
     result['m7']['score'] = round(float(m7_score), 3)
@@ -966,6 +989,7 @@ def main():
     for k in lookback_keys:
         if k in scaled_config:
             scaled_config[k] = max(int(CONFIG[k] * tf_mult), 10)
+    scaled_config['_base_timeframe'] = args.tf
 
     print(f"Fetching {args.tf} data ({bars} bars)...")
     df_base = fetch_recent(bars=bars, timeframe=args.tf)
