@@ -582,12 +582,23 @@ def main():
         print("Use the legacy scanner for dashboard mode.")
         return
 
+    from datetime import datetime
+
     print("Fetching recent data...")
     df_15m = fetch_recent(bars=1000)
     print("Computing indicators...")
     df_15m, df_1h, df_2h, df_4h, df_1d = compute_indicators(df_15m)
     print("Scanning...")
     result = scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d)
+
+    # Always save scan result to data/scans/
+    scan_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'scans')
+    os.makedirs(scan_dir, exist_ok=True)
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    scan_file = os.path.join(scan_dir, f'scan_{ts}.json')
+    with open(scan_file, 'w') as f:
+        json.dump(result, f, indent=2, default=str)
+    print(f"\n  💾 Saved: {scan_file}")
 
     if args.json:
         print(json.dumps(result, indent=2, default=str))

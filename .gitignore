@@ -29,3 +29,6 @@ jimi_trades.csv
 direction_optimization.json
 regime_results.csv
 .venv/
+
+# Scan results
+data/scans/
