@@ -359,14 +359,17 @@ def estimate_liquidity_levels(df_15m, idx, sr_levels, oi_usd, ls_ratio,
                     'dist_pct': round((price - current_price) / current_price * 100, 2),
                 })
 
-    # Deduplicate nearby zones (within 0.3%)
+    # Deduplicate nearby zones of the SAME type (within 0.3%).
+    # Different types at the same price represent distinct signals
+    # (e.g. LONG_LIQ vs SHORT_STOP) and must not be merged.
     liq_zones.sort(key=lambda x: x['price'])
     deduped = []
     for zone in liq_zones:
-        if not deduped or abs(zone['price'] - deduped[-1]['price']) / zone['price'] > 0.003:
+        if not deduped or abs(zone['price'] - deduped[-1]['price']) / zone['price'] > 0.003 \
+                or zone['type'] != deduped[-1]['type']:
             deduped.append(zone)
         else:
-            # Merge: keep the stronger one
+            # Same type, same price bucket — keep the stronger one
             if zone['strength'] > deduped[-1]['strength']:
                 deduped[-1] = zone
 
@@ -447,10 +450,14 @@ def get_liquidity_summary(df_15m, idx, sr_levels, oi_usd, ls_ratio,
     zones = estimate_liquidity_levels(
         df_15m, idx, sr_levels, oi_usd, ls_ratio, direction_bias, order_book)
 
-    # Separate by side of price
+    # Separate by side of price, keeping only directionally relevant types:
+    #   below price → long liquidations/stops + bid walls (where longs get hurt)
+    #   above price → short liquidations/stops + ask walls (where shorts get hurt)
     current_price = df_15m['Close'].values[idx]
-    below = [z for z in zones if z['price'] < current_price]
-    above = [z for z in zones if z['price'] > current_price]
+    below_types = {'LONG_LIQ', 'LONG_STOP', 'BID_WALL'}
+    above_types = {'SHORT_LIQ', 'SHORT_STOP', 'ASK_WALL'}
+    below = [z for z in zones if z['price'] < current_price and z['type'] in below_types]
+    above = [z for z in zones if z['price'] > current_price and z['type'] in above_types]
 
     below.sort(key=lambda x: x['price'], reverse=True)  # closest first
     above.sort(key=lambda x: x['price'])
