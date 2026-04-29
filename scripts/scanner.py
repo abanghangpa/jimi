@@ -327,6 +327,56 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         m7_score=m7_score, m7_status=m7_status,
         swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
     )
+    # ── Gather market data (always, regardless of signal status) ──
+    highs = df_15m['High'].values.astype(float)
+    lows = df_15m['Low'].values.astype(float)
+    closes = df_15m['Close'].values.astype(float)
+    volumes = df_15m['Volume'].values.astype(float)
+    bin_centers, vol_profile, bin_edges = build_volume_profile(
+        highs[:idx+1], lows[:idx+1], closes[:idx+1], volumes[:idx+1],
+        n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
+    magnets = find_magnets(bin_centers, vol_profile) if bin_centers is not None else []
+    gaps = find_gaps(bin_centers, vol_profile) if bin_centers is not None else []
+    swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5])
+    result['magnets'] = swept_magnets
+    result['gaps'] = [round(p, 2) for p, _ in gaps[:5]]
+
+    sr_levels = find_support_resistance(df_15m, idx)
+    sr_levels.sort(key=lambda x: x[1], reverse=True)
+    result['sr_levels'] = [(round(p, 2), round(s, 2), t, touches, bounces)
+                           for p, s, touches, bounces, t in sr_levels[:8]]
+
+    try:
+        deriv_summary = get_derivatives_summary()
+        if 'error' not in deriv_summary:
+            result['derivatives'] = deriv_summary
+    except Exception:
+        pass
+
+    result['cascade_risk'] = _detect_cascade_risk(df_15m, idx, result)
+
+    # Liquidity levels & conflict — need direction, use resolved or NEUTRAL
+    _liq_direction = direction if direction != 'NEUTRAL' else None
+    if _liq_direction:
+        try:
+            oi_usd = result.get('derivatives', {}).get('oi_usd', 0)
+            ls_ratio = result.get('derivatives', {}).get('ls_ratio', 1.0)
+            liq_summary = get_liquidity_summary(
+                df_15m, idx, sr_levels, oi_usd, ls_ratio, _liq_direction)
+            result['liquidity_levels'] = liq_summary
+        except Exception:
+            pass
+
+        if swing_bias:
+            try:
+                conflict = get_conflict_stats(
+                    'BULLISH' if _liq_direction == 'LONG' else 'BEARISH',
+                    swing_bias)
+                if conflict:
+                    result['conflict'] = conflict
+            except Exception:
+                pass
+
     result['direction'] = direction
     result['direction_resolver'] = {
         'direction': direction, 'size_mult': round(float(dir_size_mult), 3),
@@ -423,53 +473,6 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         if _swing_levels:
             m14_status, m14_score, _ = score_m14(df_15m, idx, direction, _swing_levels, config=cfg)
             result['m14'] = {'status': m14_status, 'score': round(float(m14_score), 3)}
-
-    # ── Gather market data (always, regardless of signal status) ──
-    highs = df_15m['High'].values.astype(float)
-    lows = df_15m['Low'].values.astype(float)
-    closes = df_15m['Close'].values.astype(float)
-    volumes = df_15m['Volume'].values.astype(float)
-    bin_centers, vol_profile, bin_edges = build_volume_profile(
-        highs[:idx+1], lows[:idx+1], closes[:idx+1], volumes[:idx+1],
-        n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
-    magnets = find_magnets(bin_centers, vol_profile) if bin_centers is not None else []
-    gaps = find_gaps(bin_centers, vol_profile) if bin_centers is not None else []
-    swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5])
-    result['magnets'] = swept_magnets
-    result['gaps'] = [round(p, 2) for p, _ in gaps[:5]]
-
-    sr_levels = find_support_resistance(df_15m, idx)
-    sr_levels.sort(key=lambda x: x[1], reverse=True)
-    result['sr_levels'] = [(round(p, 2), round(s, 2), t, touches, bounces)
-                           for p, s, touches, bounces, t in sr_levels[:8]]
-
-    try:
-        deriv_summary = get_derivatives_summary()
-        if 'error' not in deriv_summary:
-            result['derivatives'] = deriv_summary
-    except Exception:
-        pass
-
-    try:
-        oi_usd = result.get('derivatives', {}).get('oi_usd', 0)
-        ls_ratio = result.get('derivatives', {}).get('ls_ratio', 1.0)
-        liq_summary = get_liquidity_summary(
-            df_15m, idx, sr_levels, oi_usd, ls_ratio, direction)
-        result['liquidity_levels'] = liq_summary
-    except Exception:
-        pass
-
-    result['cascade_risk'] = _detect_cascade_risk(df_15m, idx, result)
-
-    if direction and swing_bias:
-        try:
-            conflict = get_conflict_stats(
-                'BULLISH' if direction == 'LONG' else 'BEARISH',
-                swing_bias)
-            if conflict:
-                result['conflict'] = conflict
-        except Exception:
-            pass
 
     # ── ICS ──
     ics, effective_floor = calc_ics(
