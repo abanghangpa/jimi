@@ -360,8 +360,9 @@ def print_signal(result):
                 icon = {'LONG_LIQ': '💥', 'LONG_STOP': '🛑', 'BID_WALL': '🟢',
                         'SHORT_LIQ': '💥', 'SHORT_STOP': '🛑', 'ASK_WALL': '🔴'}.get(z['type'], '•')
                 cascade = z.get('cascade_risk', '')
+                swept_tag = f"  ✅ SWEPT" if z.get('swept') else ""
                 print(f"      {icon} ${z['price']:.2f}  {z['type']}  "
-                      f"str={z['strength']:.0f}  cascade={cascade}  ({z['dist_pct']:+.2f}%)")
+                      f"str={z['strength']:.0f}  cascade={cascade}  ({z['dist_pct']:+.2f}%){swept_tag}")
 
         above = liq.get('above', [])
         if above:
@@ -370,8 +371,9 @@ def print_signal(result):
                 icon = {'LONG_LIQ': '💥', 'LONG_STOP': '🛑', 'BID_WALL': '🟢',
                         'SHORT_LIQ': '💥', 'SHORT_STOP': '🛑', 'ASK_WALL': '🔴'}.get(z['type'], '•')
                 cascade = z.get('cascade_risk', '')
+                swept_tag = f"  ✅ SWEPT" if z.get('swept') else ""
                 print(f"      {icon} ${z['price']:.2f}  {z['type']}  "
-                      f"str={z['strength']:.0f}  cascade={cascade}  ({z['dist_pct']:+.2f}%)")
+                      f"str={z['strength']:.0f}  cascade={cascade}  ({z['dist_pct']:+.2f}%){swept_tag}")
 
     # ICS & Signal
     if 'ics' in result:

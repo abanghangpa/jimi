@@ -370,6 +370,34 @@ def estimate_liquidity_levels(df_15m, idx, sr_levels, oi_usd, ls_ratio,
             if zone['strength'] > deduped[-1]['strength']:
                 deduped[-1] = zone
 
+    # Check if zones have been swept by recent price action
+    recent_high = float(np.max(df_15m['High'].values[max(0, idx-95):idx+1].astype(float)))
+    recent_low = float(np.min(df_15m['Low'].values[max(0, idx-95):idx+1].astype(float)))
+    recent_times = df_15m['Open time'].values[max(0, idx-95):idx+1]
+
+    for zone in deduped:
+        zp = zone['price']
+        swept = False
+        swept_at = None
+        # Zone above price: swept if recent high passed it
+        if zp > current_price and recent_high >= zp:
+            swept = True
+            for i in range(len(recent_times)):
+                highs = df_15m['High'].values[max(0, idx-95):idx+1].astype(float)
+                if highs[i] >= zp:
+                    swept_at = str(recent_times[i])
+                    break
+        # Zone below price: swept if recent low passed it
+        elif zp < current_price and recent_low <= zp:
+            swept = True
+            for i in range(len(recent_times)):
+                lows = df_15m['Low'].values[max(0, idx-95):idx+1].astype(float)
+                if lows[i] <= zp:
+                    swept_at = str(recent_times[i])
+                    break
+        zone['swept'] = swept
+        zone['swept_at'] = swept_at
+
     # Sort by strength
     deduped.sort(key=lambda x: x['strength'], reverse=True)
 
