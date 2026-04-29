@@ -304,6 +304,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         m7_score=m7_score, m7_status=m7_status,
         swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
     )
+    result['direction'] = direction
     result['direction_resolver'] = {
         'direction': direction, 'size_mult': round(float(dir_size_mult), 3),
         'action': dir_details.get('action', '?'),
