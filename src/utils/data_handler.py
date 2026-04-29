@@ -48,25 +48,54 @@ def _get_binance():
 
 
 def fetch_recent(symbol='ETH/USDT', timeframe='15m', bars=1000):
-    """Fetch recent OHLCV from Binance (live scanner)."""
+    """Fetch recent OHLCV from Binance (live scanner).
+
+    Supports multi-request fetching when bars > 1000 (Binance API limit).
+    Makes multiple paginated requests and stitches data together.
+    """
     ex = _get_binance()
     symbol_raw = symbol.replace('/', '')
-    raw = ex.publicGetKlines({
-        'symbol': symbol_raw, 'interval': timeframe, 'limit': bars,
-    })
-    rows = []
-    for c in raw:
-        rows.append({
-            'Open time': pd.to_datetime(int(c[0]), unit='ms'),
-            'Open': float(c[1]), 'High': float(c[2]), 'Low': float(c[3]),
-            'Close': float(c[4]), 'Volume': float(c[5]),
-            'Close time': pd.to_datetime(int(c[6]), unit='ms'),
-            'Quote asset volume': float(c[7]),
-            'Number of trades': int(c[8]),
-            'Taker buy base asset volume': float(c[9]),
-            'Taker buy quote asset volume': float(c[10]),
-        })
-    return pd.DataFrame(rows)
+    max_per_request = 1000
+
+    all_rows = []
+    remaining = bars
+    end_time = None  # fetch backwards from now
+
+    while remaining > 0:
+        limit = min(remaining, max_per_request)
+        params = {
+            'symbol': symbol_raw, 'interval': timeframe, 'limit': limit,
+        }
+        if end_time is not None:
+            params['endTime'] = end_time
+
+        raw = ex.publicGetKlines(params)
+        if not raw:
+            break
+
+        for c in raw:
+            all_rows.append({
+                'Open time': pd.to_datetime(int(c[0]), unit='ms'),
+                'Open': float(c[1]), 'High': float(c[2]), 'Low': float(c[3]),
+                'Close': float(c[4]), 'Volume': float(c[5]),
+                'Close time': pd.to_datetime(int(c[6]), unit='ms'),
+                'Quote asset volume': float(c[7]),
+                'Number of trades': int(c[8]),
+                'Taker buy base asset volume': float(c[9]),
+                'Taker buy quote asset volume': float(c[10]),
+            })
+
+        if len(raw) < limit:
+            break
+
+        # Move end_time to before the earliest candle we got
+        end_time = int(raw[0][0]) - 1
+        remaining -= len(raw)
+
+    df = pd.DataFrame(all_rows)
+    if len(df) > 0:
+        df = df.drop_duplicates(subset='Open time').sort_values('Open time').reset_index(drop=True)
+    return df
 
 
 def fetch_daily_ohlcv_ccxt(symbol, start_date, end_date, exchange_id='binance',

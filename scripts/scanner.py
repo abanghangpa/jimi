@@ -977,7 +977,7 @@ def main():
     # Timeframe scaling: lookback bars are tuned for 15m, scale for other TFs
     tf_multipliers = {'1m': 15, '5m': 3, '15m': 1, '1h': 0.25}
     tf_mult = tf_multipliers[args.tf]
-    bars_map = {'1m': 5000, '5m': 2000, '15m': 1000, '1h': 500}
+    bars_map = {'1m': 3000, '5m': 2000, '15m': 1000, '1h': 500}
     bars = bars_map[args.tf]
 
     # Scale config lookbacks for the selected timeframe
