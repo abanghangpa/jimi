@@ -36,6 +36,7 @@ from src.modules.m15_liq_levels import get_liquidity_summary
 from src.modules.m7_market_regime import m7_prepare_data, m7_get_row, score_m7
 from src.modules.m8_funding import score_m8_funding
 from src.engine import calc_ics, check_entry_filters, get_tp_multipliers
+from src.modules.m_conflict import get_conflict_stats
 
 
 def compute_indicators(df_15m):
@@ -184,6 +185,17 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d):
         result['liquidity_levels'] = liq_summary
     except Exception:
         pass
+
+    # Conflict History — what happened historically when M1 and daily disagreed
+    if direction and swing_bias:
+        try:
+            conflict = get_conflict_stats(
+                'BULLISH' if direction == 'LONG' else 'BEARISH',
+                swing_bias)
+            if conflict:
+                result['conflict'] = conflict
+        except Exception:
+            pass
 
     if direction is None:
         result['status'] = 'NO_SIGNAL'
@@ -375,6 +387,24 @@ def print_signal(result):
                 print(f"      {icon} ${z['price']:.2f}  {z['type']}  "
                       f"str={z['strength']:.0f}  cascade={cascade}  ({z['dist_pct']:+.2f}%){swept_tag}")
 
+    # Conflict History
+    conflict = result.get('conflict')
+    if conflict and conflict.get('historical'):
+        hist = conflict['historical']
+        is_conflict = conflict['is_conflict']
+        label = "CONFLICT" if is_conflict else "ALIGNED"
+        print(f"\n  Conflict History ({conflict['m1_direction']} M1 vs {conflict['daily_bias']} daily — {label}):")
+        print(f"    Historical signals: {hist['total_signals']}  ({hist['first_seen'][:10]} → {hist['last_seen'][:10]})")
+        windows = hist.get('windows', {})
+        if windows:
+            print(f"    {'Window':>6}  {'Rev%':>6}  {'Win%':>6}  {'AvgNet':>8}  {'Avg↓':>8}  {'Avg↑':>8}  {'n':>4}")
+            for wname in ['4h', '12h', '24h', '48h', '72h']:
+                w = windows.get(wname)
+                if w:
+                    rev_icon = "⬇️" if w['reversal_rate'] > 55 else "⬆️" if w['reversal_rate'] < 45 else "↔️"
+                    print(f"    {wname:>6}  {w['reversal_rate']:>5.1f}%  {w['win_rate']:>5.1f}%  "
+                          f"{w['avg_net']:>+7.2f}%  {-w['avg_down']:>+7.2f}%  {w['avg_up']:>+7.2f}%  {w['n']:>4}  {rev_icon}")
+
     # ICS & Signal
     if 'ics' in result:
         print(f"\n  ICS: {result['ics']:.3f}  (floor={result['effective_floor']:.3f})")
@@ -490,6 +520,25 @@ def print_summary(result):
             if res:
                 parts.append(f"resistance: {', '.join(f'${p:.0f}' for p in res)}")
             print(f"  • {' | '.join(parts)}")
+
+    # Conflict history
+    conflict = result.get('conflict')
+    if conflict and conflict.get('historical'):
+        hist = conflict['historical']
+        windows = hist.get('windows', {})
+        is_conflict = conflict['is_conflict']
+        if is_conflict:
+            label = "CONFLICT"
+        else:
+            label = "ALIGNED"
+        w24 = windows.get('24h')
+        w48 = windows.get('48h')
+        parts_c = [f"{hist['total_signals']} historical signals"]
+        if w24:
+            parts_c.append(f"24h rev={w24['reversal_rate']:.0f}% net={w24['avg_net']:+.2f}%")
+        if w48:
+            parts_c.append(f"48h rev={w48['reversal_rate']:.0f}% net={w48['avg_net']:+.2f}%")
+        print(f"  • {label} {conflict['m1_direction']} M1 vs {conflict['daily_bias']} daily: {'; '.join(parts_c)}")
 
     # Verdict
     print(f"\n  Verdict: ", end="")
