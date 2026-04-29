@@ -126,6 +126,108 @@ def _check_swept_magnets(df_15m, idx, magnets, lookback_bars=96):
     return result
 
 
+def _detect_cascade_risk(df, idx, result):
+    """Detect whether the next liquidation cluster will be a quick flush or
+    a full deleveraging cascade.
+
+    Returns a dict with:
+      - verdict: 'FLUSH' | 'CASCADE' | 'UNKNOWN'
+      - score: 0.0 (likely flush) → 1.0 (likely cascade)
+      - factors: list of contributing signals
+    """
+    deriv = result.get('derivatives', {})
+    liq = result.get('liquidity_levels', {})
+    direction = result.get('direction')
+    score = 0.0
+    factors = []
+
+    # 1. OI velocity — fast OI drop = positions being force-closed
+    oi_roc = deriv.get('oi_roc_1h', 0)  # % change per hour
+    if oi_roc < -2.0:
+        score += 0.25
+        factors.append(f'OI dumping {oi_roc:+.2f}%/hr (cascade)')
+    elif oi_roc < -1.0:
+        score += 0.10
+        factors.append(f'OI declining {oi_roc:+.2f}%/hr (deleveraging)')
+    elif oi_roc > 1.0:
+        score -= 0.10
+        factors.append(f'OI rising {oi_roc:+.2f}%/hr (new positions)')
+
+    # 2. Funding rate — extreme funding = crowded trade at risk
+    fr = deriv.get('funding_rate')
+    if fr is not None:
+        if direction == 'LONG' and fr > 0.0005:
+            score += 0.15
+            factors.append(f'Funding {fr*100:+.4f}% (longs paying, cascade risk)')
+        elif direction == 'SHORT' and fr < -0.0005:
+            score += 0.15
+            factors.append(f'Funding {fr*100:+.4f}% (shorts paying, cascade risk)')
+
+    # 3. L/S z-score — extreme positioning = more cascade potential
+    ls_z = deriv.get('ls_zscore', 0)
+    if abs(ls_z) > 2.0:
+        score += 0.20
+        factors.append(f'L/S z={ls_z:.2f} (extreme positioning)')
+    elif abs(ls_z) > 1.5:
+        score += 0.10
+        factors.append(f'L/S z={ls_z:.2f} (crowded)')
+
+    # 4. Whale signal — whales leaning against the crowd = cascade amplified
+    whale = deriv.get('whale_signal', 'NEUTRAL')
+    if direction == 'LONG' and whale == 'WHALE_BEARISH':
+        score += 0.15
+        factors.append('Whales bearish (leaning against longs)')
+    elif direction == 'SHORT' and whale == 'WHALE_BULLISH':
+        score += 0.15
+        factors.append('Whales bullish (leaning against shorts)')
+
+    # 5. Order book depth — thin bids below = cascade through, thick = flush absorbed
+    if liq:
+        below = liq.get('below', [])
+        above = liq.get('above', [])
+        target_levels = below if direction == 'LONG' else above
+        bid_walls = [z for z in target_levels if z['type'] == 'BID_WALL']
+        ask_walls = [z for z in target_levels if z['type'] == 'ASK_WALL']
+        walls = bid_walls if direction == 'LONG' else ask_walls
+
+        if not walls:
+            score += 0.15
+            factors.append('No order book walls near cluster (thin support)')
+        else:
+            strongest = max(w['strength'] for w in walls)
+            if strongest > 50:
+                score -= 0.10
+                factors.append(f'Order book wall str={strongest:.0f} (will absorb)')
+
+    # 6. Recent momentum — accelerating sell-off = cascade momentum
+    lookback = min(16, idx)  # 4h of candles
+    if lookback >= 4:
+        recent_closes = df['Close'].values[idx-lookback+1:idx+1].astype(float)
+        momentum = (recent_closes[-1] - recent_closes[0]) / recent_closes[0] * 100
+        if direction == 'LONG' and momentum < -1.5:
+            score += 0.15
+            factors.append(f'Price momentum {momentum:+.2f}% in 4h (accelerating down)')
+        elif direction == 'SHORT' and momentum > 1.5:
+            score += 0.15
+            factors.append(f'Price momentum {momentum:+.2f}% in 4h (accelerating up)')
+
+    # Clamp to 0-1
+    score = max(0.0, min(1.0, score))
+
+    if score >= 0.50:
+        verdict = 'CASCADE'
+    elif score >= 0.30:
+        verdict = 'RISKY'
+    else:
+        verdict = 'FLUSH'
+
+    return {
+        'verdict': verdict,
+        'score': round(score, 2),
+        'factors': factors,
+    }
+
+
 def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     """Scan current market for trading signals."""
     cfg = config or CONFIG
@@ -187,6 +289,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         result['liquidity_levels'] = liq_summary
     except Exception:
         pass
+
+    # Cascade Detection — quick flush vs full deleveraging
+    result['cascade_risk'] = _detect_cascade_risk(df_15m, idx, result)
 
     # Conflict History — what happened historically when M1 and daily disagreed
     if direction and swing_bias:
@@ -406,6 +511,15 @@ def print_signal(result):
                     rev_icon = "⬇️" if w['reversal_rate'] > 55 else "⬆️" if w['reversal_rate'] < 45 else "↔️"
                     print(f"    {wname:>6}  {w['reversal_rate']:>5.1f}%  {w['win_rate']:>5.1f}%  "
                           f"{w['avg_net']:>+7.2f}%  {-w['avg_down']:>+7.2f}%  {w['avg_up']:>+7.2f}%  {w['n']:>4}  {rev_icon}")
+
+    # Cascade Risk
+    cr = result.get('cascade_risk', {})
+    if cr:
+        verdict = cr.get('verdict', 'UNKNOWN')
+        icon = {'CASCADE': '🌊', 'RISKY': '⚠️', 'FLUSH': '💧'}.get(verdict, '❓')
+        print(f"\n  Cascade Risk: {icon} {verdict}  (score={cr.get('score', 0):.2f})")
+        for f in cr.get('factors', []):
+            print(f"    • {f}")
 
     # ICS & Signal
     if 'ics' in result:
