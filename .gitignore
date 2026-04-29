@@ -28,3 +28,4 @@ Thumbs.db
 jimi_trades.csv
 direction_optimization.json
 regime_results.csv
+.venv/

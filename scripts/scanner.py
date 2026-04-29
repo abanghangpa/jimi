@@ -32,6 +32,7 @@ from src.modules.m5_liquidation import (
     find_support_resistance,
 )
 from src.modules.m6_derivatives import score_derivatives, get_derivatives_summary
+from src.modules.m15_liq_levels import get_liquidity_summary
 from src.modules.m7_market_regime import m7_prepare_data, m7_get_row, score_m7
 from src.modules.m8_funding import score_m8_funding
 from src.engine import calc_ics, check_entry_filters, get_tp_multipliers
@@ -171,6 +172,16 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d):
         deriv_summary = get_derivatives_summary()
         if 'error' not in deriv_summary:
             result['derivatives'] = deriv_summary
+    except Exception:
+        pass
+
+    # Real Liquidity Levels (liquidation + stop clusters + order book)
+    try:
+        oi_usd = result.get('derivatives', {}).get('oi_usd', 0)
+        ls_ratio = result.get('derivatives', {}).get('ls_ratio', 1.0)
+        liq_summary = get_liquidity_summary(
+            df_15m, idx, sr_levels, oi_usd, ls_ratio, direction)
+        result['liquidity_levels'] = liq_summary
     except Exception:
         pass
 
@@ -333,6 +344,34 @@ def print_signal(result):
         oi_div = deriv.get('oi_price_div', 'NONE')
         if oi_div != 'NONE':
             print(f"    ⚡ OI Divergence: {oi_div}")
+
+    # Real Liquidity Levels (liquidation + stops + order book)
+    liq = result.get('liquidity_levels', {})
+    if liq:
+        price = result['price']
+        print(f"\n  Liquidity Levels (estimated):")
+        print(f"    High cascade zones: {liq.get('high_cascade_zones', 0)}  |  "
+              f"Bid walls: {liq.get('bid_walls', 0)}  Ask walls: {liq.get('ask_walls', 0)}")
+
+        below = liq.get('below', [])
+        if below:
+            print(f"    ▼ Below ${price:.0f} (long liquidations / stops):")
+            for z in below[:6]:
+                icon = {'LONG_LIQ': '💥', 'LONG_STOP': '🛑', 'BID_WALL': '🟢',
+                        'SHORT_LIQ': '💥', 'SHORT_STOP': '🛑', 'ASK_WALL': '🔴'}.get(z['type'], '•')
+                cascade = z.get('cascade_risk', '')
+                print(f"      {icon} ${z['price']:.2f}  {z['type']}  "
+                      f"str={z['strength']:.0f}  cascade={cascade}  ({z['dist_pct']:+.2f}%)")
+
+        above = liq.get('above', [])
+        if above:
+            print(f"    ▲ Above ${price:.0f} (short liquidations / stops):")
+            for z in above[:6]:
+                icon = {'LONG_LIQ': '💥', 'LONG_STOP': '🛑', 'BID_WALL': '🟢',
+                        'SHORT_LIQ': '💥', 'SHORT_STOP': '🛑', 'ASK_WALL': '🔴'}.get(z['type'], '•')
+                cascade = z.get('cascade_risk', '')
+                print(f"      {icon} ${z['price']:.2f}  {z['type']}  "
+                      f"str={z['strength']:.0f}  cascade={cascade}  ({z['dist_pct']:+.2f}%)")
 
     # ICS & Signal
     if 'ics' in result:
