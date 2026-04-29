@@ -392,6 +392,136 @@ def print_signal(result):
     print("═" * 60)
 
 
+def print_summary(result):
+    """Print clean one-page summary with table + verdict."""
+    price = result['price']
+    deriv = result.get('derivatives', {})
+    liq = result.get('liquidity_levels', {})
+
+    # Module score table
+    m1_dir = result.get('m1', {}).get('direction', 'N/A')
+    m1_sc = result.get('m1', {}).get('score', 0)
+    m2_st = result.get('m2', {}).get('status', 'N/A')
+    m2_sc = result.get('m2', {}).get('score', 0)
+    m3_st = result.get('m3', {}).get('status', 'N/A') if 'm3' in result else '—'
+    m3_sc = result.get('m3', {}).get('score', 0) if 'm3' in result else 0
+    m4_st = result.get('m4', {}).get('status', 'N/A') if 'm4' in result else '—'
+    m4_sc = result.get('m4', {}).get('score', 0) if 'm4' in result else 0
+    m5_st = result.get('m5', {}).get('status', 'N/A') if 'm5' in result else '—'
+    m5_sc = result.get('m5', {}).get('score', 0) if 'm5' in result else 0
+
+    print("\n" + "─" * 55)
+    print("  SUMMARY")
+    print("─" * 55)
+    print(f"  {'Module':<22} {'Status':>10}  {'Score':>6}")
+    print(f"  {'M1 MACD (1H)':<22} {m1_dir:>10}  {m1_sc:>6.2f}")
+    print(f"  {'M2 EMA confluence':<22} {m2_st:>10}  {m2_sc:>6.2f}")
+    print(f"  {'M3 VWAP':<22} {m3_st:>10}  {m3_sc:>6.2f}")
+    print(f"  {'M4 CVD':<22} {m4_st:>10}  {m4_sc:>6.2f}")
+    print(f"  {'M5 Liquidation':<22} {m5_st:>10}  {m5_sc:>6.2f}")
+
+    ics = result.get('ics', 0)
+    status = result.get('status', 'N/A')
+    direction = result.get('direction', 'N/A')
+    print(f"\n  ICS: {ics:.3f}", end="")
+    if 'threshold' in result:
+        print(f" (threshold {result['threshold']:.2f})", end="")
+    print(f" → {'SIGNAL: ' + direction if status == 'SIGNAL' else 'NO SIGNAL'}")
+
+    # Key observations
+    print(f"\n  Key observations:")
+
+    # Price & bias
+    swing = result.get('swing_bias', '')
+    phase0 = result.get('phase0')
+    phase_str = f", phase0={phase0}" if phase0 else ""
+    print(f"  • Price ${price:.2f}, daily bias {swing}{phase_str}")
+
+    # Derivatives
+    if deriv and 'error' not in deriv:
+        ls = deriv.get('ls_ratio', 0)
+        lp = deriv.get('long_pct', 0)
+        pos = deriv.get('positioning', '')
+        whale = deriv.get('whale_signal', '')
+        taker = deriv.get('futures_flow', '')
+        fr = deriv.get('funding_rate')
+        oi_usd = deriv.get('oi_usd', 0)
+
+        crowd_label = f"({'crowded' if abs(deriv.get('ls_zscore', 0)) > 1.5 else 'neutral'})"
+        print(f"  • L/S ratio {ls:.2f} ({lp:.1f}% long {crowd_label}), whales={whale}")
+        print(f"  • Futures taker: {taker}")
+        if fr is not None:
+            fr_dir = "longs pay" if fr > 0 else "shorts pay"
+            print(f"  • Funding rate: {fr*100:+.4f}% ({fr_dir})")
+        print(f"  • OI: ${oi_usd/1e9:.2f}B  Δ1h: {deriv.get('oi_roc_1h', 0):+.3f}%")
+
+    # Liquidity — unswept only
+    if liq:
+        above = [z for z in liq.get('above', []) if not z.get('swept')]
+        below = [z for z in liq.get('below', []) if not z.get('swept')]
+
+        if above:
+            targets = []
+            for z in above[:3]:
+                icon = '💥' if 'LIQ' in z['type'] else '🛑'
+                targets.append(f"{icon}${z['price']:.0f}({z['dist_pct']:+.1f}%)")
+            print(f"  • Unswept above: {', '.join(targets)}")
+        else:
+            print(f"  • Unswept above: none — all swept")
+
+        if below:
+            targets = []
+            for z in below[:3]:
+                icon = '💥' if 'LIQ' in z['type'] else '🛑'
+                targets.append(f"{icon}${z['price']:.0f}({z['dist_pct']:+.1f}%)")
+            print(f"  • Unswept below: {', '.join(targets)}")
+        else:
+            print(f"  • Unswept below: none — all swept")
+
+    # Support/Resistance
+    sr = result.get('sr_levels', [])
+    if sr:
+        sup = [p for p, s, t, _, _ in sr if t == 'SUPPORT'][:2]
+        res = [p for p, s, t, _, _ in sr if t == 'RESISTANCE'][:2]
+        if sup or res:
+            parts = []
+            if sup:
+                parts.append(f"support: {', '.join(f'${p:.0f}' for p in sup)}")
+            if res:
+                parts.append(f"resistance: {', '.join(f'${p:.0f}' for p in res)}")
+            print(f"  • {' | '.join(parts)}")
+
+    # Verdict
+    print(f"\n  Verdict: ", end="")
+    if status == 'SIGNAL':
+        print(f"✅ {direction} signal — entry ${result['entry']:.2f}, "
+              f"SL ${result['sl']:.2f} ({result['sl_pct']:.2f}%)")
+    else:
+        reasons = []
+        if ics < result.get('threshold', 0.5):
+            reasons.append(f"ICS {ics:.3f} below threshold")
+        if result.get('swing_bias') == 'BEARISH' and direction == 'LONG':
+            reasons.append("conflict: M1 bullish but daily bearish")
+        if result.get('swing_bias') == 'BULLISH' and direction == 'SHORT':
+            reasons.append("conflict: M1 bearish but daily bullish")
+        if deriv.get('positioning') == 'CROWDED_LONG' and direction == 'LONG':
+            reasons.append("crowded long")
+        if deriv.get('positioning') == 'CROWDED_SHORT' and direction == 'SHORT':
+            reasons.append("crowded short")
+        if deriv.get('whale_signal') == 'WHALE_BEARISH' and direction == 'LONG':
+            reasons.append("whales bearish")
+        if deriv.get('whale_signal') == 'WHALE_BULLISH' and direction == 'SHORT':
+            reasons.append("whales bullish")
+        if deriv.get('futures_flow') == 'SELLERS_DOMINANT' and direction == 'LONG':
+            reasons.append("seller-dominated flow")
+        if deriv.get('futures_flow') == 'BUYERS_DOMINANT' and direction == 'SHORT':
+            reasons.append("buyer-dominated flow")
+        if not reasons:
+            reasons.append(result.get('reason', 'unknown'))
+        print(f"No trade — {'; '.join(reasons)}")
+    print("─" * 55)
+
+
 def main():
     parser = argparse.ArgumentParser(description='JIMI Live Scanner')
     parser.add_argument('--json', action='store_true', help='Output JSON only')
@@ -414,6 +544,7 @@ def main():
         print(json.dumps(result, indent=2, default=str))
     else:
         print_signal(result)
+        print_summary(result)
 
 
 if __name__ == '__main__':
