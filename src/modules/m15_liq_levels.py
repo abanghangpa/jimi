@@ -398,10 +398,33 @@ def estimate_liquidity_levels(df_15m, idx, sr_levels, oi_usd, ls_ratio,
         zone['swept'] = swept
         zone['swept_at'] = swept_at
 
-    # Sort by strength
-    deduped.sort(key=lambda x: x['strength'], reverse=True)
+    # ── Backtest-derived filters ──
+    # Drop noise zones based on 10-day backtest (3306 zones):
+    #   - LOW cascade: 6% hit rate → noise
+    #   - Strength < 20: 5.5% hit rate → noise
+    #   - Distance > 3%: 6.4% hit rate → noise
+    filtered = []
+    for zone in deduped:
+        # Keep order book walls regardless (they're real liquidity)
+        if zone['type'] in ('BID_WALL', 'ASK_WALL'):
+            filtered.append(zone)
+            continue
+        # Filter: cascade risk
+        if zone.get('cascade_risk') == 'LOW':
+            continue
+        # Filter: minimum strength
+        if zone['strength'] < 20:
+            continue
+        # Filter: max distance
+        dist = abs(zone['price'] - current_price) / current_price
+        if dist > 0.03:
+            continue
+        filtered.append(zone)
 
-    return deduped
+    # Sort by strength
+    filtered.sort(key=lambda x: x['strength'], reverse=True)
+
+    return filtered
 
 
 def get_liquidity_summary(df_15m, idx, sr_levels, oi_usd, ls_ratio,
