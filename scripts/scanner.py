@@ -35,8 +35,14 @@ from src.modules.m6_derivatives import score_derivatives, get_derivatives_summar
 from src.modules.m15_liq_levels import get_liquidity_summary
 from src.modules.m7_market_regime import m7_prepare_data, m7_get_row, score_m7
 from src.modules.m8_funding import score_m8_funding
-from src.engine import calc_ics, check_entry_filters, get_tp_multipliers
+from src.engine import calc_ics, check_entry_filters, get_tp_multipliers, run_gatekeepers
 from src.modules.m_conflict import get_conflict_stats
+from src.modules.m9_volatility import RegimeState, compute_vol_regime, score_vol_regime
+from src.modules.m13_structure import score_m13
+from src.modules.direction_resolver import resolve_direction
+from src.modules.veto_system import evaluate_vetoes
+from src.modules.coherence_liquidity import check_coherence
+from src.modules.m14_sweep import score_m14
 
 
 def compute_indicators(df_15m, config=None):
@@ -229,28 +235,273 @@ def _detect_cascade_risk(df, idx, result):
 
 
 def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
-    """Scan current market for trading signals."""
+    """Scan current market for trading signals.
+
+    Uses the same pipeline as the backtest engine:
+      Phase 1: M9 (regime) → market climate
+      Phase 2: M13 (structure) → swing direction
+      Phase 2: M7 (macro) → ETH/BTC + BTC
+      Phase 3: resolve_direction() → unified direction
+      Phase 4: Score all modules (M1–M14) for ICS
+      Phase 5: Veto + Coherence + Entry filters
+    """
     cfg = config or CONFIG
     idx = len(df_15m) - 1
     row = df_15m.iloc[idx]
     ts = row['Open time']
-    idx_1h, idx_2h, idx_4h, idx_1d = len(df_1h)-1, len(df_2h)-1, len(df_4h)-1, len(df_1d)-1
+    idx_1h = len(df_1h) - 1
+    idx_2h = len(df_2h) - 1
+    idx_4h = len(df_4h) - 1
+    idx_1d = len(df_1d) - 1
     atr_1h = df_1h['atr'].iloc[idx_1h]
     swing_bias = df_1d['swing_bias'].iloc[idx_1d]
     phase0_val = df_1d['phase0'].iloc[idx_1d]
-
-    m1_dir, m1_score, _m1_details = score_m1(df_1h, idx_1h, CONFIG, df_15m=df_15m, idx_15m=idx)
-    m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
-    direction = 'LONG' if m1_dir == 'BULLISH' else 'SHORT' if m1_dir == 'BEARISH' else None
+    trend_dir = df_1d['trend'].iloc[idx_1d]
+    trend_val = df_1d['trend_score'].iloc[idx_1d]
 
     result = {
         'timestamp': str(ts), 'price': float(row['Close']),
         'swing_bias': swing_bias, 'phase0': float(phase0_val) if not pd.isna(phase0_val) else None,
-        'm1': {'direction': m1_dir, 'score': float(m1_score)},
-        'm2': {'status': m2_status, 'score': float(m2_score)},
-        'direction': direction,
+        'trend_dir': trend_dir, 'trend_val': float(trend_val),
     }
 
+    # ── Phase 1: M9 Volatility Regime ──
+    regime_state = RegimeState(config=cfg)
+    vol_regime, m9_raw, m9_vol_details = compute_vol_regime(
+        df_15m, df_1h, idx, idx_1h, regime_state=regime_state, config=cfg)
+    result['m9'] = {'regime': vol_regime, 'raw': round(float(m9_raw), 3) if m9_raw else None}
+
+    # Hard block on CRISIS
+    block_regimes = cfg.get('M9_BLOCK_REGIMES', ['CRISIS'])
+    if vol_regime in block_regimes:
+        result['status'] = 'NO_SIGNAL'
+        result['reason'] = f'M9 regime={vol_regime} (blocked)'
+        return result
+
+    # ── Phase 2: M13 Structural Bias ──
+    m13_status, m13_score_raw, m13_details = score_m13(df_1h, idx_1h, 'NEUTRAL', df_15m, idx)
+    m13_bias = m13_details.get('m13_bias', 'NEUTRAL')
+    result['m13'] = {'bias': m13_bias, 'score': round(float(m13_score_raw), 3), 'status': m13_status}
+
+    # ── Phase 2: M7 Macro (ETH/BTC + BTC) ──
+    m7_ethbtc_df, m7_btc_df = None, None
+    m7_score = 0.5
+    m7_status = 'SKIP'
+    m7_details = {}
+    if cfg.get('M7_ENABLED', False):
+        try:
+            m7_ethbtc_df, m7_btc_df = m7_prepare_data(df_15m)
+            eb_row, bt_row = m7_get_row(m7_ethbtc_df, m7_btc_df, ts)
+            m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), 'NEUTRAL')
+            result['m7'] = {'score': round(float(m7_score), 3), 'status': m7_status}
+        except Exception as e:
+            result['m7'] = {'score': 0.5, 'status': 'SKIP', 'error': str(e)}
+
+    # ── Phase 3: Resolve Direction ──
+    direction, dir_size_mult, dir_details = resolve_direction(
+        vol_regime, m9_raw if m9_raw else 0.5,
+        m13_bias, m13_score_raw, m13_details,
+        m7_score=m7_score, m7_status=m7_status,
+        swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
+    )
+    result['direction_resolver'] = {
+        'direction': direction, 'size_mult': round(float(dir_size_mult), 3),
+        'action': dir_details.get('action', '?'),
+        'reason': dir_details.get('reason', '?'),
+    }
+
+    if direction == 'NEUTRAL':
+        result['status'] = 'NO_SIGNAL'
+        result['reason'] = dir_details.get('reason', 'No direction resolved')
+        return result
+
+    # Re-score M9, M7, M13 with actual direction
+    m9_status, m9_score, m9_details = score_vol_regime(vol_regime, m9_raw, direction, trend_dir)
+    if cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
+        eb_row, bt_row = m7_get_row(m7_ethbtc_df, m7_btc_df, ts)
+        m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), direction)
+    m13_status, m13_score, m13_details = score_m13(df_1h, idx_1h, direction, df_15m, idx)
+    result['m9']['score'] = round(float(m9_score), 3)
+    result['m9']['status'] = m9_status
+    result['m7']['score'] = round(float(m7_score), 3)
+    result['m13']['score'] = round(float(m13_score), 3)
+
+    # ── Phase 4: Score all modules ──
+    # M1 (now an ICS contributor, not the gate)
+    m1_dir, m1_score, _m1_details = score_m1(df_1h, idx_1h, cfg, df_15m=df_15m, idx_15m=idx)
+    result['m1'] = {'direction': m1_dir, 'score': round(float(m1_score), 3)}
+
+    # M2
+    m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
+    result['m2'] = {'status': m2_status, 'score': round(float(m2_score), 3)}
+
+    # M2 Veto
+    if cfg.get('M2_VETO_ENABLED', False):
+        m2_veto_thresh = cfg.get('M2_VETO_THRESHOLD', 0.40)
+        if direction == 'LONG' and m2_status == 'BEARISH' and m2_score < m2_veto_thresh:
+            result['status'] = 'NO_SIGNAL'
+            result['reason'] = f'M2 veto: {m2_status} score={m2_score:.3f}'
+            return result
+        if direction == 'SHORT' and m2_status == 'BULLISH' and m2_score < m2_veto_thresh:
+            result['status'] = 'NO_SIGNAL'
+            result['reason'] = f'M2 veto: {m2_status} score={m2_score:.3f}'
+            return result
+
+    # M3
+    m3_status, m3_score, _ = score_m3(df_15m, idx, direction, cfg)
+    result['m3'] = {'status': m3_status, 'score': round(float(m3_score), 3)}
+
+    # M4
+    m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, cfg)
+    result['m4'] = {'status': m4_status, 'score': round(float(m4_score), 3), 'div': m4_div}
+
+    # M5
+    m5_status, m5_score, m5_details = score_m5(df_15m, idx, direction, cfg,
+        n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
+    result['m5'] = {'status': m5_status, 'score': round(float(m5_score), 3)}
+
+    # M8 (funding)
+    m8_score = 0.5
+    m8_status = 'SKIP'
+    if cfg.get('M8_ENABLED', False):
+        try:
+            from src.modules.m6_derivatives import fetch_funding_rate
+            fr_df = fetch_funding_rate("ETHUSDT", limit=1)
+            if fr_df is not None and len(fr_df) > 0:
+                fr = float(fr_df.iloc[-1].get('funding_rate', fr_df.iloc[-1].get('lastFundingRate', np.nan)))
+                if not np.isnan(fr):
+                    m8_status, m8_score, _ = score_m8_funding(fr, direction, cfg)
+                    result['m8'] = {'status': m8_status, 'score': round(float(m8_score), 3), 'rate': round(fr, 6)}
+        except Exception:
+            pass
+
+    # M10 (cross-asset macro) — skip in live scanner (requires historical data)
+    m10_score = 0.5
+    m10_status = 'SKIP'
+
+    # M11 (MTF momentum)
+    m11_score = 0.5
+    m11_status = 'SKIP'
+    if cfg.get('M11_ENABLED', False):
+        try:
+            from src.modules.m11_momentum import score_m11_mtf_momentum
+            m11_status, m11_score, _ = score_m11_mtf_momentum(
+                df_15m, df_1h, df_4h, idx, idx_1h, idx_4h, direction)
+            result['m11'] = {'status': m11_status, 'score': round(float(m11_score), 3)}
+        except Exception:
+            pass
+
+    # M14 (sweep-retest-reclaim)
+    m14_score = 0.5
+    m14_status = 'SKIP'
+    if cfg.get('M14_ENABLED', True):
+        _swing_levels = m13_details.get('swing_lows', []) if direction == 'LONG' else m13_details.get('swing_highs', [])
+        if _swing_levels:
+            m14_status, m14_score, _ = score_m14(df_15m, idx, direction, _swing_levels, config=cfg)
+            result['m14'] = {'status': m14_status, 'score': round(float(m14_score), 3)}
+
+    # ── ICS ──
+    ics, effective_floor = calc_ics(
+        m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
+        m7_score=m7_score, m8_score=m8_score,
+        use_m7=cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None,
+        use_m8=m8_status != 'SKIP',
+        m9_score=m9_score, use_m9=True,
+        m10_score=m10_score, use_m10=m10_status != 'SKIP',
+        m11_score=m11_score, use_m11=m11_status != 'SKIP',
+        m13_score=m13_score, use_m13=cfg.get('M13_ENABLED', False),
+        m14_score=m14_score, use_m14=m14_status == 'PASS',
+        config=cfg,
+    )
+    result['ics'] = round(float(ics), 4)
+    result['effective_floor'] = round(float(effective_floor), 4)
+
+    # ── Phase 5: Veto + Coherence + Filters ──
+    # Veto
+    if cfg.get('VETO_ENABLED', False):
+        m4_disagree = (direction == 'LONG' and m4_div == 'BEARISH') or (direction == 'SHORT' and m4_div == 'BULLISH')
+        m5_disagree = (m5_status == 'FAIL')
+        dir_veto = m4_disagree and m5_disagree
+
+        veto = evaluate_vetoes(
+            cfg, vol_regime=vol_regime,
+            dir_veto=dir_veto,
+            m9_status=m9_status, m10_status=m10_status, m11_status=m11_status,
+        )
+        if veto.hard_blocked:
+            result['status'] = 'NO_SIGNAL'
+            result['reason'] = f'Veto: {veto.summary()}'
+            result['veto'] = veto.summary()
+            return result
+        result['veto'] = veto.summary() if veto.soft_vetoes else 'CLEAR'
+
+    # Coherence check
+    if cfg.get('COHERENCE_CHECK_ENABLED', True):
+        is_coherent, conflicts, coherence_penalty = check_coherence(
+            direction, m4_div, m5_details if isinstance(m5_details, dict) else {},
+            m13_bias, vol_regime, m7_score=m7_score, m2_status=m2_status, config=cfg,
+        )
+        if not is_coherent:
+            result['status'] = 'NO_SIGNAL'
+            result['reason'] = f'Coherence block: {", ".join(conflicts)}'
+            return result
+        ics -= coherence_penalty
+        result['ics'] = round(float(ics), 4)
+
+    # Threshold
+    threshold = cfg['ICS_THRESHOLD_CAUTION'] if phase0_val and phase0_val >= 0.40 else cfg['ICS_THRESHOLD_NORMAL']
+    result['threshold'] = round(float(threshold), 4)
+
+    # M3 hard fail
+    if m3_status == 'FAIL':
+        result['status'] = 'NO_SIGNAL'
+        result['reason'] = 'M3 VWAP fail'
+        return result
+
+    # ICS check
+    if ics < effective_floor or ics < threshold:
+        result['status'] = 'NO_SIGNAL'
+        result['reason'] = f'ICS {ics:.4f} < threshold {threshold:.2f}'
+        return result
+
+    # Gatekeepers
+    gatekeeper = run_gatekeepers(
+        direction, vol_regime, m7_score, m7_status, m7_details,
+        m9_score, m9_status, m10_score, m10_status, trend_dir, config=cfg,
+    )
+    if not gatekeeper.passed:
+        result['status'] = 'NO_SIGNAL'
+        result['reason'] = f'Gatekeeper: {gatekeeper.summary()}'
+        return result
+
+    # Entry filters
+    passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
+    if not passed:
+        result['status'] = 'FILTERED'
+        result['reason'] = reason
+        return result
+
+    # ── SIGNAL ──
+    entry_price = float(row['Close'])
+    atr_for_sl = float(atr_1h) if not pd.isna(atr_1h) else float(row['atr'])
+    sl_dist = min(cfg['SL_ATR_STD'] * atr_for_sl, cfg['SL_HARD_MAX_PCT'] * entry_price)
+    tp1_dist = cfg['TP1_ATR'] * atr_for_sl
+    tp2_mult, tp3_mult = get_tp_multipliers(row.get('vol_ratio', np.nan), config=cfg)
+    tp2_dist, tp3_dist = tp2_mult * atr_for_sl, tp3_mult * atr_for_sl
+
+    if direction == 'LONG':
+        sl, tp1, tp2, tp3 = entry_price - sl_dist, entry_price + tp1_dist, entry_price + tp2_dist, entry_price + tp3_dist
+    else:
+        sl, tp1, tp2, tp3 = entry_price + sl_dist, entry_price - tp1_dist, entry_price - tp2_dist, entry_price - tp3_dist
+
+    result.update({
+        'status': 'SIGNAL', 'entry': entry_price, 'sl': float(sl),
+        'tp1': float(tp1), 'tp2': float(tp2), 'tp3': float(tp3),
+        'sl_pct': float(abs(entry_price - sl) / entry_price * 100),
+        'tp1_pct': float(abs(tp1 - entry_price) / entry_price * 100),
+    })
+
+    # ── Add market data for display ──
     # Volume Profile & Magnets
     highs = df_15m['High'].values.astype(float)
     lows = df_15m['Low'].values.astype(float)
@@ -261,7 +512,6 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
     magnets = find_magnets(bin_centers, vol_profile) if bin_centers is not None else []
     gaps = find_gaps(bin_centers, vol_profile) if bin_centers is not None else []
-    # Check which magnets have already been swept by recent price action
     swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5])
     result['magnets'] = swept_magnets
     result['gaps'] = [round(p, 2) for p, _ in gaps[:5]]
@@ -280,7 +530,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     except Exception:
         pass
 
-    # Real Liquidity Levels (liquidation + stop clusters + order book)
+    # Liquidity Levels
     try:
         oi_usd = result.get('derivatives', {}).get('oi_usd', 0)
         ls_ratio = result.get('derivatives', {}).get('ls_ratio', 1.0)
@@ -290,10 +540,10 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     except Exception:
         pass
 
-    # Cascade Detection — quick flush vs full deleveraging
+    # Cascade Risk
     result['cascade_risk'] = _detect_cascade_risk(df_15m, idx, result)
 
-    # Conflict History — what happened historically when M1 and daily disagreed
+    # Conflict History
     if direction and swing_bias:
         try:
             conflict = get_conflict_stats(
@@ -304,55 +554,6 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         except Exception:
             pass
 
-    if direction is None:
-        result['status'] = 'NO_SIGNAL'
-        result['reason'] = 'M1 neutral'
-        return result
-
-    m3_status, m3_score, _ = score_m3(df_15m, idx, direction, CONFIG)
-    result['m3'] = {'status': m3_status, 'score': float(m3_score)}
-
-    m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, CONFIG)
-    result['m4'] = {'status': m4_status, 'score': float(m4_score), 'details': m4_div}
-
-    m5_status, m5_score, m5_details = score_m5(df_15m, idx, direction, CONFIG,
-        n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
-    result['m5'] = {'status': m5_status, 'score': float(m5_score), 'details': m5_details}
-
-    ics, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score, config=CONFIG)
-    result['ics'] = float(ics)
-    result['effective_floor'] = float(effective_floor)
-
-    threshold = cfg['ICS_THRESHOLD_CAUTION'] if phase0_val and phase0_val >= 0.40 else cfg['ICS_THRESHOLD_NORMAL']
-    result['threshold'] = float(threshold)
-
-    if m3_status == 'FAIL':
-        result['status'] = 'NO_SIGNAL'; result['reason'] = 'M3 VWAP fail'; return result
-    if ics < effective_floor or ics < threshold:
-        result['status'] = 'NO_SIGNAL'; result['reason'] = f'ICS {ics:.3f} < {threshold:.2f}'; return result
-
-    passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=CONFIG)
-    if not passed:
-        result['status'] = 'FILTERED'; result['reason'] = reason; return result
-
-    entry_price = float(row['Close'])
-    atr_for_sl = float(atr_1h) if not pd.isna(atr_1h) else float(row['atr'])
-    sl_dist = min(cfg['SL_ATR_STD'] * atr_for_sl, cfg['SL_HARD_MAX_PCT'] * entry_price)
-    tp1_dist = cfg['TP1_ATR'] * atr_for_sl
-    tp2_mult, tp3_mult = get_tp_multipliers(row.get('vol_ratio', np.nan), config=CONFIG)
-    tp2_dist, tp3_dist = tp2_mult * atr_for_sl, tp3_mult * atr_for_sl
-
-    if direction == 'LONG':
-        sl, tp1, tp2, tp3 = entry_price - sl_dist, entry_price + tp1_dist, entry_price + tp2_dist, entry_price + tp3_dist
-    else:
-        sl, tp1, tp2, tp3 = entry_price + sl_dist, entry_price - tp1_dist, entry_price - tp2_dist, entry_price - tp3_dist
-
-    result.update({
-        'status': 'SIGNAL', 'entry': entry_price, 'sl': float(sl),
-        'tp1': float(tp1), 'tp2': float(tp2), 'tp3': float(tp3),
-        'sl_pct': float(abs(entry_price - sl) / entry_price * 100),
-        'tp1_pct': float(abs(tp1 - entry_price) / entry_price * 100),
-    })
     return result
 
 
@@ -383,10 +584,22 @@ def print_signal(result):
     if vol_r:
         print(f"    Vol Ratio:      {vol_r:.2f}x  (24h vs 7d)")
 
+    # Direction Resolver
+    dr = result.get('direction_resolver', {})
+    print(f"\n  Direction Resolver:")
+    print(f"    Regime:        {result.get('m9', {}).get('regime', '?')}  (score={result.get('m9', {}).get('score', 0):.3f})")
+    print(f"    Structure:     {result.get('m13', {}).get('bias', '?')}  (score={result.get('m13', {}).get('score', 0):.3f})")
+    if 'm7' in result and result['m7'].get('status') != 'SKIP':
+        print(f"    Macro M7:      {result['m7']['score']:.3f}  ({result['m7']['status']})")
+    print(f"    → Direction:   {dr.get('direction', '?')}  size_mult={dr.get('size_mult', 0):.2f}")
+    print(f"    Reason:        {dr.get('reason', '?')}")
+
     # Module Scores
     print(f"\n  Module Scores:")
-    print(f"    M1 (1H MACD):  {result['m1']['direction']:>8}  score={result['m1']['score']:.2f}")
-    print(f"    M2 (EMA conf): {result['m2']['status']:>8}  score={result['m2']['score']:.2f}")
+    if 'm1' in result:
+        print(f"    M1 (1H MACD):  {result['m1']['direction']:>8}  score={result['m1']['score']:.2f}")
+    if 'm2' in result:
+        print(f"    M2 (EMA conf): {result['m2']['status']:>8}  score={result['m2']['score']:.2f}")
     if 'm3' in result:
         print(f"    M3 (VWAP):     {result['m3']['status']:>8}  score={result['m3']['score']:.2f}")
     if 'm4' in result:
@@ -404,8 +617,21 @@ def print_signal(result):
             print(f"    M4 (CVD):      {m4['status']:>8}  score={m4['score']:.2f}")
     if 'm5' in result:
         m5 = result['m5']
-        print(f"    M5 (LiqtMag):  {m5['status']:>8}  score={m5['score']:.2f}  "
-              f"nearest={m5['details'].get('nearest_magnet')} ({m5['details'].get('magnet_dist_pct')}%)")
+        print(f"    M5 (LiqtMag):  {m5['status']:>8}  score={m5['score']:.2f}")
+    if 'm8' in result:
+        print(f"    M8 (Funding):  {result['m8']['status']:>8}  score={result['m8']['score']:.2f}  rate={result['m8'].get('rate', 'N/A')}")
+    if 'm9' in result:
+        m9 = result['m9']
+        m9_st = m9.get('status', '—')
+        m9_sc = m9.get('score', 0)
+        print(f"    M9 (VolRegime):{m9_st:>8}  score={m9_sc:.2f}  regime={m9['regime']}")
+    if 'm11' in result:
+        print(f"    M11 (MTF Mom): {result['m11']['status']:>8}  score={result['m11']['score']:.2f}")
+    if 'm13' in result:
+        m13 = result['m13']
+        print(f"    M13 (Struct):  {m13['status']:>8}  score={m13['score']:.2f}  bias={m13['bias']}")
+    if 'm14' in result:
+        print(f"    M14 (Sweep):   {result['m14']['status']:>8}  score={result['m14']['score']:.2f}")
     if 'cascade' in result and result['cascade'].get('cascade'):
         c = result['cascade']
         print(f"    ⚡ CASCADE:    momentum={c['momentum']}% vol_spike={c['vol_spike']}x range={c['range_expansion']}x")
@@ -555,6 +781,16 @@ def print_summary(result):
     m4_sc = result.get('m4', {}).get('score', 0) if 'm4' in result else 0
     m5_st = result.get('m5', {}).get('status', 'N/A') if 'm5' in result else '—'
     m5_sc = result.get('m5', {}).get('score', 0) if 'm5' in result else 0
+    m8_st = result.get('m8', {}).get('status', '—') if 'm8' in result else '—'
+    m8_sc = result.get('m8', {}).get('score', 0) if 'm8' in result else 0
+    m9_st = result.get('m9', {}).get('status', '—') if 'm9' in result else '—'
+    m9_sc = result.get('m9', {}).get('score', 0) if 'm9' in result else 0
+    m11_st = result.get('m11', {}).get('status', '—') if 'm11' in result else '—'
+    m11_sc = result.get('m11', {}).get('score', 0) if 'm11' in result else 0
+    m13_st = result.get('m13', {}).get('status', '—') if 'm13' in result else '—'
+    m13_sc = result.get('m13', {}).get('score', 0) if 'm13' in result else 0
+    m14_st = result.get('m14', {}).get('status', '—') if 'm14' in result else '—'
+    m14_sc = result.get('m14', {}).get('score', 0) if 'm14' in result else 0
 
     print("\n" + "─" * 55)
     print("  SUMMARY")
@@ -565,6 +801,11 @@ def print_summary(result):
     print(f"  {'M3 VWAP':<22} {m3_st:>10}  {m3_sc:>6.2f}")
     print(f"  {'M4 CVD':<22} {m4_st:>10}  {m4_sc:>6.2f}")
     print(f"  {'M5 Liquidation':<22} {m5_st:>10}  {m5_sc:>6.2f}")
+    print(f"  {'M8 Funding':<22} {m8_st:>10}  {m8_sc:>6.2f}")
+    print(f"  {'M9 Vol Regime':<22} {m9_st:>10}  {m9_sc:>6.2f}")
+    print(f"  {'M11 MTF Momentum':<22} {m11_st:>10}  {m11_sc:>6.2f}")
+    print(f"  {'M13 Structure':<22} {m13_st:>10}  {m13_sc:>6.2f}")
+    print(f"  {'M14 Sweep':<22} {m14_st:>10}  {m14_sc:>6.2f}")
 
     ics = result.get('ics', 0)
     status = result.get('status', 'N/A')
@@ -576,6 +817,13 @@ def print_summary(result):
 
     # Key observations
     print(f"\n  Key observations:")
+
+    # Direction resolver
+    dr = result.get('direction_resolver', {})
+    m9 = result.get('m9', {})
+    m13 = result.get('m13', {})
+    if dr:
+        print(f"  • Direction: {dr.get('direction', '?')} via resolver (regime={m9.get('regime', '?')}, structure={m13.get('bias', '?')})")
 
     # Price & bias
     swing = result.get('swing_bias', '')
