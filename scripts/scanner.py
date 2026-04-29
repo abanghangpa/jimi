@@ -961,7 +961,7 @@ def main():
     scaled_config = dict(CONFIG)
     lookback_keys = [
         'VWAP_LOOKBACK', 'CVD_LOOKBACK', 'M4_ZL_LOOKBACK',
-        'M5_VP_LOOKBACK', 'M14_SWEEP_LOOKBACK', 'CROSS_ASSET_LOOKBACK',
+        'M14_SWEEP_LOOKBACK', 'CROSS_ASSET_LOOKBACK',
     ]
     for k in lookback_keys:
         if k in scaled_config:
