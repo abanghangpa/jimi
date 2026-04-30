@@ -581,7 +581,10 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     trade.close(trade.tp2, ts, 'TP2', frac); trade.tp2_hit = True; trade.update_sl_trail(); stats['exits_tp2'] += 1
 
             if not trade.tp1_hit:
-                if is_summer:
+                _trade_in_chop = trade.entry_regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL')
+                if _trade_in_chop:
+                    tp1_close_frac = 1.0  # exit fully at TP1 in chop
+                elif is_summer:
                     tp1_close_frac = cfg.get('TP1_CLOSE_SUMMER', cfg['TP1_CLOSE'])
                 elif is_shoulder:
                     tp1_close_frac = cfg.get('SHOULDER_TP1_CLOSE', cfg['TP1_CLOSE'])
@@ -1128,39 +1131,10 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 stats['mtf_blocked'] += 1
                 continue
 
-        # Position Sizing
+        # Position Sizing — Fixed size, PnL edge comes from TP ladder
+        size = cfg['SIZE_STD']
         transition_range = cfg.get('TRANSITION_SCORE_RANGE', 0.20)
         is_transition = abs(trend_val) < transition_range
-
-        size = cfg.get('SIZE_LONG', cfg['SIZE_STD']) if direction == 'LONG' else cfg['SIZE_STD']
-        # Direction resolver regime-based size multiplier (primary sizing factor)
-        size *= dir_size_mult
-        if m2_status == 'NEUTRAL':
-            size *= cfg['SIZE_M2_NEUTRAL']
-        if phase0_val >= 0.40:
-            size *= cfg['SIZE_CAUTION']
-        if is_transition:
-            size *= cfg.get('TRANSITION_SIZE_MULT', 0.50)
-        if is_summer:
-            size *= cfg.get('SUMMER_SIZE_MULT', 1.0)
-        elif is_shoulder:
-            size *= cfg.get('SHOULDER_SIZE_MULT', 1.0)
-        if cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
-            if m7_score < 0.35:
-                size *= cfg.get('M7_SIZE_REDUCTION', 0.70)
-            elif m7_score < 0.45:
-                size *= cfg.get('M7_SIZE_MILD', 0.85)
-        if cfg.get('M9_ENABLED', False):
-            if vol_regime == 'CHOP_HARD':
-                size *= cfg.get('M9_SIZE_CHOP_HARD', 0.0)  # blocked
-            elif vol_regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL'):
-                size *= cfg.get('M9_SIZE_CHOP_MILD', 0.55)
-            elif vol_regime == 'COMPRESSING':
-                size *= cfg.get('M9_SIZE_COMPRESSING', 0.85)
-        if adaptive_tracker is not None:
-            size *= adaptive_tracker.size_multiplier(direction, m1_dir, m2_status, m3_score, m4_status, m5_status)
-        if size < 0.01:
-            continue
 
         # Track M14 stats
         if cfg.get('M14_ENABLED', True):
@@ -1175,7 +1149,13 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         entry_price = row['Close']
         atr_for_sl = atr_1h if not pd.isna(atr_1h) else row['atr']
 
-        if is_transition:
+        # Chop regime: tight SL, tight TP1, no continuation
+        _is_chop = vol_regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL')
+
+        if _is_chop:
+            sl_std = cfg.get('CHOP_SL_ATR', 1.0)
+            sl_hard_max = cfg.get('CHOP_SL_HARD_MAX', 0.012)
+        elif is_transition:
             sl_std = cfg.get('SL_ATR_TRANSITION', 1.0)
             sl_hard_max = cfg.get('SL_HARD_MAX_PCT', 0.05)
         elif is_summer:
@@ -1190,7 +1170,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         sl_dist = min(sl_std * atr_for_sl, sl_hard_max * entry_price)
 
-        if is_transition:
+        if _is_chop:
+            tp1_atr = cfg.get('CHOP_TP1_ATR', 0.6)
+        elif is_transition:
             tp1_atr = cfg.get('TP1_ATR_TRANSITION', 1.2)
         elif is_summer:
             tp1_atr = cfg.get('TP1_ATR_SUMMER', cfg['TP1_ATR'])
@@ -1251,6 +1233,11 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         else:
             tp1_close_frac = cfg['TP1_CLOSE']
             tp2_close_frac = cfg['TP2_CLOSE']
+
+        # Chop regime override: exit fully at TP1, no TP2/TP3 continuation
+        if _is_chop:
+            tp1_close_frac = cfg.get('CHOP_TP1_CLOSE', 0.90)
+            tp2_close_frac = 0.0  # no remaining for TP2/TP3
 
         trade = Trade(ts, direction, entry_price, sl, tp1, tp2, tp3, size,
                       m1_dir, m2_status, m3_score, m4_status, m5_status, m5_score,

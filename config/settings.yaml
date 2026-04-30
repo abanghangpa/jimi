@@ -187,6 +187,11 @@ M9_WEIGHT: 0.00
 M9_BLOCK_REGIMES: ["CRISIS", "CHOP_HARD"]
 M9_SIZE_CHOP_MILD: 0.55
 M9_SIZE_COMPRESSING: 0.85
+# Chop regime: tap nearest liquidity, exit, no continuation
+CHOP_TP1_ATR: 0.6          # tight TP1 — nearest liquidity pool
+CHOP_TP1_CLOSE: 0.90       # exit 90% at TP1
+CHOP_SL_ATR: 0.5           # very tight SL — small loss if wrong
+CHOP_SL_HARD_MAX: 0.008    # hard SL cap in chop (0.8%)
 # Regime detection thresholds (v2)
 M9_WHIPSAW_THRESHOLD: 0.45
 M9_RETRACE_THRESHOLD: 0.50
