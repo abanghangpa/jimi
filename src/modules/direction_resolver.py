@@ -14,6 +14,140 @@ import numpy as np
 
 
 # ═══════════════════════════════════════════════════════════════
+# TARGET SCORING — "If I go this way, what's ahead?"
+# ═══════════════════════════════════════════════════════════════
+
+def score_targets(current_price, magnets, gaps, sr_levels, direction, atr_1h=None):
+    """Score how attractive a direction's targets are.
+
+    Looks at what's in front of price for a given direction:
+    - Volume profile magnets (HVNs) → absorption zones / targets
+    - Volume gaps (LVNs) → vacuum zones price moves through fast
+    - S/R levels → structural targets (resistance for LONG, support for SHORT)
+
+    Args:
+        current_price: float
+        magnets: list of (price, vol, strength) from find_magnets()
+        gaps: list of (price, vol) from find_gaps()
+        sr_levels: list of (price, strength, touches, bounces, type) from find_support_resistance()
+        direction: 'LONG' or 'SHORT'
+        atr_1h: float, optional — for distance normalization
+
+    Returns:
+        (score, details) where score is 0.0-1.0
+    """
+    score = 0.0
+    details = {'direction': direction, 'targets': [], 'gaps': [], 'sr': []}
+
+    # Distance multiplier — closer targets are more actionable
+    # Use ATR * 2 as cap (tighter), with 2% floor for low-vol environments
+    dist_cap = max(atr_1h * 2 if atr_1h else 0, current_price * 0.02)
+    # Minimum target distance: 0.3% of price (ignore noise)
+    min_dist = current_price * 0.003
+
+    # ── Magnets (HVNs) in direction ──
+    for price, vol, strength in magnets:
+        if direction == 'LONG' and price <= current_price:
+            continue
+        if direction == 'SHORT' and price >= current_price:
+            continue
+        dist = abs(price - current_price)
+        if dist < min_dist:
+            continue  # too close — noise, not a target
+        dist_norm = min(dist / dist_cap, 1.0) if dist_cap > 0 else 1.0
+        # Closer + stronger = higher contribution
+        proximity = max(0, 1.0 - dist_norm)
+        contrib = proximity * min(strength / 3.0, 1.0) * 0.4
+        score += contrib
+        details['targets'].append({
+            'price': round(price, 2), 'strength': round(strength, 2),
+            'dist_pct': round(dist / current_price * 100, 2),
+            'contrib': round(contrib, 3),
+        })
+
+    # ── Gaps (LVNs) — vacuum zones price will move through ──
+    for price, vol in gaps:
+        if direction == 'LONG' and price <= current_price:
+            continue
+        if direction == 'SHORT' and price >= current_price:
+            continue
+        dist = abs(price - current_price)
+        if dist < min_dist:
+            continue
+        dist_norm = min(dist / dist_cap, 1.0) if dist_cap > 0 else 1.0
+        proximity = max(0, 1.0 - dist_norm)
+        contrib = proximity * 0.2  # gaps add less than magnets
+        score += contrib
+        details['gaps'].append({
+            'price': round(price, 2), 'dist_pct': round(dist / current_price * 100, 2),
+            'contrib': round(contrib, 3),
+        })
+
+    # ── S/R levels — structural targets ──
+    target_type = 'RESISTANCE' if direction == 'LONG' else 'SUPPORT'
+    for level in sr_levels:
+        price, strength, touches, bounces, sr_type = level
+        if sr_type != target_type:
+            continue
+        if direction == 'LONG' and price <= current_price:
+            continue
+        if direction == 'SHORT' and price >= current_price:
+            continue
+        dist = abs(price - current_price)
+        if dist < min_dist:
+            continue
+        dist_norm = min(dist / dist_cap, 1.0) if dist_cap > 0 else 1.0
+        proximity = max(0, 1.0 - dist_norm)
+        # Stronger S/R = more reliable target
+        sr_strength = min(strength / 10.0, 1.0)
+        contrib = proximity * sr_strength * 0.3
+        score += contrib
+        details['sr'].append({
+            'price': round(price, 2), 'strength': round(strength, 2),
+            'touches': touches, 'bounces': bounces,
+            'dist_pct': round(dist / current_price * 100, 2),
+            'contrib': round(contrib, 3),
+        })
+
+    score = min(score, 1.0)
+    details['score'] = round(score, 3)
+    return score, details
+
+
+def resolve_target_tiebreaker(long_score, short_score, details_long, details_short):
+    """Use target scores to break ties or boost confidence.
+
+    Returns:
+        (preferred, delta, reason)
+        preferred: 'LONG' | 'SHORT' | None
+        delta: absolute score difference
+        reason: human-readable explanation
+    """
+    delta = abs(long_score - short_score)
+
+    if delta < 0.05:
+        return None, delta, 'Targets too close to call'
+
+    preferred = 'LONG' if long_score > short_score else 'SHORT'
+    best = details_long if preferred == 'LONG' else details_short
+
+    # Summarize the best targets
+    top_targets = sorted(best.get('targets', []), key=lambda x: -x.get('contrib', 0))[:2]
+    top_sr = sorted(best.get('sr', []), key=lambda x: -x.get('contrib', 0))[:1]
+
+    parts = []
+    if top_targets:
+        t = top_targets[0]
+        parts.append(f"HVN ${t['price']:.0f} ({t['dist_pct']:+.1f}%)")
+    if top_sr:
+        s = top_sr[0]
+        parts.append(f"S/R ${s['price']:.0f} ({s['dist_pct']:+.1f}%)")
+
+    reason = f'{preferred} targets clearer: {", ".join(parts)}' if parts else f'{preferred} has better targets'
+    return preferred, delta, reason
+
+
+# ═══════════════════════════════════════════════════════════════
 # REGIME → SIZE MULTIPLIER
 # ═══════════════════════════════════════════════════════════════
 
@@ -33,7 +167,9 @@ REGIME_SIZE_MAP = {
 def resolve_direction(regime, regime_score, m13_bias, m13_score,
                       m13_details, m7_score=None, m7_status=None,
                       swing_bias_1d=None, trend_dir=None,
-                      config=None):
+                      config=None,
+                      long_target_score=None, short_target_score=None,
+                      long_target_details=None, short_target_details=None):
     """
     Resolve unified direction and sizing from regime + structure + macro.
 
@@ -91,6 +227,44 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
         elif regime == 'CHOP_MILD_BULL':
             direction = 'LONG'
             details['regime_direction_hint'] = 'CHOP_MILD_BULL → LONG'
+
+    # ── Phase 2a-2: Target Tiebreaker ──
+    # When direction is still NEUTRAL, use target clarity to pick a side.
+    # When direction IS set, targets can boost or penalize confidence.
+    if long_target_score is not None and short_target_score is not None:
+        details['long_target_score'] = round(long_target_score, 3)
+        details['short_target_score'] = round(short_target_score, 3)
+
+        if direction == 'NEUTRAL':
+            # No structural bias — let targets decide
+            preferred, delta, reason = resolve_target_tiebreaker(
+                long_target_score, short_target_score,
+                long_target_details or {}, short_target_details or {})
+            if preferred is not None and delta >= 0.10:
+                direction = preferred
+                details['target_tiebreaker'] = reason
+                details['target_delta'] = round(delta, 3)
+                # Reduce size since we're relying on targets alone
+                size_mult *= 0.80
+                details['target_tiebreaker_penalty'] = 0.80
+        else:
+            # Direction already set — targets as confidence modifier
+            target_agrees = (
+                (direction == 'LONG' and long_target_score > short_target_score) or
+                (direction == 'SHORT' and short_target_score > long_target_score)
+            )
+            target_disagrees = (
+                (direction == 'LONG' and short_target_score > long_target_score + 0.15) or
+                (direction == 'SHORT' and long_target_score > short_target_score + 0.15)
+            )
+            if target_agrees:
+                bonus = 1.0 + min(abs(long_target_score - short_target_score) * 0.5, 0.15)
+                size_mult = min(size_mult * bonus, 1.0)
+                details['target_agree_bonus'] = round(bonus, 3)
+            elif target_disagrees:
+                penalty = 1.0 - min(abs(long_target_score - short_target_score) * 0.3, 0.15)
+                size_mult *= penalty
+                details['target_disagree_penalty'] = round(penalty, 3)
 
     # ── Phase 2b: Macro Confirmation (M7) ──
     # If M7 strongly disagrees with structure, downgrade

@@ -39,7 +39,7 @@ from src.engine import calc_ics, check_entry_filters, get_tp_multipliers, run_ga
 from src.modules.m_conflict import get_conflict_stats
 from src.modules.m9_volatility import RegimeState, compute_vol_regime, score_vol_regime
 from src.modules.m13_structure import score_m13
-from src.modules.direction_resolver import resolve_direction
+from src.modules.direction_resolver import resolve_direction, score_targets
 from src.modules.veto_system import evaluate_vetoes
 from src.modules.coherence_liquidity import check_coherence
 from src.modules.m14_sweep import score_m14
@@ -320,14 +320,8 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         except Exception as e:
             result['m7'] = {'score': 0.5, 'status': 'SKIP', 'error': str(e)}
 
-    # ── Phase 3: Resolve Direction ──
-    direction, dir_size_mult, dir_details = resolve_direction(
-        vol_regime, m9_raw if m9_raw else 0.5,
-        m13_bias, m13_score_raw, m13_details,
-        m7_score=m7_score, m7_status=m7_status,
-        swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
-    )
-    # ── Gather market data (always, regardless of signal status) ──
+    # ── Phase 2d: Pre-compute targets for direction resolver ──
+    # Volume profile + S/R computed early so targets can inform direction
     highs = df_15m['High'].values.astype(float)
     lows = df_15m['Low'].values.astype(float)
     closes = df_15m['Close'].values.astype(float)
@@ -337,11 +331,35 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
     magnets = find_magnets(bin_centers, vol_profile) if bin_centers is not None else []
     gaps = find_gaps(bin_centers, vol_profile) if bin_centers is not None else []
+    sr_levels = find_support_resistance(df_15m, idx)
+
+    atr_1h_val = df_1h['atr'].iloc[idx_1h] if idx_1h >= 0 else None
+    current_price = float(row['Close'])
+    long_tgt_score, long_tgt_details = score_targets(
+        current_price, magnets, gaps, sr_levels, 'LONG', atr_1h=atr_1h_val)
+    short_tgt_score, short_tgt_details = score_targets(
+        current_price, magnets, gaps, sr_levels, 'SHORT', atr_1h=atr_1h_val)
+
+    # ── Phase 3: Resolve Direction (now with target awareness) ──
+    direction, dir_size_mult, dir_details = resolve_direction(
+        vol_regime, m9_raw if m9_raw else 0.5,
+        m13_bias, m13_score_raw, m13_details,
+        m7_score=m7_score, m7_status=m7_status,
+        swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
+        long_target_score=long_tgt_score, short_target_score=short_tgt_score,
+        long_target_details=long_tgt_details, short_target_details=short_tgt_details,
+    )
+    # ── Gather market data (always, regardless of signal status) ──
     swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5])
     result['magnets'] = swept_magnets
     result['gaps'] = [round(p, 2) for p, _ in gaps[:5]]
 
-    sr_levels = find_support_resistance(df_15m, idx)
+    # Target scores from direction resolver
+    result['target_scores'] = {
+        'LONG': round(long_tgt_score, 3), 'SHORT': round(short_tgt_score, 3),
+        'long_details': long_tgt_details, 'short_details': short_tgt_details,
+    }
+
     sr_levels.sort(key=lambda x: x[1], reverse=True)
     result['sr_levels'] = [(round(p, 2), round(s, 2), t, touches, bounces)
                            for p, s, touches, bounces, t in sr_levels[:8]]
@@ -612,7 +630,25 @@ def print_signal(result):
     print(f"    Structure:     {result.get('m13', {}).get('bias', '?')}  (score={result.get('m13', {}).get('score', 0):.3f})")
     if 'm7' in result and result['m7'].get('status') != 'SKIP':
         print(f"    Macro M7:      {result['m7']['score']:.3f}  ({result['m7']['status']})")
+    # Target scores
+    tgt = result.get('target_scores', {})
+    if tgt:
+        print(f"    Targets:       LONG={tgt.get('LONG', 0):.3f}  SHORT={tgt.get('SHORT', 0):.3f}")
+        # Show top target for each direction
+        for d in ('LONG', 'SHORT'):
+            det = tgt.get(f'{d.lower()}_details', {})
+            top = sorted(det.get('targets', []), key=lambda x: -x.get('contrib', 0))[:1]
+            top_sr = sorted(det.get('sr', []), key=lambda x: -x.get('contrib', 0))[:1]
+            parts = []
+            if top:
+                parts.append(f"HVN ${top[0]['price']:.0f} ({top[0]['dist_pct']:+.1f}%)")
+            if top_sr:
+                parts.append(f"S/R ${top_sr[0]['price']:.0f} ({top_sr[0]['dist_pct']:+.1f}%)")
+            if parts:
+                print(f"      {d:>6} best: {', '.join(parts)}")
     print(f"    → Direction:   {dr.get('direction', '?')}  size_mult={dr.get('size_mult', 0):.2f}")
+    if dr.get('target_tiebreaker'):
+        print(f"    🎯 Tiebreaker: {dr.get('target_tiebreaker')}")
     print(f"    Reason:        {dr.get('reason', '?')}")
 
     # Module Scores

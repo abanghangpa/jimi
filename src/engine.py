@@ -27,7 +27,7 @@ from src.modules.m10_macro import m10_prepare_data, m10_get_row, m10_compute_ema
 from src.modules.m11_momentum import score_m11_mtf_momentum
 from src.modules.m12_orderbook import score_m12_orderbook
 from src.modules.m13_structure import score_m13
-from src.modules.direction_resolver import resolve_direction
+from src.modules.direction_resolver import resolve_direction, score_targets
 from src.modules.adaptive_direction import compute_adaptive_direction
 from src.modules.veto_system import evaluate_vetoes, check_data_freshness
 from src.modules.adaptive_weights import AdaptiveWeights
@@ -693,12 +693,38 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), 'NEUTRAL')
 
         # ═══════════════════════════════════════════════════════════
-        # PHASE 2c: RESOLVE DIRECTION — Climate + Structure + Macro
+        # PHASE 2c: RESOLVE DIRECTION — Climate + Structure + Macro + Targets
         # ═══════════════════════════════════════════════════════════
+        # Pre-compute volume profile for target scoring
+        _tgt_cache_key = idx // 4
+        if not hasattr(run_backtest, '_tgt_cache') or run_backtest._tgt_cache_key != _tgt_cache_key:
+            _highs = df_15m['High'].values.astype(float)
+            _lows = df_15m['Low'].values.astype(float)
+            _closes = df_15m['Close'].values.astype(float)
+            _volumes = df_15m['Volume'].values.astype(float)
+            from src.modules.m5_liquidation import build_volume_profile, find_magnets, find_gaps, find_support_resistance
+            _tc, _tp, _te = build_volume_profile(
+                _highs[:idx+1], _lows[:idx+1], _closes[:idx+1], _volumes[:idx+1],
+                n_bins=cfg.get('M5_VP_BINS', 50), lookback=cfg.get('M5_VP_LOOKBACK', 672))
+            _magnets = find_magnets(_tc, _tp) if _tc is not None else []
+            _gaps = find_gaps(_tc, _tp) if _tc is not None else []
+            _sr = find_support_resistance(df_15m, idx)
+            run_backtest._tgt_cache = (_magnets, _gaps, _sr)
+            run_backtest._tgt_cache_key = _tgt_cache_key
+        else:
+            _magnets, _gaps, _sr = run_backtest._tgt_cache
+
+        _atr_1h = df_1h['atr'].iloc[idx_1h] if idx_1h >= 0 else None
+        _price = float(row['Close'])
+        _long_tgt, _long_det = score_targets(_price, _magnets, _gaps, _sr, 'LONG', atr_1h=_atr_1h)
+        _short_tgt, _short_det = score_targets(_price, _magnets, _gaps, _sr, 'SHORT', atr_1h=_atr_1h)
+
         direction, dir_size_mult, dir_details = resolve_direction(
             vol_regime, m9_score, m13_bias, m13_score, m13_details,
             m7_score=m7_score, m7_status=m7_status,
             swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
+            long_target_score=_long_tgt, short_target_score=_short_tgt,
+            long_target_details=_long_det, short_target_details=_short_det,
         )
 
         if direction == 'NEUTRAL':
