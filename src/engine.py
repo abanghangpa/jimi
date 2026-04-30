@@ -34,6 +34,7 @@ from src.modules.adaptive_weights import AdaptiveWeights
 from src.modules.cross_asset import score_cross_asset
 from src.modules.session import get_session
 from src.modules.coherence_liquidity import check_coherence, compute_liquidity_aware_tp, compute_stop_risk
+from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.m14_sweep import score_m14
 from src.modules.entry_optimizer import detect_wick_reclaim
 
@@ -1145,50 +1146,65 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             else:
                 stats['m14_skip'] += 1
 
+        # M14 Sweep Gate
+        sweep_passed, sweep_reason = check_sweep_gate(m14_status, m14_score, cfg)
+        if not sweep_passed:
+            stats['filter_blocked'] += 1
+            continue
+
         # Entry
         entry_price = row['Close']
         atr_for_sl = atr_1h if not pd.isna(atr_1h) else row['atr']
 
-        # Chop regime: tight SL, tight TP1, no continuation
-        _is_chop = vol_regime in ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL')
-
+        # ── Liquidity-Aware SL/TP ──
+        # Build seasonal config overrides for ATR fallback
+        _seasonal_cfg = dict(cfg)
         if _is_chop:
-            sl_std = cfg.get('CHOP_SL_ATR', 1.0)
-            sl_hard_max = cfg.get('CHOP_SL_HARD_MAX', 0.012)
+            _seasonal_cfg['SL_ATR_STD'] = cfg.get('CHOP_SL_ATR', 1.0)
+            _seasonal_cfg['SL_HARD_MAX_PCT'] = cfg.get('CHOP_SL_HARD_MAX', 0.012)
+            _seasonal_cfg['TP1_ATR'] = cfg.get('CHOP_TP1_ATR', 0.6)
         elif is_transition:
-            sl_std = cfg.get('SL_ATR_TRANSITION', 1.0)
-            sl_hard_max = cfg.get('SL_HARD_MAX_PCT', 0.05)
+            _seasonal_cfg['SL_ATR_STD'] = cfg.get('SL_ATR_TRANSITION', 1.0)
+            _seasonal_cfg['TP1_ATR'] = cfg.get('TP1_ATR_TRANSITION', 1.2)
         elif is_summer:
-            sl_std = cfg.get('SL_ATR_STD_SUMMER', cfg['SL_ATR_STD'])
-            sl_hard_max = cfg.get('SL_HARD_MAX_SUMMER', cfg['SL_HARD_MAX_PCT'])
+            _seasonal_cfg['SL_ATR_STD'] = cfg.get('SL_ATR_STD_SUMMER', cfg['SL_ATR_STD'])
+            _seasonal_cfg['SL_HARD_MAX_PCT'] = cfg.get('SL_HARD_MAX_SUMMER', cfg['SL_HARD_MAX_PCT'])
+            _seasonal_cfg['TP1_ATR'] = cfg.get('TP1_ATR_SUMMER', cfg['TP1_ATR'])
         elif is_shoulder:
-            sl_std = cfg.get('SHOULDER_SL_ATR', cfg['SL_ATR_STD'])
-            sl_hard_max = cfg.get('SHOULDER_SL_HARD_MAX', cfg['SL_HARD_MAX_PCT'])
-        else:
-            sl_std = cfg['SL_ATR_STD']
-            sl_hard_max = cfg['SL_HARD_MAX_PCT']
+            _seasonal_cfg['SL_ATR_STD'] = cfg.get('SHOULDER_SL_ATR', cfg['SL_ATR_STD'])
+            _seasonal_cfg['SL_HARD_MAX_PCT'] = cfg.get('SHOULDER_SL_HARD_MAX', cfg['SL_HARD_MAX_PCT'])
+            _seasonal_cfg['TP1_ATR'] = cfg.get('SHOULDER_TP1_ATR', cfg['TP1_ATR'])
 
-        sl_dist = min(sl_std * atr_for_sl, sl_hard_max * entry_price)
+        # Gather liquidity data for level placement
+        _magnets_for_levels = []
+        _sr_for_levels = []
+        if cfg.get('LIQUIDITY_LEVELS_ENABLED', True):
+            from src.modules.m5_liquidation import build_volume_profile, find_magnets, find_support_resistance
+            _highs = df_15m['High'].values[:idx+1].astype(float)
+            _lows = df_15m['Low'].values[:idx+1].astype(float)
+            _closes = df_15m['Close'].values[:idx+1].astype(float)
+            _volumes = df_15m['Volume'].values[:idx+1].astype(float)
+            _bc, _vp, _ = build_volume_profile(
+                _highs, _lows, _closes, _volumes,
+                n_bins=cfg.get('M5_VP_BINS', 50), lookback=cfg.get('M5_VP_LOOKBACK', 672))
+            if _bc is not None:
+                _magnets_for_levels = find_magnets(_bc, _vp)
+            _sr_for_levels = find_support_resistance(df_15m, idx)
 
-        if _is_chop:
-            tp1_atr = cfg.get('CHOP_TP1_ATR', 0.6)
-        elif is_transition:
-            tp1_atr = cfg.get('TP1_ATR_TRANSITION', 1.2)
-        elif is_summer:
-            tp1_atr = cfg.get('TP1_ATR_SUMMER', cfg['TP1_ATR'])
-        elif is_shoulder:
-            tp1_atr = cfg.get('SHOULDER_TP1_ATR', cfg['TP1_ATR'])
-        else:
-            tp1_atr = cfg['TP1_ATR']
+        trade_levels = calc_trade_levels(
+            entry_price, direction, atr_for_sl,
+            row.get('vol_ratio', np.nan),
+            magnets=_magnets_for_levels,
+            sr_levels=_sr_for_levels,
+            liq_levels=None,  # M15 liq levels not cached in engine yet
+            cfg=_seasonal_cfg,
+        )
 
-        tp1_dist = tp1_atr * atr_for_sl
-        tp2_mult, tp3_mult = get_tp_multipliers(row.get('vol_ratio', np.nan), config=cfg)
-        tp2_dist, tp3_dist = tp2_mult * atr_for_sl, tp3_mult * atr_for_sl
-
-        if direction == 'LONG':
-            sl, tp1, tp2, tp3 = entry_price - sl_dist, entry_price + tp1_dist, entry_price + tp2_dist, entry_price + tp3_dist
-        else:
-            sl, tp1, tp2, tp3 = entry_price + sl_dist, entry_price - tp1_dist, entry_price - tp2_dist, entry_price - tp3_dist
+        sl = trade_levels['sl']
+        tp1 = trade_levels['tp1']
+        tp2 = trade_levels['tp2']
+        tp3 = trade_levels['tp3']
+        sl_dist = abs(entry_price - sl)
 
         # ═══════════════════════════════════════════════════════════
         # LIQUIDITY-AWARE TP — adjust TP fractions based on volume terrain

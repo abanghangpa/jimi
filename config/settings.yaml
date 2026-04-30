@@ -332,6 +332,17 @@ M1_RSI_OVERBOUGHT: 70
 M1_RSI_OVERSOLD: 30
 M1_MOMENTUM_LOOKBACK: 6
 
+# ─── LIQUIDITY-AWARE SL/TP ─────────────────────────────────
+LIQUIDITY_LEVELS_ENABLED: true     # use liquidity data for SL/TP placement
+SL_VOID_BUFFER_PCT: 0.003          # buffer around levels = "clustered"
+SL_VOID_MIN_DIST_PCT: 0.002        # min SL distance as % of price
+SL_VOID_MAX_DIST_PCT: 0.025        # max SL distance (2.5% cap)
+TP1_USE_MAGNET: true               # target nearest unswept magnet for TP1
+TP1_MAGNET_MIN_DIST_PCT: 0.002     # min distance to magnet
+
+# ─── M14 SWEEP GATE ────────────────────────────────────────
+M14_ENTRY_GATE: false              # require M14 sweep before signaling
+
 # ─── CROSS-ASSET CORRELATION ────────────────────────────────
 CROSS_ASSET_ENABLED: true
 CROSS_ASSET_BTC_WEIGHT: 0.08

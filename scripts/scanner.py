@@ -43,6 +43,7 @@ from src.modules.direction_resolver import resolve_direction, score_targets
 from src.modules.veto_system import evaluate_vetoes
 from src.modules.coherence_liquidity import check_coherence
 from src.modules.m14_sweep import score_m14
+from src.sl_tp import calc_trade_levels, check_sweep_gate
 
 
 def compute_indicators(df_15m, config=None):
@@ -573,24 +574,37 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         result['reason'] = reason
         return result
 
-    # ── SIGNAL ──
+    # ── M14 Sweep Gate ──
+    sweep_passed, sweep_reason = check_sweep_gate(m14_status, m14_score, cfg)
+    if not sweep_passed:
+        result['status'] = 'NO_SIGNAL'
+        result['reason'] = sweep_reason
+        return result
+
+    # ── SIGNAL: Liquidity-Aware Levels ──
     entry_price = float(row['Close'])
     atr_for_sl = float(atr_1h) if not pd.isna(atr_1h) else float(row['atr'])
-    sl_dist = min(cfg['SL_ATR_STD'] * atr_for_sl, cfg['SL_HARD_MAX_PCT'] * entry_price)
-    tp1_dist = cfg['TP1_ATR'] * atr_for_sl
-    tp2_mult, tp3_mult = get_tp_multipliers(row.get('vol_ratio', np.nan), config=cfg)
-    tp2_dist, tp3_dist = tp2_mult * atr_for_sl, tp3_mult * atr_for_sl
 
-    if direction == 'LONG':
-        sl, tp1, tp2, tp3 = entry_price - sl_dist, entry_price + tp1_dist, entry_price + tp2_dist, entry_price + tp3_dist
-    else:
-        sl, tp1, tp2, tp3 = entry_price + sl_dist, entry_price - tp1_dist, entry_price - tp2_dist, entry_price - tp3_dist
+    # Gather liquidity data for SL/TP placement
+    _liq_for_levels = result.get('liquidity_levels')
+    levels = calc_trade_levels(
+        entry_price, direction, atr_for_sl,
+        row.get('vol_ratio', np.nan),
+        magnets=magnets,
+        sr_levels=sr_levels,
+        liq_levels=_liq_for_levels,
+        cfg=cfg,
+    )
 
     result.update({
-        'status': 'SIGNAL', 'entry': entry_price, 'sl': float(sl),
-        'tp1': float(tp1), 'tp2': float(tp2), 'tp3': float(tp3),
-        'sl_pct': float(abs(entry_price - sl) / entry_price * 100),
-        'tp1_pct': float(abs(tp1 - entry_price) / entry_price * 100),
+        'status': 'SIGNAL', 'entry': entry_price,
+        'sl': levels['sl'], 'tp1': levels['tp1'],
+        'tp2': levels['tp2'], 'tp3': levels['tp3'],
+        'sl_pct': levels['sl_pct'], 'tp1_pct': levels['tp1_pct'],
+        'sl_source': levels['sl_source'],
+        'tp1_source': levels['tp1_source'],
+        'tp2_source': levels['tp2_source'],
+        'tp3_source': levels['tp3_source'],
     })
 
     return result
@@ -811,11 +825,15 @@ def print_signal(result):
     status = result['status']
     if status == 'SIGNAL':
         print(f"\n  ✅ SIGNAL: {result['direction']}")
+        sl_src = result.get('sl_source', 'ATR')
+        tp1_src = result.get('tp1_source', 'ATR')
+        tp2_src = result.get('tp2_source', 'ATR')
+        tp3_src = result.get('tp3_source', 'ATR')
         print(f"    Entry: ${result['entry']:.2f}")
-        print(f"    SL:    ${result['sl']:.2f}  ({result['sl_pct']:.2f}%)")
-        print(f"    TP1:   ${result['tp1']:.2f}  ({result['tp1_pct']:.2f}%)")
-        print(f"    TP2:   ${result['tp2']:.2f}")
-        print(f"    TP3:   ${result['tp3']:.2f}")
+        print(f"    SL:    ${result['sl']:.2f}  ({result['sl_pct']:.2f}%)  [{sl_src}]")
+        print(f"    TP1:   ${result['tp1']:.2f}  ({result['tp1_pct']:.2f}%)  [{tp1_src}]")
+        print(f"    TP2:   ${result['tp2']:.2f}  [{tp2_src}]")
+        print(f"    TP3:   ${result['tp3']:.2f}  [{tp3_src}]")
     else:
         print(f"\n  ⛔ {status}: {result.get('reason', 'N/A')}")
     print("═" * 60)
