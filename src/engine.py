@@ -109,6 +109,12 @@ class Trade:
         self.exit_reason = None
         self.pnl_pct = 0.0
         self.bars_held = 0
+        # Regime lifecycle tracking
+        self.entry_regime = vol_regime
+        self.exit_regime = None
+        self.regime_history = [vol_regime]  # regime at each bar during trade
+        self.regime_transitions = 0  # how many times regime changed during trade
+        self.dir_size_mult = 1.0  # will be set at entry
 
     def update_sl_trail(self):
         if self.tp2_hit:
@@ -116,7 +122,13 @@ class Trade:
         elif self.tp1_hit:
             self.sl = self.entry_price
 
-    def close(self, price, time, reason, fraction=1.0):
+    def update_regime(self, current_regime):
+        """Track regime changes during the life of this trade."""
+        if self.regime_history and self.regime_history[-1] != current_regime:
+            self.regime_transitions += 1
+        self.regime_history.append(current_regime)
+
+    def close(self, price, time, reason, fraction=1.0, exit_regime=None):
         close_amount = min(fraction, self.remaining)
         pnl = ((price - self.entry_price) / self.entry_price if self.direction == 'LONG'
                else (self.entry_price - price) / self.entry_price)
@@ -125,6 +137,10 @@ class Trade:
         self.exit_price = price
         self.exit_time = time
         self.exit_reason = reason
+        if exit_regime is not None:
+            self.exit_regime = exit_regime
+        elif self.regime_history:
+            self.exit_regime = self.regime_history[-1]
         if self.remaining <= 0.001:
             self.remaining = 0
 
@@ -659,6 +675,11 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             if vol_regime in block_regimes:
                 stats['m9_block'] += 1
                 continue
+
+        # Update regime tracking for open trades (after M9, before entries)
+        for trade in open_trades:
+            if trade.is_open:
+                trade.update_regime(vol_regime)
 
         # ═══════════════════════════════════════════════════════════
         # PHASE 2: DIRECTION (M13) — What's the structural bias?
@@ -1229,6 +1250,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                       veto_soft_penalty=veto_soft_penalty, gatekeeper_passed=gatekeeper.passed,
                       m7_details=m7_details,
                       tp1_close_frac=tp1_close_frac, tp2_close_frac=tp2_close_frac)
+        trade.dir_size_mult = dir_size_mult
         open_trades.append(trade); trades.append(trade)
         daily_trades[today] += 1; stats['entries'] += 1
         last_entry_bar = idx
