@@ -43,6 +43,7 @@ from src.modules.direction_resolver import resolve_direction, score_targets
 from src.modules.veto_system import evaluate_vetoes
 from src.modules.coherence_liquidity import check_coherence
 from src.modules.m14_sweep import score_m14
+from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_exchange_data, compute_exchange_signals, score_exchange_activity, score_spot_signals
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 
 
@@ -373,6 +374,30 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         pass
 
     result['cascade_risk'] = _detect_cascade_risk(df_15m, idx, result)
+
+    # Exchange Activity (cross-exchange funding, OI, L/S)
+    try:
+        exchange_summary = get_exchange_summary()
+        if 'error' not in exchange_summary:
+            result['exchange_activity'] = exchange_summary
+            # Score derivatives exchange data with resolved direction
+            _ex_signals = exchange_summary.get('signals', {})
+            if _ex_signals:
+                _ex_status, _ex_score, _ex_details = score_exchange_activity(
+                    _ex_signals, direction if direction != 'NEUTRAL' else 'LONG')
+                result['exchange_activity']['score'] = round(_ex_score, 3)
+                result['exchange_activity']['status'] = _ex_status
+                result['exchange_activity']['direction_details'] = _ex_details
+            # Score spot data
+            _spot_signals = exchange_summary.get('spot_signals', {})
+            if _spot_signals:
+                _sp_status, _sp_score, _sp_details = score_spot_signals(
+                    _spot_signals, direction if direction != 'NEUTRAL' else 'LONG')
+                result['exchange_activity']['spot_score'] = round(_sp_score, 3)
+                result['exchange_activity']['spot_status'] = _sp_status
+                result['exchange_activity']['spot_details'] = _sp_details
+    except Exception:
+        pass
 
     # Liquidity levels & conflict — need direction, use resolved or NEUTRAL
     _liq_direction = direction if direction != 'NEUTRAL' else None
@@ -761,6 +786,105 @@ def print_signal(result):
         if oi_div != 'NONE':
             print(f"    ⚡ OI Divergence: {oi_div}")
 
+    # Exchange Activity (cross-exchange)
+    exch = result.get('exchange_activity', {})
+    if exch and 'error' not in exch:
+        print(f"\n  Exchange Activity (cross-exchange):")
+        snaps = exch.get('snapshots', {})
+        sigs = exch.get('signals', {})
+
+        # Per-exchange snapshot table
+        print(f"    {'Exchange':<10} {'Funding':>12} {'OI (ETH)':>14} {'L/S Ratio':>10}")
+        for ex_name in ['binance', 'okx', 'bybit', 'htx', 'phemex', 'kraken']:
+            s = snaps.get(ex_name, {})
+            if not s or s.get('error'):
+                continue
+            fr = s.get('funding_rate')
+            oi = s.get('oi')
+            ls = s.get('ls_ratio')
+            fr_str = f"{fr*100:+.4f}%" if fr is not None else "N/A"
+            oi_str = f"{oi:,.0f}" if oi else "N/A"
+            ls_str = f"{ls:.4f}" if ls else "N/A"
+            print(f"    {ex_name:<10} {fr_str:>12} {oi_str:>14} {ls_str:>10}")
+
+        # Funding spread
+        spread = sigs.get('funding_spread', 0)
+        spread_trend = sigs.get('funding_spread_trend', '?')
+        print(f"    Funding spread: {spread*100:.4f}%  trend={spread_trend}")
+
+        # OI shares
+        oi_shares = sigs.get('oi_shares', {})
+        if oi_shares:
+            shares_str = '  '.join(f"{k}={v*100:.1f}%" for k, v in sorted(oi_shares.items()))
+            print(f"    OI share:  {shares_str}")
+            print(f"    OI dominant: {sigs.get('oi_dominant_exchange', '?')}  "
+                  f"concentration={sigs.get('oi_concentration', 0):.3f}")
+
+        # OI migration
+        migration = sigs.get('oi_migration')
+        if migration and migration != 'BALANCED':
+            print(f"    ⚡ OI Migration: {migration}")
+
+        # L/S divergence
+        ls_spread = sigs.get('ls_spread', 0)
+        if ls_spread > 0.3:
+            ls_by = sigs.get('ls_by_exchange', {})
+            ls_str = '  '.join(f"{k}={v:.2f}" for k, v in sorted(ls_by.items()))
+            print(f"    L/S divergence: {ls_spread:.3f}  ({ls_str})")
+
+        # Scoring
+        ex_score = exch.get('score', 0)
+        ex_status = exch.get('status', '?')
+        ex_details = exch.get('direction_details', {})
+        ex_factors = ex_details.get('factors', [])
+        print(f"    Score: {ex_score:.3f} ({ex_status})")
+        for f in ex_factors:
+            print(f"      • {f}")
+
+        # Spot data
+        spot = exch.get('spot', {})
+        spot_sigs = exch.get('spot_signals', {})
+        spot_details = exch.get('spot_details', {})
+        if spot:
+            print(f"\n    Spot Markets:")
+            print(f"      {'Exchange':<10} {'Price':>10} {'24h Vol':>12} {'OB Ratio':>10} {'Flow':>8}")
+            for ex_name in ['binance', 'okx', 'bybit', 'kraken', 'coinbase', 'htx']:
+                s = spot.get(ex_name, {})
+                if not s or not s.get('price'):
+                    continue
+                p = s.get('price', 0)
+                v = s.get('vol_24h') or 0
+                ob = s.get('ob_ratio') or 0
+                buy_pct = s.get('buy_pct') or 50
+                flow = f"{buy_pct:.0f}% buy"
+                print(f"      {ex_name:<10} ${p:>9.2f} {v:>11,.0f} {ob:>10.3f} {flow:>8}")
+
+            # Basis
+            basis = spot_sigs.get('basis', {})
+            if basis:
+                basis_str = '  '.join(f"{k}={v:+.3f}%" for k, v in sorted(basis.items()))
+                print(f"      Basis: {basis_str}")
+                print(f"      Avg basis: {spot_sigs.get('basis_avg', 0):+.4f}% ({spot_sigs.get('basis_state', '?')})")
+
+            # Spot walls
+            sell_walls = spot_sigs.get('spot_sell_walls', [])
+            bid_support = spot_sigs.get('spot_bid_support', [])
+            if sell_walls or bid_support:
+                parts = []
+                if sell_walls:
+                    parts.append(f"sell walls: {', '.join(sell_walls)}")
+                if bid_support:
+                    parts.append(f"bid support: {', '.join(bid_support)}")
+                print(f"      Book: {' | '.join(parts)}")
+
+            # Spot scoring
+            sp_score = exch.get('spot_score', 0)
+            sp_status = exch.get('spot_status', '?')
+            sp_factors = spot_details.get('factors', [])
+            print(f"      Spot score: {sp_score:.3f} ({sp_status})")
+            for f in sp_factors:
+                print(f"        • {f}")
+
     # Real Liquidity Levels (liquidation + stops + order book)
     liq = result.get('liquidity_levels', {})
     if liq:
@@ -881,6 +1005,13 @@ def print_summary(result):
     print(f"  {'M11 MTF Momentum':<22} {m11_st:>10}  {m11_sc:>6.2f}")
     print(f"  {'M13 Structure':<22} {m13_st:>10}  {m13_sc:>6.2f}")
     print(f"  {'M14 Sweep':<22} {m14_st:>10}  {m14_sc:>6.2f}")
+    m16_exch = result.get('exchange_activity', {})
+    m16_sc = m16_exch.get('score', 0) if m16_exch else 0
+    m16_st = m16_exch.get('status', '—') if m16_exch else '—'
+    print(f"  {'M16 Exch Derivs':<22} {m16_st:>10}  {m16_sc:>6.2f}")
+    m16_sp_sc = m16_exch.get('spot_score', 0) if m16_exch else 0
+    m16_sp_st = m16_exch.get('spot_status', '—') if m16_exch else '—'
+    print(f"  {'M16 Exch Spot':<22} {m16_sp_st:>10}  {m16_sp_sc:>6.2f}")
 
     ics = result.get('ics', 0)
     status = result.get('status', 'N/A')
@@ -923,6 +1054,52 @@ def print_summary(result):
             fr_dir = "longs pay" if fr > 0 else "shorts pay"
             print(f"  • Funding rate: {fr*100:+.4f}% ({fr_dir})")
         print(f"  • OI: ${oi_usd/1e9:.2f}B  Δ1h: {deriv.get('oi_roc_1h', 0):+.3f}%")
+
+    # Exchange Activity summary
+    exch = result.get('exchange_activity', {})
+    if exch and 'error' not in exch:
+        sigs = exch.get('signals', {})
+        snaps = exch.get('snapshots', {})
+        spread = sigs.get('funding_spread', 0)
+        spread_trend = sigs.get('funding_spread_trend', '?')
+        oi_shares = sigs.get('oi_shares', {})
+        migration = sigs.get('oi_migration', 'BALANCED')
+        ls_spread = sigs.get('ls_spread', 0)
+
+        parts = []
+        if spread > 0:
+            parts.append(f"funding spread {spread*100:.4f}% ({spread_trend})")
+        if oi_shares:
+            dominant = sigs.get('oi_dominant_exchange', '?')
+            parts.append(f"OI dominant: {dominant} ({oi_shares.get(dominant, 0)*100:.1f}%)")
+        if migration and migration != 'BALANCED':
+            parts.append(f"migration: {migration}")
+        if ls_spread > 0.3:
+            ls_by = sigs.get('ls_by_exchange', {})
+            parts.append(f"L/S spread {ls_spread:.2f}")
+        if parts:
+            print(f"  • Exchange: {'; '.join(parts)}")
+
+    # Spot market summary
+    spot = exch.get('spot', {}) if exch else {}
+    spot_sigs = exch.get('spot_signals', {}) if exch else {}
+    if spot and spot_sigs:
+        spot_parts = []
+        basis_avg = spot_sigs.get('basis_avg', 0)
+        basis_state = spot_sigs.get('basis_state', '?')
+        if basis_avg:
+            spot_parts.append(f"basis {basis_avg:+.3f}% ({basis_state})")
+        ob_avg = spot_sigs.get('spot_ob_avg', 0)
+        if ob_avg:
+            spot_parts.append(f"OB ratio {ob_avg:.3f}")
+        sell_walls = spot_sigs.get('spot_sell_walls', [])
+        if sell_walls:
+            spot_parts.append(f"sell walls: {', '.join(sell_walls)}")
+        flow = spot_sigs.get('spot_flow', '?')
+        if flow != '?':
+            spot_parts.append(f"flow: {flow}")
+        if spot_parts:
+            print(f"  • Spot: {'; '.join(spot_parts)}")
 
     # Liquidity — unswept only
     if liq:
