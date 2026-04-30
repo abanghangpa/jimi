@@ -6,19 +6,26 @@
 
 # ─── GATE THRESHOLDS ─────────────────────────────────────────
 ICS_THRESHOLD_NORMAL: 0.50
-ICS_THRESHOLD_CAUTION: 0.52
-ICS_FLOOR: 0.50
-ICS_FLOOR_M4_FALSE: 0.50
-ICS_CEILING: 0.70
+ICS_THRESHOLD_CAUTION: 0.50
+ICS_FLOOR: 0.48
+ICS_FLOOR_M4_FALSE: 0.48
+ICS_CEILING: 0.65       # cap — 0.7+ bucket was 28% WR (inverted confidence)
 
 # ─── MODULE WEIGHTS (ICS) ────────────────────────────────────
-# Forensic rebalance: M2/M9 removed from ICS (hallucinating).
-# M4/M5 boosted (strongest predictors).
-M1_WEIGHT: 0.08
+# Forensic rebalance based on 71-trade permutation analysis (2026 Q1):
+#   M10: ONLY statistically significant module (permutation p<0.05) → boost
+#   M3:  Predictive (delta +0.032) → keep
+#   M4:  Only useful in 0.5-0.7 range → reduce
+#   M5:  INVERTED (higher scores → worse results) → minimize
+#   M1, M11, M12: Noise per permutation test → zero out
+#   ICS correlation with PnL was -0.121 (inverted!) → fix weights
+M1_WEIGHT: 0.00       # noise per permutation (was 0.08)
 M2_WEIGHT: 0.00       # veto-only
-M3_WEIGHT: 0.22
-M4_WEIGHT: 0.20       # reduced from 0.38 — chronically over-weighted per calibration
-M5_WEIGHT: 0.15       # reduced from 0.25 — inconsistent across years
+M3_WEIGHT: 0.16       # predictive, keep (was 0.22)
+M4_WEIGHT: 0.06       # only 0.5-0.7 range works, reduce (was 0.20)
+M5_WEIGHT: 0.05       # INVERTED — minimize (was 0.15)
+M10_WEIGHT: 0.40      # only significant module, boost hard (was 0.10→0.25)
+M11_WEIGHT: 0.00      # noise per permutation (was 0.12)
 
 # ─── V6.12 IMPROVEMENTS ─────────────────────────────────────
 BIAS_GATE_ENABLED: true
@@ -144,7 +151,7 @@ MAX_CONSEC_LOSS: 3
 CONSEC_LOSS_PAUSE_BARS: 8
 
 # ─── LONG FILTER ────────────────────────────────────────────
-LONG_MIN_ICS: 0.55
+LONG_MIN_ICS: 0.50
 
 # ─── M6: DERIVATIVES ────────────────────────────────────────
 M6_WEIGHT: 0.10
@@ -228,7 +235,7 @@ M12_LIVE_ONLY: true
 # ─── ADAPTIVE DIRECTION BIAS ────────────────────────────────
 ADAPTIVE_DIR_ENABLED: true
 ADAPTIVE_DIR_MIN_BIAS: 0.10
-ADAPTIVE_DIR_BLOCK_THRESHOLD: 0.60
+ADAPTIVE_DIR_BLOCK_THRESHOLD: 0.50
 
 # ─── DATA FRESHNESS ─────────────────────────────────────────
 DATA_FRESHNESS_ENABLED: true
