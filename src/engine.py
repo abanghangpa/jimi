@@ -811,7 +811,12 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 if _trend_is_bull and direction == 'SHORT':
                     stats['trend_flip'] += 1
                     continue
-            min_score = cfg.get('TREND_MIN_SCORE', 0.15)
+            # Regime-aware threshold: relaxed in NEUTRAL/COMPRESSING
+            # where weak trend is expected (Proposal 4)
+            if vol_regime in ('NEUTRAL', 'COMPRESSING'):
+                min_score = cfg.get('TREND_MIN_SCORE_NEUTRAL', cfg.get('TREND_MIN_SCORE', 0.05))
+            else:
+                min_score = cfg.get('TREND_MIN_SCORE', 0.05)
             if abs(trend_val) < min_score:
                 stats['trend_weak'] += 1
                 continue
@@ -827,16 +832,29 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, cfg)
 
-        ics_pre, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, 0.5, config=cfg)
+        # M10 scored early — feeds into ICS pre-check (Proposal 1)
+        m10_score = 0.5; m10_status = 'SKIP'; use_m10 = False
+        if cfg.get('M10_ENABLED', False) and m10_data is not None:
+            macro_row = m10_get_row(m10_data, ts)
+            if macro_row:
+                m10_status, m10_score, m10_details = score_m10_macro(macro_row, direction, trend_dir)
+                use_m10 = True
+
+        # ICS pre-check: M1-M4 + M10 (if available), before M5/M7/M8/M11-M14
+        ics_pre, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, 0.5,
+                                            m10_score=m10_score, use_m10=use_m10, config=cfg)
         if m4_status == 'FAIL':
             stats['m4_false_anchored'] += 1
-        threshold = cfg['ICS_THRESHOLD_CAUTION'] if phase0_val >= 0.40 else cfg['ICS_THRESHOLD_NORMAL']
+        # Use dedicated pre-check thresholds (lower than final ICS — fewer modules)
+        precheck_floor = cfg.get('ICS_PRECHECK_FLOOR', cfg['ICS_FLOOR'])
+        precheck_threshold = cfg.get('ICS_PRECHECK_THRESHOLD', cfg['ICS_THRESHOLD_NORMAL'])
+        threshold = cfg['ICS_THRESHOLD_CAUTION'] if phase0_val >= 0.40 else precheck_threshold
         if is_summer:
             threshold += cfg.get('SUMMER_ICS_BOOST', 0)
         elif is_shoulder:
             threshold += cfg.get('SHOULDER_ICS_BOOST', 0)
         threshold += veto_soft_penalty
-        if ics_pre < effective_floor or ics_pre < threshold:
+        if ics_pre < precheck_floor or ics_pre < threshold:
             stats['ics_blocked'] += 1
             continue
 
@@ -869,15 +887,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             m8_status, m8_score, m8_details = score_m8_funding(cached_funding_rate, direction, cfg)
             use_m8 = True
 
-        # M9 already computed above (Phase 1)
-        # M7 already computed above (Phase 2)
-        # M13 already computed above (Phase 2)
-        m10_score = 0.5; m10_status = 'SKIP'; use_m10 = False
-        if cfg.get('M10_ENABLED', False) and m10_data is not None:
-            macro_row = m10_get_row(m10_data, ts)
-            if macro_row:
-                m10_status, m10_score, m10_details = score_m10_macro(macro_row, direction, trend_dir)
-                use_m10 = True
+        # M10 already scored above (before ICS pre-check)
 
         # M11
         m11_score = 0.5; m11_status = 'SKIP'; use_m11 = False
@@ -989,6 +999,13 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                                         m13_score=m13_score, use_m13=use_m13, m14_score=m14_score, use_m14=use_m14,
                                         config=cfg)
         ics += gatekeeper.ics_boost
+
+        # M5 sweet-spot boost — 0.3-0.5 bucket is the best performer
+        # (Proposal 3: targeted boost, not blanket weight increase)
+        m5_spot_low = cfg.get('M5_SWEET_SPOT_LOW', 0.30)
+        m5_spot_high = cfg.get('M5_SWEET_SPOT_HIGH', 0.50)
+        if m5_spot_low <= m5_score <= m5_spot_high:
+            ics += cfg.get('M5_SWEET_SPOT_BOOST', 0.04)
 
         # ═══════════════════════════════════════════════════════════
         # COHERENCE CHECK — do module states tell a consistent story?

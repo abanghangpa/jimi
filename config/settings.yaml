@@ -11,6 +11,11 @@ ICS_FLOOR: 0.48
 ICS_FLOOR_M4_FALSE: 0.48
 ICS_CEILING: 0.65       # cap — 0.7+ bucket was 28% WR (inverted confidence)
 
+# Pre-check gate (M1-M4+M10 only, before M5/M7/M8/M11-M14)
+# Separate from final ICS threshold — pre-check has fewer modules
+ICS_PRECHECK_FLOOR: 0.42
+ICS_PRECHECK_THRESHOLD: 0.45
+
 # ─── MODULE WEIGHTS (ICS) ────────────────────────────────────
 # Forensic rebalance based on 71-trade permutation analysis (2026 Q1):
 #   M10: ONLY statistically significant module (permutation p<0.05) → boost
@@ -34,6 +39,7 @@ TREND_FILTER_ENABLED: true
 TREND_BLOCK_COUNTER_TREND: false
 TREND_STRONG_ONLY: false
 TREND_MIN_SCORE: 0.05
+TREND_MIN_SCORE_NEUTRAL: 0.03   # relaxed in NEUTRAL/COMPRESSING regime
 MONTHLY_DD_CIRCUIT: 0.05
 
 # ─── V6.13 SEASONAL ─────────────────────────────────────────
@@ -103,6 +109,9 @@ M4_ZL_WEIGHT: 0.60
 M5_VP_LOOKBACK: 672
 M5_VP_BINS: 50
 M5_MIN_SCORE: 0.25
+M5_SWEET_SPOT_LOW: 0.30
+M5_SWEET_SPOT_HIGH: 0.50
+M5_SWEET_SPOT_BOOST: 0.04
 
 # ─── STOP LOSS ───────────────────────────────────────────────
 SL_ATR_STD: 1.3
