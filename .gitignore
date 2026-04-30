@@ -32,3 +32,7 @@ regime_results.csv
 
 # Scan results
 data/scans/
+venv/
+data/
+*.csv
+__pycache__/

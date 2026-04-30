@@ -263,6 +263,9 @@ MTF_CONFIRM_ENABLED: true
 MTF_1H_CANDLE_CHECK: true
 MTF_4H_EMA_CHECK: false
 
+# ─── M13: STRUCTURAL BIAS ─────────────────────────────────────
+M13_ENABLED: true
+M13_WEIGHT: 0.10
 # M13 defers to M9 during chop (anti-predictive when agreeing)
 M13_DEFER_IN_CHOP: true
 

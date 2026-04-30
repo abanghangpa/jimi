@@ -9,7 +9,201 @@ Usage:
 """
 
 import os
+import sys
 import yaml
+
+
+# ═══════════════════════════════════════════════════════════════
+# CONFIG VALIDATOR
+# ═══════════════════════════════════════════════════════════════
+
+# Keys that are set dynamically (scanner, engine) — not errors if absent
+_DYNAMIC_KEYS = {'_base_timeframe'}
+
+# Module → (enabled_key, weight_key, required_when_enabled)
+_MODULE_WEIGHT_PAIRS = [
+    ('M7_ENABLED',  'M7_WEIGHT',  False),   # direction/sizing only is OK
+    ('M8_ENABLED',  'M8_WEIGHT',  True),
+    ('M9_ENABLED',  'M9_WEIGHT',  False),   # direction/sizing only is OK
+    ('M10_ENABLED', 'M10_WEIGHT', True),
+    ('M11_ENABLED', 'M11_WEIGHT', True),
+    ('M12_ENABLED', 'M12_WEIGHT', True),
+    ('M13_ENABLED', 'M13_WEIGHT', True),
+    ('M14_ENABLED', 'M14_WEIGHT', True),
+]
+
+# Expected types for each key (None = any)
+_TYPE_MAP = {
+    'ICS_THRESHOLD_NORMAL': (int, float),
+    'ICS_THRESHOLD_CAUTION': (int, float),
+    'ICS_FLOOR': (int, float),
+    'ICS_FLOOR_M4_FALSE': (int, float),
+    'ICS_CEILING': (int, float),
+    'M1_WEIGHT': (int, float),
+    'M2_WEIGHT': (int, float),
+    'M3_WEIGHT': (int, float),
+    'M4_WEIGHT': (int, float),
+    'M5_WEIGHT': (int, float),
+    'M6_WEIGHT': (int, float),
+    'M7_WEIGHT': (int, float),
+    'M8_WEIGHT': (int, float),
+    'M9_WEIGHT': (int, float),
+    'M10_WEIGHT': (int, float),
+    'M11_WEIGHT': (int, float),
+    'M12_WEIGHT': (int, float),
+    'M13_WEIGHT': (int, float),
+    'M14_WEIGHT': (int, float),
+    'MACD_FAST': int, 'MACD_SLOW': int, 'MACD_SIGNAL': int,
+    'EMA_FAST': int, 'EMA_SLOW': int, 'RSI_PERIOD': int, 'ATR_PERIOD': int,
+    'VWAP_LOOKBACK': int, 'CVD_LOOKBACK': int, 'M4_ZL_LOOKBACK': int,
+    'M5_VP_LOOKBACK': int, 'M5_VP_BINS': int,
+    'SUMMER_MONTHS': list, 'SHOULDER_MONTHS': list,
+    'M9_BLOCK_REGIMES': list,
+    'PAIR': str,
+    'WARMUP_BARS_1H': int,
+}
+
+# Numeric range checks: key → (min, max)
+_RANGE_CHECKS = {
+    'ICS_THRESHOLD_NORMAL': (0.0, 1.0),
+    'ICS_THRESHOLD_CAUTION': (0.0, 1.0),
+    'ICS_FLOOR': (0.0, 1.0),
+    'ICS_CEILING': (0.0, 1.0),
+    'SL_HARD_MAX_PCT': (0.0, 0.10),
+    'SL_ATR_STD': (0.5, 5.0),
+    'TP1_ATR': (0.5, 10.0),
+    'TP2_ATR': (0.5, 10.0),
+    'TP3_ATR': (0.5, 10.0),
+    'TP1_CLOSE': (0.0, 1.0),
+    'TP2_CLOSE': (0.0, 1.0),
+    'MAX_DAILY_LOSS': (0.0, 1.0),
+    'MAX_TRADES_DAY': (1, 100),
+}
+
+
+def validate_config(cfg, strict=False):
+    """Validate config against known schema. Returns (errors, warnings).
+
+    Args:
+        cfg: Config dict to validate
+        strict: If True, warnings become errors
+
+    Returns:
+        (errors: list[str], warnings: list[str])
+    """
+    errors = []
+    warnings = []
+
+    # 1. Unknown keys
+    known = set(_DEFAULTS.keys()) | _DYNAMIC_KEYS
+    for key in cfg:
+        if key not in known:
+            warnings.append(f"Unknown config key: {key} (typo or deprecated?)")
+
+    # 2. Type checks
+    for key, expected_type in _TYPE_MAP.items():
+        if key in cfg and cfg[key] is not None:
+            if not isinstance(cfg[key], expected_type):
+                errors.append(
+                    f"Type mismatch: {key} expected {expected_type}, "
+                    f"got {type(cfg[key]).__name__} = {cfg[key]!r}"
+                )
+
+    # 3. Range checks
+    for key, (lo, hi) in _RANGE_CHECKS.items():
+        if key in cfg and isinstance(cfg[key], (int, float)):
+            if not (lo <= cfg[key] <= hi):
+                warnings.append(
+                    f"Out of range: {key}={cfg[key]} (expected {lo}–{hi})"
+                )
+
+    # 4. Module weight consistency
+    base_weight_keys = ['M1_WEIGHT', 'M2_WEIGHT', 'M3_WEIGHT', 'M4_WEIGHT', 'M5_WEIGHT']
+    base_total = sum(cfg.get(k, 0) for k in base_weight_keys)
+
+    for enabled_key, weight_key, required in _MODULE_WEIGHT_PAIRS:
+        enabled = cfg.get(enabled_key, False)
+        weight = cfg.get(weight_key, 0)
+        if enabled and weight == 0 and required:
+            warnings.append(
+                f"Module {enabled_key}=True but {weight_key}=0 — "
+                f"module runs but contributes nothing to ICS"
+            )
+        if not enabled and weight > 0:
+            warnings.append(
+                f"Module {enabled_key}=False but {weight_key}={weight} — "
+                f"weight is wasted"
+            )
+
+    # 5. ICS weight sanity
+    enabled_extra_weights = []
+    for enabled_key, weight_key, _ in _MODULE_WEIGHT_PAIRS:
+        if cfg.get(enabled_key, False) and cfg.get(weight_key, 0) > 0:
+            enabled_extra_weights.append((weight_key, cfg[weight_key]))
+    if enabled_extra_weights:
+        extra_total = sum(w for _, w in enabled_extra_weights)
+        total = base_total + extra_total
+        if abs(total - 1.0) > 0.05:
+            warnings.append(
+                f"ICS weights sum to {total:.3f} "
+                f"(base={base_total:.3f} + extras={extra_total:.3f}) — "
+                f"should be ~1.0 for proper scoring"
+            )
+
+    # 6. Structural checks
+    if cfg.get('ICS_THRESHOLD_CAUTION', 0) < cfg.get('ICS_THRESHOLD_NORMAL', 0):
+        errors.append(
+            f"ICS_THRESHOLD_CAUTION ({cfg['ICS_THRESHOLD_CAUTION']}) < "
+            f"ICS_THRESHOLD_NORMAL ({cfg['ICS_THRESHOLD_NORMAL']}) — caution should be >= normal"
+        )
+
+    if cfg.get('EMA_FAST', 0) >= cfg.get('EMA_SLOW', 0):
+        errors.append(
+            f"EMA_FAST ({cfg.get('EMA_FAST')}) >= EMA_SLOW ({cfg.get('EMA_SLOW')}) — "
+            f"fast should be < slow"
+        )
+
+    if cfg.get('MACD_FAST', 0) >= cfg.get('MACD_SLOW', 0):
+        errors.append(
+            f"MACD_FAST ({cfg.get('MACD_FAST')}) >= MACD_SLOW ({cfg.get('MACD_SLOW')}) — "
+            f"fast should be < slow"
+        )
+
+    tp1 = cfg.get('TP1_ATR', 0)
+    tp2 = cfg.get('TP2_ATR', 0)
+    tp3 = cfg.get('TP3_ATR', 0)
+    if not (tp1 < tp2 < tp3):
+        warnings.append(
+            f"TP ladder not ascending: TP1={tp1} TP2={tp2} TP3={tp3}"
+        )
+
+    # 7. Veto consistency
+    if cfg.get('DIR_VETO_ENABLED', False) and not cfg.get('VETO_ENABLED', False):
+        warnings.append("DIR_VETO_ENABLED=true but VETO_ENABLED=false — veto won't run")
+
+    return errors, warnings
+
+
+def print_validation_report(errors, warnings):
+    """Print config validation results."""
+    if not errors and not warnings:
+        print("  ✅ Config validation: all checks passed")
+        return
+
+    if warnings:
+        print(f"\n  ⚠️  Config warnings ({len(warnings)}):")
+        for w in warnings:
+            print(f"    • {w}")
+
+    if errors:
+        print(f"\n  ❌ Config errors ({len(errors)}):")
+        for e in errors:
+            print(f"    • {e}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# CONFIG LOADER
+# ═══════════════════════════════════════════════════════════════
 
 _DEFAULTS = {
     # Gate thresholds
@@ -160,6 +354,40 @@ _DEFAULTS = {
     "M9_BLOCK_REGIMES": ["CRISIS"],
     "M9_SIZE_CHOP": 0.50,
     "M9_SIZE_COMPRESSING": 0.80,
+    # M9 regime detection thresholds (v2)
+    "M9_WHIPSAW_THRESHOLD": 0.45,
+    "M9_RETRACE_THRESHOLD": 0.50,
+    "M9_TRENDING_MIN_DIR": 0.45,
+    "M9_TRENDING_MIN_VOLUME": 0.50,
+    "M9_TRENDING_MAX_WHIPSAW": 0.35,
+    "M9_TRENDING_MAX_RETRACE": 0.45,
+    "M9_TRENDING_MIN_COHERENCE": 0.50,
+    # M9 regime classification thresholds
+    "M9_CRISIS_ATR_THRESHOLD": 0.85,
+    "M9_CRISIS_BB_THRESHOLD": 0.90,
+    "M9_CHOP_HARD_CHOP_SCORE": 0.72,
+    "M9_CHOP_HARD_WHIPSAW": 0.70,
+    "M9_CHOP_HARD_RETRACE": 0.80,
+    "M9_CHOP_MILD_CHOP_SCORE": 0.50,
+    "M9_CHOP_MILD_TREND_CEILING": 0.35,
+    "M9_TRENDING_TREND_SCORE": 0.40,
+    "M9_TRENDING_MAX_WHIPSAW_SCORE": 0.65,
+    "M9_TRENDING_MAX_RETRACE_SCORE": 0.80,
+    "M9_COMPRESSING_BB": 0.30,
+    "M9_COMPRESSING_ATR": 0.40,
+    "M9_COMPRESSING_RANGE": 0.60,
+    "M9_HYSTERESIS_CONFIRM_BARS": 2,
+    "M9_TRENDING_CONFIRM_BARS": 3,
+    "M9_COMPRESSING_CONFIRM_BARS": 3,
+    "M9_CRISIS_COOLDOWN": 8,
+    "M9_TRENDING_COOLDOWN": 4,
+    "M9_COMPRESSING_COOLDOWN": 6,
+    "M9_CHOP_HARD_COOLDOWN": 6,
+    "M9_CHOP_MILD_COOLDOWN": 4,
+    "M9_SIZE_CHOP_MILD": 0.55,
+    "M9_CHOP_SPLIT_ENABLED": True,
+    "M9_CHOP_MAX_BARS": 96,
+    "M9_CHOP_EXIT_COOLDOWN": 12,
     # M10
     "M10_ENABLED": True,
     "M10_FETCH_ON_BACKTEST": True,
@@ -255,13 +483,29 @@ _DEFAULTS = {
 }
 
 
-def load_config(path=None):
-    """Load config from YAML file, merged with defaults."""
+def load_config(path=None, validate=True):
+    """Load config from YAML file, merged with defaults.
+
+    Args:
+        path: Path to YAML config file
+        validate: Run validation on load (default: True)
+
+    Returns:
+        Merged config dict
+    """
     cfg = dict(_DEFAULTS)
     if path and os.path.exists(path):
         with open(path) as f:
             user = yaml.safe_load(f) or {}
             cfg.update(user)
+
+    if validate:
+        errors, warnings = validate_config(cfg)
+        print_validation_report(errors, warnings)
+        if errors:
+            print(f"\n  💀 Config has {len(errors)} error(s) — aborting.")
+            sys.exit(1)
+
     return cfg
 
 
