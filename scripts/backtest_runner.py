@@ -264,6 +264,19 @@ def main():
 
     trades, stats, df = run_backtest(csv_path, config=cfg, verbose=args.verbose,
                                       date_start=args.start, date_end=args.end)
+
+    # Always print signal flow stats (even when no trades)
+    print("\n  Signal Flow (debug):")
+    for k in ['signals_checked', 'bias_gate_skip', 'adaptive_dir_block',
+              'm3_fail', 'm2_neutral_long_skip', 'm2_veto_block',
+              'ics_blocked', 'ics_ceiling_skip', 'gate_block',
+              'gate_m7_block', 'gate_m10_block', 'gate_trend_block',
+              'm9_block', 'm10_fail', 'm11_fail', 'post_crash_block',
+              'veto_hard_block', 'trend_flip', 'trend_weak',
+              'm4_false_anchored', 'm5_hard_block', 'entries']:
+        if k in stats and stats[k] > 0:
+            print(f"    {k+':':<26} {stats[k]}")
+
     result = print_report(trades, stats)
 
     if trades:
