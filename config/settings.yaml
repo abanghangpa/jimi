@@ -29,11 +29,11 @@ M11_WEIGHT: 0.00      # noise per permutation (was 0.12)
 
 # ─── V6.12 IMPROVEMENTS ─────────────────────────────────────
 BIAS_GATE_ENABLED: true
-BIAS_GATE_LONG_ICS: 0.65
+BIAS_GATE_LONG_ICS: 0.50
 TREND_FILTER_ENABLED: true
 TREND_BLOCK_COUNTER_TREND: false
 TREND_STRONG_ONLY: false
-TREND_MIN_SCORE: 0.15
+TREND_MIN_SCORE: 0.05
 MONTHLY_DD_CIRCUIT: 0.05
 
 # ─── V6.13 SEASONAL ─────────────────────────────────────────
@@ -234,8 +234,8 @@ M12_LIVE_ONLY: true
 
 # ─── ADAPTIVE DIRECTION BIAS ────────────────────────────────
 ADAPTIVE_DIR_ENABLED: true
-ADAPTIVE_DIR_MIN_BIAS: 0.10
-ADAPTIVE_DIR_BLOCK_THRESHOLD: 0.50
+ADAPTIVE_DIR_MIN_BIAS: 0.05
+ADAPTIVE_DIR_BLOCK_THRESHOLD: 0.40
 
 # ─── DATA FRESHNESS ─────────────────────────────────────────
 DATA_FRESHNESS_ENABLED: true
