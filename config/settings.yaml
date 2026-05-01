@@ -101,9 +101,14 @@ SIGNAL_EXPIRY: 3
 CVD_LOOKBACK: 36
 CVD_DIVERGENCE_WINDOW: 12
 M4_ZL_LOOKBACK: 18
-M4_ZL_MOMENTUM_BARS: 8
+M4_ZL_MOMENTUM_BARS: 13      # v7: was 8, raised to filter bid-ask churn (13 bars = 3.25hr)
 M4_DIV_WEIGHT: 0.40
 M4_ZL_WEIGHT: 0.60
+# v7: Sigmoid gating — weak M4 signals get near-zero weight
+M4_SIGMOID_CENTER: 0.65      # inflection point where gate = 0.5
+M4_SIGMOID_STEEPNESS: 12     # transition sharpness (higher = sharper cliff)
+# v7: ATR scaling — dampen M4 in low-vol sessions (spread noise dominates)
+M4_ATR_SCALING_ENABLED: true
 
 # ─── M5: LIQUIDATION MAGNET ─────────────────────────────────
 M5_VP_LOOKBACK: 672
@@ -293,7 +298,7 @@ M13_DEFER_IN_CHOP: true
 # ─── COHERENCE CHECK ────────────────────────────────────────
 COHERENCE_CHECK_ENABLED: true
 COHERENCE_MAX_CONFLICTS: 3
-COHERENCE_M4_PENALTY: 0.04
+COHERENCE_M4_PENALTY: 0.02    # v7: was 0.04, reduced — M4 is known noise generator, shouldn't kill valid signals
 COHERENCE_M5_PENALTY: 0.03
 COHERENCE_M13_PENALTY: 0.03
 COHERENCE_M7_PENALTY: 0.02
