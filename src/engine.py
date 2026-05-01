@@ -1159,7 +1159,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         # ── Liquidity-Aware SL/TP ──
         # Build seasonal config overrides for ATR fallback
         _seasonal_cfg = dict(cfg)
-        if _is_chop:
+        if _in_chop:
             _seasonal_cfg['SL_ATR_STD'] = cfg.get('CHOP_SL_ATR', 1.0)
             _seasonal_cfg['SL_HARD_MAX_PCT'] = cfg.get('CHOP_SL_HARD_MAX', 0.012)
             _seasonal_cfg['TP1_ATR'] = cfg.get('CHOP_TP1_ATR', 0.6)
@@ -1251,7 +1251,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             tp2_close_frac = cfg['TP2_CLOSE']
 
         # Chop regime override: exit fully at TP1, no TP2/TP3 continuation
-        if _is_chop:
+        if _in_chop:
             tp1_close_frac = cfg.get('CHOP_TP1_CLOSE', 0.90)
             tp2_close_frac = 0.0  # no remaining for TP2/TP3
 
