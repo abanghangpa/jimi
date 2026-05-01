@@ -47,8 +47,14 @@ from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_ex
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 
 
-def compute_indicators(df_15m, config=None):
-    """Compute all indicators on fresh data."""
+def compute_indicators(df_15m, config=None, df_1d_hist=None):
+    """Compute all indicators on fresh data.
+
+    Args:
+        df_1d_hist: Optional pre-loaded daily DataFrame from historical CSV.
+                    If provided, it replaces the daily resample from df_15m,
+                    giving EMA55+ proper warmup for accurate daily bias.
+    """
     cfg = config or CONFIG
     df_15m['vwap'] = calc_vwap(df_15m['High'], df_15m['Low'], df_15m['Close'], df_15m['Volume'], cfg['VWAP_LOOKBACK'])
     df_15m['vol_ma20'] = df_15m['Volume'].rolling(20).mean()
@@ -61,7 +67,13 @@ def compute_indicators(df_15m, config=None):
     df_1h = resample_ohlcv(df_15m, '1H')
     df_2h = resample_ohlcv(df_15m, '2H')
     df_4h = resample_ohlcv(df_15m, '4H')
-    df_1d = resample_ohlcv(df_15m, '1D')
+
+    # Use historical CSV daily data if available (fixes EMA55 warmup bug),
+    # otherwise fall back to resampling from the limited live fetch.
+    if df_1d_hist is not None and len(df_1d_hist) > 0:
+        df_1d = df_1d_hist.copy()
+    else:
+        df_1d = resample_ohlcv(df_15m, '1D')
 
     df_1h['macd_line'], df_1h['macd_signal'], df_1h['macd_hist'] = calc_macd(
         df_1h['Close'], cfg['MACD_FAST'], cfg['MACD_SLOW'], cfg['MACD_SIGNAL'])
@@ -88,7 +100,135 @@ def compute_indicators(df_15m, config=None):
 
 
 # Need resample_ohlcv for scanner
-from src.utils.data_handler import resample_ohlcv
+from src.utils.data_handler import resample_ohlcv, load_data
+
+# Minimum daily bars needed for reliable EMA55 convergence
+_MIN_DAILY_BARS = 100
+
+
+def ensure_csv_fresh(csv_path=None):
+    """Ensure the historical CSV is patched to the latest 15m bar.
+
+    Reads the last timestamp from the CSV. If any bars are missing,
+    fetches them from Binance and appends — always up to date, no threshold.
+
+    Returns:
+        CSV path, or None if not found.
+    """
+    if csv_path is None:
+        csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                'data', 'eth_15m_merged.csv')
+        if not os.path.exists(csv_path):
+            csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                    'eth_15m_merged.csv')
+
+    if not os.path.exists(csv_path):
+        print(f"  ⚠️  CSV not found at {csv_path}, using live fetch only")
+        return None
+
+    # Read last timestamp from CSV (fast: seek to end, read last line)
+    last_line = None
+    with open(csv_path, 'rb') as f:
+        f.seek(0, 2)
+        fsize = f.tell()
+        f.seek(max(0, fsize - 500))
+        lines = f.read().decode('utf-8', errors='replace').strip().split('\n')
+        last_line = lines[-1] if lines else None
+
+    if not last_line:
+        return csv_path
+
+    last_ts_str = last_line.split(',')[0].strip('"')
+    try:
+        last_dt = pd.Timestamp(last_ts_str)
+    except Exception:
+        return csv_path
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    gap_bars = int((now - last_dt).total_seconds() / 900)  # 15m bars
+
+    print(f"  📄 CSV last: {last_ts_str}  ({gap_bars} bars behind)")
+
+    if gap_bars <= 0:
+        return csv_path  # already current
+
+    # Always fetch missing bars — no threshold
+    print(f"  📥 Fetching {gap_bars} missing bars from Binance...")
+
+    try:
+        import ccxt
+        ex = ccxt.binance({"enableRateLimit": True})
+        since_ms = int(last_dt.timestamp() * 1000) + 1
+
+        all_rows = []
+        end_time_ms = None
+        remaining = gap_bars
+
+        while remaining > 0:
+            limit = min(remaining, 1000)
+            params = {'symbol': 'ETHUSDT', 'interval': '15m', 'limit': limit}
+            if end_time_ms:
+                params['endTime'] = end_time_ms
+            raw = ex.publicGetKlines(params)
+            if not raw:
+                break
+            all_rows = raw + all_rows
+            end_time_ms = int(raw[0][0]) - 1
+            remaining -= len(raw)
+            if len(raw) < limit:
+                break
+
+        if all_rows:
+            cols = ['Open time', 'Open', 'High', 'Low', 'Close', 'Volume',
+                    'Close time', 'Quote asset volume', 'Number of trades',
+                    'Taker buy base asset volume', 'Taker buy quote asset volume',
+                    'Ignore']
+            df_new = pd.DataFrame(all_rows, columns=cols)
+            df_new['Open time'] = (pd.to_datetime(df_new['Open time'].astype(int), unit='ms')
+                                  .dt.strftime('%Y-%m-%d %H:%M:%S'))
+            df_new['Close time'] = (pd.to_datetime(df_new['Close time'].astype(int), unit='ms')
+                                   .dt.strftime('%Y-%m-%d %H:%M:%S'))
+            for c in ['Open', 'High', 'Low', 'Close', 'Volume', 'Quote asset volume',
+                      'Number of trades', 'Taker buy base asset volume',
+                      'Taker buy quote asset volume']:
+                df_new[c] = pd.to_numeric(df_new[c])
+            df_new['Ignore'] = 0
+
+            df_new = df_new[df_new['Open time'] > last_ts_str]
+            if len(df_new) > 0:
+                df_new.to_csv(csv_path, mode='a', header=False, index=False)
+                print(f"  ✅ Appended {len(df_new)} bars → {df_new['Open time'].iloc[-1]}")
+    except Exception as e:
+        print(f"  ⚠️  Fetch failed: {e}")
+
+    return csv_path
+
+
+def load_daily_from_csv(csv_path):
+    """Load the full historical CSV and resample to daily.
+
+    Returns a 1D DataFrame with swing_bias/phase0/trend pre-computed,
+    or None if CSV is unavailable or too short.
+    """
+    if csv_path is None or not os.path.exists(csv_path):
+        return None
+
+    df_15m = load_data(csv_path)
+    df_1d = resample_ohlcv(df_15m, '1D')
+
+    n_bars = len(df_1d)
+    if n_bars < _MIN_DAILY_BARS:
+        print(f"  ⚠️  Only {n_bars} daily bars (need {_MIN_DAILY_BARS}), "
+              f"bias may be unreliable")
+        return None
+
+    print(f"  📊 Daily: {n_bars} bars "
+          f"({df_1d['Open time'].iloc[0]} → {df_1d['Open time'].iloc[-1]})")
+    return df_1d
+
+
+
 
 
 def _check_swept_magnets(df_15m, idx, magnets, lookback_bars=96):
@@ -1219,10 +1359,20 @@ def main():
             scaled_config[k] = max(int(CONFIG[k] * tf_mult), 10)
     scaled_config['_base_timeframe'] = args.tf
 
+    # Step 1: Ensure historical CSV is fresh (fetch gap if stale)
+    csv_path = ensure_csv_fresh()
+
+    # Step 2: Load daily data from CSV for reliable EMA55 bias
+    df_1d_hist = load_daily_from_csv(csv_path)
+    if df_1d_hist is not None:
+        print(f"  📊 Daily bias from CSV ({len(df_1d_hist)} bars)")
+
+    # Step 3: Fetch live base-timeframe data
     print(f"Fetching {args.tf} data ({bars} bars)...")
     df_base = fetch_recent(bars=bars, timeframe=args.tf)
     print("Computing indicators...")
-    df_base, df_1h, df_2h, df_4h, df_1d = compute_indicators(df_base, config=scaled_config)
+    df_base, df_1h, df_2h, df_4h, df_1d = compute_indicators(
+        df_base, config=scaled_config, df_1d_hist=df_1d_hist)
     print(f"Scanning [{args.tf}]...")
     result = scan_signal(df_base, df_1h, df_2h, df_4h, df_1d, config=scaled_config)
 
