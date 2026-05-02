@@ -5,8 +5,8 @@
 # Switch between "modes" by passing --config v615.yaml etc.
 
 # ─── GATE THRESHOLDS ─────────────────────────────────────────
-ICS_THRESHOLD_NORMAL: 0.50
-ICS_THRESHOLD_CAUTION: 0.50
+ICS_THRESHOLD_NORMAL: 0.58
+ICS_THRESHOLD_CAUTION: 0.58
 ICS_FLOOR: 0.48
 ICS_FLOOR_M4_FALSE: 0.48
 ICS_CEILING: 0.65       # cap — 0.7+ bucket was 28% WR (inverted confidence)
@@ -167,6 +167,17 @@ CONSEC_LOSS_PAUSE_BARS: 8
 # ─── LONG FILTER ────────────────────────────────────────────
 LONG_MIN_ICS: 0.50
 
+# ─── PHASE0 MIN BLOCK (forensic P1) ────────────────────────
+# Phase0 < 0.2 is the "death zone" — 33% WR in 2024, 49% in 2023.
+# Block entries when Phase0 is too low (market is directionless).
+PHASE0_MIN_BLOCK: 0.20
+
+# ─── M5 REGIME GATE (forensic P1) ──────────────────────────
+# M5 (Liquidation Magnet) is inverted in bull markets, predictive in bear.
+# Gate M5 scoring: only give full M5 credit in trending/bear regimes.
+# In CHOP_MILD/bull ranges, M5 score is capped to 0.5 (neutral).
+M5_REGIME_GATE_ENABLED: true
+
 # ─── M6: DERIVATIVES ────────────────────────────────────────
 M6_WEIGHT: 0.10
 M3_WEIGHT_DERIV: 0.25
@@ -278,11 +289,11 @@ ADAPTIVE_WARMUP_TRADES: 15
 
 # ─── SESSION AWARENESS ──────────────────────────────────────
 SESSION_AWARENESS_ENABLED: true
-SESSION_ASIAN_MULT: 0.85
+SESSION_ASIAN_MULT: 1.10
 SESSION_EU_MULT: 1.0
 SESSION_US_MULT: 1.05
 SESSION_LATE_US_MULT: 0.90
-SESSION_US_OPEN_BOOST: 1.10
+SESSION_US_OPEN_BOOST: 0.85
 
 # ─── MULTI-TF ENTRY CONFIRMATION ────────────────────────────
 MTF_CONFIRM_ENABLED: true

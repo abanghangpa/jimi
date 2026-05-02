@@ -618,6 +618,12 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
     result['m5'] = {'status': m5_status, 'score': round(float(m5_score), 3)}
 
+    # M5 Regime Gate — neutralize M5 in unfavorable regimes (forensic P1)
+    if cfg.get('M5_REGIME_GATE_ENABLED', False):
+        _m5_favorable = ('NEUTRAL', 'TRENDING', 'CHOP_MILD_BEAR')
+        if vol_regime not in _m5_favorable:
+            m5_score = 0.5
+
     # M8 (funding)
     m8_score = 0.5
     m8_status = 'SKIP'

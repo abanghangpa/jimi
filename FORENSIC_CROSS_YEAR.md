@@ -1,23 +1,24 @@
-# JIMI Cross-Year Forensic Comparison — 2023 vs 2024 vs 2026
+# JIMI Cross-Year Forensic Comparison — 2022 vs 2023 vs 2024 vs 2026
 
-**Generated:** 2026-05-02
+**Generated:** 2026-05-02 (updated with 2022 data)
 
 ---
 
 ## Performance Summary
 
-| Metric | 2023 | 2024 | 2026 Q1 |
-|--------|------|------|---------|
-| Total Trades | 150 | 223 | 88 |
-| Win Rate | 51.3% | 54.3% | 62.5% |
-| Net PnL | +55.75% | +285.50% | +183.79% |
-| Profit Factor | 1.25 | 1.95 | 2.68 |
-| Max Drawdown | 35.76% | 35.69% | 24.93% |
-| Return/DD Ratio | 1.6× | 8.0× | 7.4× |
-| Avg Bars Held | 15.7 | 16.2 | 13.2 |
-| ETH Regime | Recovery/bull (+90%) | Bull (+70%) | Bear (-40%) |
+| Metric | 2022 | 2023 | 2024 | 2026 Q1 |
+|--------|------|------|------|---------|
+| Total Trades | 101 | 150 | 223 | 88 |
+| Win Rate | 49.5% | 51.3% | 54.3% | 62.5% |
+| Net PnL | +54.21% | +55.75% | +285.50% | +183.79% |
+| Profit Factor | 1.30 | 1.25 | 1.95 | 2.68 |
+| Max Drawdown | **65.40%** | 35.76% | 35.69% | 24.93% |
+| Return/DD Ratio | 0.8× | 1.6× | 8.0× | 7.4× |
+| Avg Bars Held | 10.3 | 15.7 | 16.2 | 13.2 |
+| ETH Regime | Bear (-67%) | Recovery (+90%) | Bull (+70%) | Bear (-40%) |
 
-**Framework quality improved over time:** PF went from 1.25 → 1.95 → 2.68. The framework evolved or the bear market regime suits it better.
+**2022 is the worst year** — lowest PF (1.30), catastrophic DD (65.40%), lowest WR (49.5%).
+**Framework quality trend:** PF 1.30→1.25→1.95→2.68 (improving over time).
 
 ---
 

@@ -480,6 +480,36 @@ _DEFAULTS = {
     # Data
     "PAIR": "ETHUSDT",
     "WARMUP_BARS_1H": 168,
+    # Pre-check thresholds
+    "ICS_PRECHECK_FLOOR": 0.42,
+    "ICS_PRECHECK_THRESHOLD": 0.45,
+    # Trend filter (regime-aware)
+    "TREND_MIN_SCORE_NEUTRAL": 0.03,
+    # M4 sigmoid gating
+    "M4_SIGMOID_CENTER": 0.65,
+    "M4_SIGMOID_STEEPNESS": 12,
+    "M4_ATR_SCALING_ENABLED": True,
+    # M5 sweet-spot boost
+    "M5_SWEET_SPOT_LOW": 0.30,
+    "M5_SWEET_SPOT_HIGH": 0.50,
+    "M5_SWEET_SPOT_BOOST": 0.04,
+    # Chop regime TP/SL overrides
+    "CHOP_TP1_ATR": 0.6,
+    "CHOP_TP1_CLOSE": 0.90,
+    "CHOP_SL_ATR": 0.5,
+    "CHOP_SL_HARD_MAX": 0.008,
+    # Liquidity-aware SL/TP
+    "LIQUIDITY_LEVELS_ENABLED": True,
+    "SL_VOID_BUFFER_PCT": 0.003,
+    "SL_VOID_MIN_DIST_PCT": 0.002,
+    "SL_VOID_MAX_DIST_PCT": 0.025,
+    "TP1_USE_MAGNET": True,
+    "TP1_MAGNET_MIN_DIST_PCT": 0.002,
+    # M14 entry gate
+    "M14_ENTRY_GATE": False,
+    # Forensic recommendations (P0-P2)
+    "PHASE0_MIN_BLOCK": 0.20,
+    "M5_REGIME_GATE_ENABLED": True,
 }
 
 

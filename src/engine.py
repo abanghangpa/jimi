@@ -314,6 +314,10 @@ def check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, 
             return False, "atr_too_high"
     if phase0_val >= 0.90:
         return False, "phase0_red"
+    # Phase0 minimum block — death zone (forensic P1)
+    phase0_min = cfg.get('PHASE0_MIN_BLOCK', 0.0)
+    if phase0_min > 0 and phase0_val < phase0_min:
+        return False, "phase0_death_zone"
     return True, "ok"
 
 
@@ -622,6 +626,11 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         phase0_block = cfg.get('PHASE0_SUMMER_BLOCK', 0.90) if is_summer else 0.90
         if phase0_val >= phase0_block:
             continue
+        # Phase0 minimum block — death zone (forensic P1)
+        phase0_min = cfg.get('PHASE0_MIN_BLOCK', 0.0)
+        if phase0_min > 0 and phase0_val < phase0_min:
+            stats['bias_gate_skip'] += 1
+            continue
 
         # Consecutive Loss Pause
         max_consec = cfg.get('MAX_CONSEC_LOSS_SUMMER', 999) if is_summer else cfg.get('MAX_CONSEC_LOSS', 999)
@@ -873,6 +882,13 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             run_backtest._m5_cache_key = m5_cache_key
         else:
             m5_status, m5_score, m5_details, cascade = run_backtest._m5_cache
+
+        # M5 Regime Gate — M5 is inverted in bull/ranging, predictive in bear/trending.
+        # Cap M5 to neutral (0.5) when regime doesn't support it (forensic P1).
+        if cfg.get('M5_REGIME_GATE_ENABLED', False):
+            _m5_favorable_regimes = ('NEUTRAL', 'TRENDING', 'CHOP_MILD_BEAR')
+            if vol_regime not in _m5_favorable_regimes:
+                m5_score = 0.5  # neutralize — don't let inverted M5 affect ICS
 
         if m5_status == 'PASS':
             stats['m5_pass'] += 1
