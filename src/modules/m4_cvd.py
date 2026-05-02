@@ -5,6 +5,11 @@ v7 changes:
   - detect_cvd_divergence_15m: tighter thresholds (0.05 slope, 0.5% swing)
   - score_m4: removed 0.50 floor, added sigmoid gating + ATR scaling
   - Layer A lookback: 5→3 bars (45min) to reduce stale divergence pickup
+
+v7.1 fixes (missed divergence on 2300→2344 move):
+  - Layer A lookback: 3→8 bars (2h) to catch multi-hour divergences
+  - Slope threshold: 0.05→0.03 to catch slower grinds
+  - Swing search window: look//2→look (full lookback for reference point)
 """
 
 import numpy as np
@@ -85,18 +90,18 @@ def detect_cvd_divergence_15m(df_15m, lookback=24, window=12):
             if price_range > 0 and cvd_range > 0:
                 price_dir = price_slope / price_range
                 cvd_dir = cvd_slope / cvd_range
-                # v7: 0.03→0.05 threshold (67% tighter)
-                if price_dir > 0.05 and cvd_dir < -0.05:
+                # v7.1: 0.05→0.03 — catches slower grinds, still filters noise
+                if price_dir > 0.03 and cvd_dir < -0.03:
                     divergence[i] = 'BEARISH'
-                elif price_dir < -0.05 and cvd_dir > 0.05:
+                elif price_dir < -0.03 and cvd_dir > 0.03:
                     divergence[i] = 'BULLISH'
 
         # Method 2: Swing high/low comparison
         if divergence[i] == 'NONE':
             look = min(lookback, i)
-            # v7: 0.2%→0.5% swing threshold (requires real displacement, not wick)
+            # v7.1: Use full lookback window for swing reference, not half
             if i >= 4 and (high[i] >= np.max(high[i-3:i+1]) * 0.9995):
-                prev_hi = i - look // 2
+                prev_hi = i - look
                 if prev_hi >= 3 and high[prev_hi] >= np.max(high[max(0,prev_hi-3):prev_hi+1]) * 0.9995:
                     if high[i] > high[prev_hi] * 1.005:
                         cvd_at_i = np.nanmean(cvd[max(0,i-1):i+1])
@@ -198,26 +203,61 @@ def score_m4(df_15m, df_2h, idx_15m, idx_2h, direction, config):
     zl_state = 'NONE'
 
     # Layer A: 15m CVD Divergence
-    # v7: Look back 3 bars (45min) instead of 5 (75min) — fresher signal
+    # v7.2: Look back 24 bars (6h), detect divergence in BOTH directions
+    #   Confirming div (same direction as trade) → positive score
+    #   Opposing div (against trade direction) → negative score (warning)
     if idx_15m >= config['CVD_LOOKBACK']:
-        for ci in range(max(0, idx_15m - 3), idx_15m + 1):
+        confirming_div = None
+        opposing_div = None
+        confirming_bar = -1
+        opposing_bar = -1
+
+        for ci in range(max(0, idx_15m - 24), idx_15m + 1):
             div = df_15m['cvd_divergence_15m'].iloc[ci]
-            if (direction == 'LONG' and div == 'BULLISH') or (direction == 'SHORT' and div == 'BEARISH'):
-                cvd_now = df_15m['cvd_15m'].iloc[idx_15m]
-                cvd_prev = df_15m['cvd_15m'].iloc[max(0, idx_15m - 8)]
-                if pd.isna(cvd_now) or pd.isna(cvd_prev):
-                    layer_a_score = 0.55
-                else:
-                    cvd_delta = abs(cvd_now - cvd_prev)
-                    cvd_std = df_15m['cvd_15m'].iloc[max(0, idx_15m-48):idx_15m+1].std()
-                    if cvd_std > 0:
-                        layer_a_score = min(cvd_delta / (cvd_std * 2), 1.0)
-                    else:
-                        layer_a_score = 0.5
-                layer_a_score = max(layer_a_score, 0.50)
-                layer_a_status = 'PASS'
-                layer_a_div = div
+            if div == 'NONE':
+                continue
+            is_confirming = (direction == 'LONG' and div == 'BULLISH') or \
+                            (direction == 'SHORT' and div == 'BEARISH')
+            is_opposing = (direction == 'LONG' and div == 'BEARISH') or \
+                          (direction == 'SHORT' and div == 'BULLISH')
+            if is_confirming and confirming_div is None:
+                confirming_div = div
+                confirming_bar = ci
+            elif is_opposing and opposing_div is None:
+                opposing_div = div
+                opposing_bar = ci
+            if confirming_div and opposing_div:
                 break
+
+        # Score confirming divergence (trade-supporting)
+        if confirming_div is not None:
+            cvd_now = df_15m['cvd_15m'].iloc[idx_15m]
+            cvd_prev = df_15m['cvd_15m'].iloc[max(0, idx_15m - 8)]
+            if pd.isna(cvd_now) or pd.isna(cvd_prev):
+                layer_a_score = 0.55
+            else:
+                cvd_delta = abs(cvd_now - cvd_prev)
+                cvd_std = df_15m['cvd_15m'].iloc[max(0, idx_15m-48):idx_15m+1].std()
+                if cvd_std > 0:
+                    layer_a_score = min(cvd_delta / (cvd_std * 2), 1.0)
+                else:
+                    layer_a_score = 0.5
+            layer_a_score = max(layer_a_score, 0.50)
+            layer_a_status = 'PASS'
+            layer_a_div = confirming_div
+
+        # Penalize opposing divergence (trade-threatening)
+        if opposing_div is not None:
+            # Freshness: closer bars = stronger warning
+            bars_ago = idx_15m - opposing_bar
+            freshness = max(0.3, 1.0 - bars_ago / 24.0)  # 1.0 at bar 0, 0.3 at bar 24
+            # Opposing divergence reduces layer_a_score or flips it negative
+            penalty = 0.30 * freshness
+            if layer_a_score > 0:
+                layer_a_score = max(0.0, layer_a_score - penalty)
+            else:
+                layer_a_score = -penalty
+            layer_a_div = opposing_div  # expose to veto system
 
     # Layer B: 2H CVD Zero-Line Cross
     if idx_2h >= 1 and 'cvd_zl_state' in df_2h.columns:

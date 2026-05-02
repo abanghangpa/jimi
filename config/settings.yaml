@@ -8,6 +8,10 @@
 ICS_THRESHOLD_NORMAL: 0.58
 ICS_THRESHOLD_CAUTION: 0.58
 ICS_FLOOR: 0.48
+
+# ─── M4b: INTRABAR CVD (LucF-style) ─────────────────────────
+M4B_INTRABAR_ENABLED: true
+M4B_INTRABAR_HOURS: 48
 ICS_FLOOR_M4_FALSE: 0.48
 ICS_CEILING: 0.65       # cap — 0.7+ bucket was 28% WR (inverted confidence)
 

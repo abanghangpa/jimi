@@ -27,6 +27,7 @@ from src.modules.m1_macd_v2 import score_m1_v2 as score_m1
 from src.modules.m2_ema import score_m2
 from src.modules.m3_vwap import score_m3
 from src.modules.m4_cvd import calc_cvd_15m, detect_cvd_divergence_15m, calc_cvd_2h, detect_cvd_zero_cross, score_m4
+from src.modules.intrabar_cvd import get_intrabar_cvd_summary, score_intrabar_divergence
 from src.modules.m5_liquidation import (
     build_volume_profile, find_magnets, find_gaps, score_m5, detect_cascade_setup,
     find_support_resistance,
@@ -613,6 +614,43 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, cfg)
     result['m4'] = {'status': m4_status, 'score': round(float(m4_score), 3), 'div': m4_div}
 
+    # M4b: Intrabar CVD (LucF-style delta volume analysis)
+    m4b_status = 'SKIP'
+    m4b_score = 0.5
+    m4b_details = {}
+    m4b_divergence = 'NONE'
+    if cfg.get('M4B_INTRABAR_ENABLED', True):
+        try:
+            _tf_map = {'15m': '15min', '1h': '1h', '5m': '5min', '1m': '1min'}
+            _target_tf = _tf_map.get(cfg.get('_base_timeframe', '15m'), '15min')
+            _hours = cfg.get('M4B_INTRABAR_HOURS', 48)
+            _intrabar_df, _intrabar_result = get_intrabar_cvd_summary(
+                symbol='ETHUSDT', target_tf=_target_tf, hours=_hours)
+            if _intrabar_result and 'error' not in _intrabar_result:
+                m4b_status, m4b_score, m4b_details = score_intrabar_divergence(
+                    _intrabar_result, direction)
+                m4b_divergence = _intrabar_result.get('divergence', 'NONE')
+                result['m4b'] = {
+                    'status': m4b_status,
+                    'score': round(float(m4b_score), 3),
+                    'divergence': m4b_divergence,
+                    'bars_ago': _intrabar_result.get('bars_ago', -1),
+                    'cvd_slope': round(_intrabar_result.get('cvd_slope_12', 0), 2),
+                    'details': m4b_details,
+                }
+                # Blend m4b into m4: if intrabar catches div that taker CVD missed
+                if m4b_divergence != 'NONE':
+                    m4_div_detected = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else 'NONE'
+                    if m4_div_detected == 'NONE':
+                        # M4 missed it, M4b caught it — apply M4b's signal
+                        m4_score = m4b_score
+                        if isinstance(m4_div, dict):
+                            m4_div['intrabar_div'] = m4b_divergence
+                            m4_div['intrabar_source'] = 'lucf_style'
+                        print(f"  📊 Intrabar CVD override: {m4b_divergence} div ({m4b_details.get('bars_ago', '?')} bars ago)")
+        except Exception as e:
+            result['m4b'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
     # M5
     m5_status, m5_score, m5_details = score_m5(df_15m, idx, direction, cfg,
         n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
@@ -683,7 +721,18 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
     if cfg.get('VETO_ENABLED', False):
-        m4_disagree = (direction == 'LONG' and m4_div == 'BEARISH') or (direction == 'SHORT' and m4_div == 'BULLISH')
+        # Extract actual divergence string from M4 details dict
+        m4_div_str = 'NONE'
+        if isinstance(m4_div, dict):
+            m4_div_str = m4_div.get('layer_a_div', 'NONE')
+        elif isinstance(m4_div, str):
+            m4_div_str = m4_div
+        # Also consider intrabar divergence
+        if m4_div_str == 'NONE' and m4b_divergence != 'NONE':
+            m4_div_str = m4b_divergence
+
+        m4_disagree = (direction == 'LONG' and m4_div_str == 'BEARISH') or \
+                      (direction == 'SHORT' and m4_div_str == 'BULLISH')
         m5_disagree = (m5_status == 'FAIL')
         dir_veto = m4_disagree and m5_disagree
 
@@ -702,7 +751,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     # Coherence check
     if cfg.get('COHERENCE_CHECK_ENABLED', True):
         is_coherent, conflicts, coherence_penalty = check_coherence(
-            direction, m4_div, m5_details if isinstance(m5_details, dict) else {},
+            direction, m4_div_str, m5_details if isinstance(m5_details, dict) else {},
             m13_bias, vol_regime, m7_score=m7_score, m2_status=m2_status, config=cfg,
         )
         if not is_coherent:
@@ -846,7 +895,7 @@ def print_signal(result):
         print(f"    M3 (VWAP):     {result['m3']['status']:>8}  score={result['m3']['score']:.2f}")
     if 'm4' in result:
         m4 = result['m4']
-        det = m4.get('details', {})
+        det = m4.get('div', {}) or m4.get('details', {})
         if isinstance(det, dict):
             div_str = det.get('layer_a_div', 'NONE')
             zl_str = det.get('layer_b_cross', 'NONE')
@@ -857,6 +906,15 @@ def print_signal(result):
                   f"div={div_str}({la:.2f})  zl={zl_str}({lb:.2f}) {bars}bars")
         else:
             print(f"    M4 (CVD):      {m4['status']:>8}  score={m4['score']:.2f}")
+    if 'm4b' in result:
+        m4b = result['m4b']
+        m4b_div = m4b.get('divergence', 'NONE')
+        m4b_ago = m4b.get('bars_ago', -1)
+        m4b_slope = m4b.get('cvd_slope', 0)
+        m4b_icon = {'BEARISH': '🔻', 'BULLISH': '🔺', 'NONE': '—'}.get(m4b_div, '—')
+        ago_str = f"{m4b_ago}bars ago" if m4b_ago >= 0 else ""
+        print(f"    M4b(IntraCVD): {m4b['status']:>8}  score={m4b['score']:.2f}  "
+              f"div={m4b_div} {m4b_icon}  slope={m4b_slope:.1f}  {ago_str}")
     if 'm5' in result:
         m5 = result['m5']
         print(f"    M5 (LiqtMag):  {m5['status']:>8}  score={m5['score']:.2f}")
@@ -1145,6 +1203,9 @@ def print_summary(result):
     print(f"  {'M2 EMA confluence':<22} {m2_st:>10}  {m2_sc:>6.2f}")
     print(f"  {'M3 VWAP':<22} {m3_st:>10}  {m3_sc:>6.2f}")
     print(f"  {'M4 CVD':<22} {m4_st:>10}  {m4_sc:>6.2f}")
+    m4b_st = result.get('m4b', {}).get('status', '—') if 'm4b' in result else '—'
+    m4b_sc = result.get('m4b', {}).get('score', 0) if 'm4b' in result else 0
+    print(f"  {'M4b Intrabar CVD':<22} {m4b_st:>10}  {m4b_sc:>6.2f}")
     print(f"  {'M5 Liquidation':<22} {m5_st:>10}  {m5_sc:>6.2f}")
     print(f"  {'M8 Funding':<22} {m8_st:>10}  {m8_sc:>6.2f}")
     print(f"  {'M9 Vol Regime':<22} {m9_st:>10}  {m9_sc:>6.2f}")
