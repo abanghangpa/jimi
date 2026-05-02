@@ -787,7 +787,84 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         result['reason'] = f'Gatekeeper: {gatekeeper.summary()}'
         return result
 
-    # Entry filters
+    # ── Compute trade levels (always, even on NO_SIGNAL) ──
+    entry_price = float(row['Close'])
+    atr_for_sl = float(atr_1h) if not pd.isna(atr_1h) else float(row['atr'])
+    _liq_for_levels = result.get('liquidity_levels')
+
+    levels = calc_trade_levels(
+        entry_price, direction, atr_for_sl,
+        row.get('vol_ratio', np.nan),
+        magnets=magnets,
+        sr_levels=sr_levels,
+        liq_levels=_liq_for_levels,
+        cfg=cfg,
+    )
+
+    # ── Build invalidation conditions ──
+    invalidation = []
+
+    # Bearish divergence active
+    m4_div_str = 'NONE'
+    if isinstance(m4_div, dict):
+        m4_div_str = m4_div.get('layer_a_div', 'NONE')
+    if m4_div_str == 'NONE' and m4b_divergence != 'NONE':
+        m4_div_str = m4b_divergence
+    if (direction == 'LONG' and m4_div_str == 'BEARISH') or \
+       (direction == 'SHORT' and m4_div_str == 'BULLISH'):
+        invalidation.append(f'{m4_div_str} CVD divergence active — momentum against you')
+
+    # Whales leaning against
+    whale = result.get('derivatives', {}).get('whale_signal', 'NEUTRAL')
+    if (direction == 'LONG' and whale == 'WHALE_BEARISH') or \
+       (direction == 'SHORT' and whale == 'WHALE_BULLISH'):
+        invalidation.append(f'Whales {whale.replace("WHALE_", "").lower()} — smart money against direction')
+
+    # Crowded positioning
+    pos = result.get('derivatives', {}).get('positioning', 'NEUTRAL')
+    if (direction == 'LONG' and pos == 'CROWDED_LONG') or \
+       (direction == 'SHORT' and pos == 'CROWDED_SHORT'):
+        invalidation.append(f'Crowded {direction.lower()} positioning — squeeze risk')
+
+    # Conflict history
+    conflict = result.get('conflict')
+    if conflict and conflict.get('is_conflict'):
+        invalidation.append(f'Historical conflict: similar setups reverse {conflict["historical"]["windows"].get("24h", {}).get("reversal_rate", 0):.0f}% at 24h')
+
+    # Phase0 death zone
+    if phase0_val is not None and phase0_val < 0.15:
+        invalidation.append(f'Phase0={phase0_val:.3f} (death zone <0.15) — weak macro context')
+
+    # M2 EMA failure
+    if m2_status == 'FAIL':
+        invalidation.append('M2 EMA confluence FAIL — multi-TF trend disagreement')
+
+    # Price below key S/R
+    supports = [p for p, s, t, _, _ in sr_levels if t == 'SUPPORT']
+    resistances = [p for p, s, t, _, _ in sr_levels if t == 'RESISTANCE']
+    nearest_support = min(supports, key=lambda x: abs(x - entry_price)) if supports else 0
+    nearest_resist = min(resistances, key=lambda x: abs(x - entry_price)) if resistances else 0
+
+    result['what_if'] = {
+        'direction': direction,
+        'entry': entry_price,
+        'sl': levels['sl'],
+        'tp1': levels['tp1'],
+        'tp2': levels['tp2'],
+        'tp3': levels['tp3'],
+        'sl_pct': levels['sl_pct'],
+        'tp1_pct': levels['tp1_pct'],
+        'sl_source': levels['sl_source'],
+        'tp1_source': levels['tp1_source'],
+        'tp2_source': levels['tp2_source'],
+        'tp3_source': levels['tp3_source'],
+        'rr1': abs(levels['tp1_pct'] / levels['sl_pct']) if levels['sl_pct'] != 0 else 0,
+        'nearest_support': round(nearest_support, 2),
+        'nearest_resist': round(nearest_resist, 2),
+        'invalidation': invalidation,
+    }
+
+    # ── Entry filters ──
     passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
     if not passed:
         result['status'] = 'FILTERED'
@@ -801,21 +878,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         result['reason'] = sweep_reason
         return result
 
-    # ── SIGNAL: Liquidity-Aware Levels ──
-    entry_price = float(row['Close'])
-    atr_for_sl = float(atr_1h) if not pd.isna(atr_1h) else float(row['atr'])
-
-    # Gather liquidity data for SL/TP placement
-    _liq_for_levels = result.get('liquidity_levels')
-    levels = calc_trade_levels(
-        entry_price, direction, atr_for_sl,
-        row.get('vol_ratio', np.nan),
-        magnets=magnets,
-        sr_levels=sr_levels,
-        liq_levels=_liq_for_levels,
-        cfg=cfg,
-    )
-
+    # ── SIGNAL: set levels ──
     result.update({
         'status': 'SIGNAL', 'entry': entry_price,
         'sl': levels['sl'], 'tp1': levels['tp1'],
@@ -1164,6 +1227,24 @@ def print_signal(result):
         print(f"    TP3:   ${result['tp3']:.2f}  [{tp3_src}]")
     else:
         print(f"\n  ⛔ {status}: {result.get('reason', 'N/A')}")
+
+    # ── What-if trade levels (always show) ──
+    w = result.get('what_if')
+    if w:
+        print(f"\n  {'─' * 56}")
+        print(f"  IF YOU WERE TO TRADE ({w['direction']}):")
+        print(f"    Entry: ${w['entry']:.2f}")
+        print(f"    SL:    ${w['sl']:.2f}  ({w['sl_pct']:.2f}%)  [{w['sl_source']}]")
+        print(f"    TP1:   ${w['tp1']:.2f}  ({w['tp1_pct']:.2f}%)  [{w['tp1_source']}]")
+        print(f"    TP2:   ${w['tp2']:.2f}  [{w['tp2_source']}]")
+        print(f"    TP3:   ${w['tp3']:.2f}  [{w['tp3_source']}]")
+        print(f"    R:R:   {w['rr1']:.2f}x (entry→TP1 vs SL)")
+        print(f"    Support:    ${w['nearest_support']:.2f}")
+        print(f"    Resistance: ${w['nearest_resist']:.2f}")
+        if w['invalidation']:
+            print(f"    ⚠️  INVALIDATION:")
+            for inv in w['invalidation']:
+                print(f"      • {inv}")
     print("═" * 60)
 
 
@@ -1391,6 +1472,16 @@ def print_summary(result):
         if not reasons:
             reasons.append(result.get('reason', 'unknown'))
         print(f"No trade — {'; '.join(reasons)}")
+
+        # What-if levels in summary
+        w = result.get('what_if')
+        if w:
+            print(f"\n  If you trade anyway ({w['direction']}):")
+            print(f"    Entry ${w['entry']:.2f} | SL ${w['sl']:.2f} ({w['sl_pct']:.2f}%) | "
+                  f"TP1 ${w['tp1']:.2f} ({w['tp1_pct']:.2f}%) | R:R {w['rr1']:.2f}x")
+            if w['invalidation']:
+                for inv in w['invalidation']:
+                    print(f"    ⚠️  {inv}")
     print("─" * 55)
 
 
