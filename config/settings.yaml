@@ -311,7 +311,7 @@ M13_DEFER_IN_CHOP: true
 # ─── COHERENCE CHECK ────────────────────────────────────────
 COHERENCE_CHECK_ENABLED: true
 COHERENCE_MAX_CONFLICTS: 3
-COHERENCE_M4_PENALTY: 0.02    # v7: was 0.04, reduced — M4 is known noise generator, shouldn't kill valid signals
+COHERENCE_M4_PENALTY: 0.01    # v8: was 0.02 — M4 at 6% weight + sigmoid-gated, penalty was 33% of max contribution
 COHERENCE_M5_PENALTY: 0.03
 COHERENCE_M13_PENALTY: 0.03
 COHERENCE_M7_PENALTY: 0.02
