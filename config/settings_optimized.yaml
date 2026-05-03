@@ -1,0 +1,410 @@
+# ═══════════════════════════════════════════════════════════════
+# JIMI Framework — Central Configuration
+# ═══════════════════════════════════════════════════════════════
+# Override any parameter here. Unset keys fall back to defaults.
+# Switch between "modes" by passing --config v615.yaml etc.
+
+# ─── GATE THRESHOLDS ─────────────────────────────────────────
+ICS_THRESHOLD_NORMAL: 0.50
+ICS_THRESHOLD_CAUTION: 0.50
+ICS_FLOOR: 0.42
+
+# ─── M4b: INTRABAR CVD (LucF-style) ─────────────────────────
+M4B_INTRABAR_ENABLED: true
+M4B_INTRABAR_HOURS: 48
+ICS_FLOOR_M4_FALSE: 0.48
+ICS_CEILING: 0.75       # relaxed — 0.7+ bucket was strong in 10d attribution
+
+# Pre-check gate (M1-M4+M10 only, before M5/M7/M8/M11-M14)
+# Separate from final ICS threshold — pre-check has fewer modules
+ICS_PRECHECK_FLOOR: 0.38
+ICS_PRECHECK_THRESHOLD: 0.42
+
+# ─── MODULE WEIGHTS (ICS) ────────────────────────────────────
+# Rebalance based on 10-day attribution (2026-04-24 → 2026-05-03) + OOS validation:
+#   M4 (CVD): STRONG — +0.22 delta, 100% WR at ≥0.7. Moderate boost.
+#   M10 (Macro): stabilizer, restore to 0.20 for regime gating.
+#   M11 (MTF Mom): INVERTED — high scores predict losses → zero.
+#   M5 (Liquidation): no differentiating power → zero.
+#   M1 (MACD): decent at 0.6-0.7 → small boost.
+#   M3 (VWAP): stable predictor → boost to 0.20.
+#   M6 (Derivatives): reduce to 0.08.
+#   M12 (OrderBook): live-only, no backtest signal → zero.
+#   Weights sum to 1.00 (base=0.65 + extras=0.35).
+#   ICS threshold raised to 0.62 (weights lower = easier to cross).
+M1_WEIGHT: 0.10       # decent at 0.6-0.7 bucket (was 0.05)
+M2_WEIGHT: 0.00       # veto-only
+M3_WEIGHT: 0.20       # stable, boost slightly (was 0.16)
+M4_WEIGHT: 0.15       # STRONG predictor, moderate boost (was 0.06)
+M5_WEIGHT: 0.00       # no signal power — zero (was 0.05)
+M10_WEIGHT: 0.20      # stabilizer, moderate restore (was 0.40)
+M11_WEIGHT: 0.00      # INVERTED — high scores predict losses → zero (was 0.05)
+
+# ─── V6.12 IMPROVEMENTS ─────────────────────────────────────
+BIAS_GATE_ENABLED: true
+BIAS_GATE_LONG_ICS: 0.50
+TREND_FILTER_ENABLED: true
+TREND_BLOCK_COUNTER_TREND: false
+TREND_STRONG_ONLY: false
+TREND_MIN_SCORE: 0.05
+TREND_MIN_SCORE_NEUTRAL: 0.03   # relaxed in NEUTRAL/COMPRESSING regime
+MONTHLY_DD_CIRCUIT: 0.05
+
+# ─── V6.13 SEASONAL ─────────────────────────────────────────
+SUMMER_MONTHS: [6, 7, 8, 9]
+SUMMER_SIZE_MULT: 0.60
+SUMMER_ICS_BOOST: 0.03
+TP1_CLOSE_BASE: 0.30
+TP1_CLOSE_SUMMER: 0.45
+TP1_ATR_SUMMER: 0.7
+MAX_CONSEC_LOSS_SUMMER: 2
+CONSEC_LOSS_PAUSE_SUMMER: 12
+PHASE0_SUMMER_BLOCK: 0.60
+
+SHOULDER_MONTHS: [3, 10]
+SHOULDER_SIZE_MULT: 0.50
+SHOULDER_SL_ATR: 1.4
+SHOULDER_SL_HARD_MAX: 0.016
+SHOULDER_TP1_ATR: 0.8
+SHOULDER_TP1_CLOSE: 0.45
+SHOULDER_ICS_BOOST: 0.02
+SHOULDER_MAX_TRADES_DAY: 3
+
+# ─── MODULE GATES ────────────────────────────────────────────
+M2_VETO_ENABLED: false
+M2_VETO_THRESHOLD: 0.40
+M5_FAIL_ICS_BOOST: 0.00
+M5_FAIL_HARD_THRESHOLD: 0.25
+M7_HARD_GATE: false
+M7_GATE_THRESHOLD: 0.30
+M7_GATE_STRONG_THRESHOLD: 0.60
+M7_GATE_STRONG_BOOST: 0.04
+SESSION_ASIAN_BLOCK: false
+POST_CRASH_COOLDOWN: true
+POST_CRASH_THRESHOLD: 0.10
+POST_CRASH_BARS: 48
+CASCADE_MULTIPLIER: 1.12
+CASCADE_PENALTY: 0.85
+DIR_VETO_ENABLED: true
+
+# ─── TECHNICAL INDICATORS ────────────────────────────────────
+MACD_FAST: 12
+MACD_SLOW: 26
+MACD_SIGNAL: 9
+EMA_FAST: 21
+EMA_SLOW: 55
+RSI_PERIOD: 14
+ATR_PERIOD: 14
+
+# ─── M3: VWAP ENTRY ZONE ────────────────────────────────────
+VWAP_LOOKBACK: 96
+VWAP_ZONE_PCT: 0.012
+VOL_THRESHOLD: 0.25
+TAKER_LONG: 0.52
+TAKER_SHORT: 0.48
+TAKER_FILLNA: 0.50
+SIGNAL_EXPIRY: 3
+
+# ─── M4: CVD ────────────────────────────────────────────────
+CVD_LOOKBACK: 36
+CVD_DIVERGENCE_WINDOW: 12
+M4_ZL_LOOKBACK: 18
+M4_ZL_MOMENTUM_BARS: 13      # v7: was 8, raised to filter bid-ask churn (13 bars = 3.25hr)
+M4_DIV_WEIGHT: 0.40
+M4_ZL_WEIGHT: 0.60
+# v7: Sigmoid gating — weak M4 signals get near-zero weight
+M4_SIGMOID_CENTER: 0.65      # inflection point where gate = 0.5
+M4_SIGMOID_STEEPNESS: 12     # transition sharpness (higher = sharper cliff)
+# v7: ATR scaling — dampen M4 in low-vol sessions (spread noise dominates)
+M4_ATR_SCALING_ENABLED: true
+
+# ─── M5: LIQUIDATION MAGNET ─────────────────────────────────
+M5_VP_LOOKBACK: 672
+M5_VP_BINS: 50
+M5_MIN_SCORE: 0.25
+M5_SWEET_SPOT_LOW: 0.30
+M5_SWEET_SPOT_HIGH: 0.50
+M5_SWEET_SPOT_BOOST: 0.04
+
+# ─── STOP LOSS ───────────────────────────────────────────────
+SL_ATR_STD: 1.3
+SL_ATR_STD_SUMMER: 1.6
+SL_ATR_TRANSITION: 1.0
+TP1_ATR_TRANSITION: 1.2
+TRANSITION_SIZE_MULT: 0.50
+TRANSITION_SCORE_RANGE: 0.20
+SL_HARD_MAX_PCT: 0.018
+SL_HARD_MAX_SUMMER: 0.018
+SL_BREAKEVEN_AFTER_TP1: true
+EARLY_EXIT_BARS: 16
+EARLY_EXIT_MIN_LOSS: 0.003
+EARLY_EXIT_BARS_SUMMER: 12
+EARLY_EXIT_MIN_LOSS_SUMMER: 0.002
+
+# ─── TAKE PROFIT LADDER ─────────────────────────────────────
+TP1_ATR: 1.5
+TP2_ATR: 2.0
+TP3_ATR: 3.5
+TP1_CLOSE: 0.30
+TP2_CLOSE: 0.30
+
+# ─── POSITION SIZING ────────────────────────────────────────
+SIZE_STD: 5.0
+SIZE_LONG: 5.0
+SIZE_M2_NEUTRAL: 2.5
+SIZE_CAUTION: 3.5
+
+# ─── ENTRY FILTERS ──────────────────────────────────────────
+BAR_MOVE_ATR: 0.5
+ATR_FILTER_MAX: 0.035
+MIN_ENTRY_DIST_PCT: 0.002
+
+# ─── RISK MANAGEMENT ────────────────────────────────────────
+MAX_TRADES_DAY: 5
+MAX_TRADES_DAY_SUMMER: 3
+MAX_DAILY_LOSS: 0.05
+MAX_DAILY_LOSS_SUMMER: 0.03
+COOLDOWN_BARS: 2
+COOLDOWN_BARS_SUMMER: 4
+SHOULDER_COOLDOWN_BARS: 3
+ROLLING_WR_WINDOW: 20
+ROLLING_WR_MIN: 0.15
+MAX_CONSEC_LOSS: 3
+CONSEC_LOSS_PAUSE_BARS: 8
+
+# ─── LONG FILTER ────────────────────────────────────────────
+LONG_MIN_ICS: 0.50
+
+# ─── PHASE0 MIN BLOCK (forensic P1) ────────────────────────
+# Phase0 < 0.2 is the "death zone" — 33% WR in 2024, 49% in 2023.
+# Block entries when Phase0 is too low (market is directionless).
+PHASE0_MIN_BLOCK: 0.10
+
+# ─── M5 REGIME GATE (forensic P1) ──────────────────────────
+# M5 (Liquidation Magnet) is inverted in bull markets, predictive in bear.
+# Gate M5 scoring: only give full M5 credit in trending/bear regimes.
+# In CHOP_MILD/bull ranges, M5 score is capped to 0.5 (neutral).
+M5_REGIME_GATE_ENABLED: true
+
+# ─── M6: DERIVATIVES ────────────────────────────────────────
+M6_WEIGHT: 0.08
+M3_WEIGHT_DERIV: 0.25
+M4_WEIGHT_DERIV: 0.20
+DERIV_ENABLED: true
+
+# ─── M7: MARKET REGIME ──────────────────────────────────────
+M7_ENABLED: true
+M7_WEIGHT: 0.00
+M7_SIZE_REDUCTION: 0.70
+M7_SIZE_MILD: 0.85
+
+# ─── M8: FUNDING RATE ───────────────────────────────────────
+M8_ENABLED: true
+M8_WEIGHT: 0.00
+M8_HIGH_FUNDING: 0.05
+M8_LOW_FUNDING: -0.05
+M8_FLIP_BONUS: 0.15
+
+# ─── M9: VOLATILITY REGIME ──────────────────────────────────
+M9_ENABLED: true
+M9_WEIGHT: 0.00
+M9_BLOCK_REGIMES: ["CRISIS", "CHOP_HARD"]
+M9_SIZE_CHOP_MILD: 0.55
+M9_SIZE_COMPRESSING: 0.85
+# Chop regime: tap nearest liquidity, exit, no continuation
+CHOP_TP1_ATR: 0.6          # tight TP1 — nearest liquidity pool
+CHOP_TP1_CLOSE: 0.90       # exit 90% at TP1
+CHOP_SL_ATR: 0.5           # very tight SL — small loss if wrong
+CHOP_SL_HARD_MAX: 0.008    # hard SL cap in chop (0.8%)
+# Regime detection thresholds (v2)
+M9_WHIPSAW_THRESHOLD: 0.45
+M9_RETRACE_THRESHOLD: 0.50
+M9_TRENDING_MIN_DIR: 0.45
+M9_TRENDING_MIN_VOLUME: 0.50
+M9_TRENDING_MAX_WHIPSAW: 0.35
+M9_TRENDING_MAX_RETRACE: 0.45
+M9_TRENDING_MIN_COHERENCE: 0.50
+
+# Regime classification thresholds
+M9_CRISIS_ATR_THRESHOLD: 0.85
+M9_CRISIS_BB_THRESHOLD: 0.90
+M9_CHOP_HARD_CHOP_SCORE: 0.72
+M9_CHOP_HARD_WHIPSAW: 0.70
+M9_CHOP_HARD_RETRACE: 0.80
+M9_CHOP_MILD_CHOP_SCORE: 0.50
+M9_CHOP_MILD_TREND_CEILING: 0.35
+M9_TRENDING_TREND_SCORE: 0.40
+M9_TRENDING_MAX_WHIPSAW_SCORE: 0.65
+M9_TRENDING_MAX_RETRACE_SCORE: 0.80
+M9_COMPRESSING_BB: 0.30
+M9_COMPRESSING_ATR: 0.40
+M9_COMPRESSING_RANGE: 0.60
+M9_HYSTERESIS_CONFIRM_BARS: 2
+M9_TRENDING_CONFIRM_BARS: 3
+M9_COMPRESSING_CONFIRM_BARS: 3
+M9_CRISIS_COOLDOWN: 8
+M9_TRENDING_COOLDOWN: 4
+M9_COMPRESSING_COOLDOWN: 6
+M9_CHOP_HARD_COOLDOWN: 6
+M9_CHOP_MILD_COOLDOWN: 4
+
+# CHOP_MILD directional split + time-based exit
+M9_CHOP_SPLIT_ENABLED: true
+M9_CHOP_MAX_BARS: 96
+M9_CHOP_EXIT_COOLDOWN: 12
+
+# NEUTRAL sub-classification: split NEUTRAL into TRENDING vs CHOP
+M9_NEUTRAL_DIR_THRESHOLD: 0.18
+M9_NEUTRAL_VOL_THRESHOLD: 0.65
+M9_NEUTRAL_WHIPSAW_MAX: 0.75
+
+# ─── SURVIVAL FILTER ────────────────────────────────────────
+# Momentum gate: reject entries when recent bars show no directional push
+SURVIVAL_FILTER_ENABLED: true
+SURVIVAL_LOOKBACK: 12           # bars to check (12 = 3h on 15m)
+SURVIVAL_MIN_MOVE: 0.002        # min net move in trade direction (0.2%)
+SURVIVAL_MIN_CONSISTENCY: 0.35  # min fraction of bars closing in trade direction
+SURVIVAL_VOL_RATIO: 0.30        # min recent ATR / 1H ATR ratio
+
+# ─── TIME-STOP ──────────────────────────────────────────────
+# Exit trade if TP1 not hit within N bars (0 = disabled)
+TIME_STOP_BARS: 30
+
+# ─── M10: CROSS-ASSET MACRO ─────────────────────────────────
+M10_ENABLED: true
+M10_FETCH_ON_BACKTEST: true
+
+# ─── M11: MULTI-TF MOMENTUM ─────────────────────────────────
+M11_ENABLED: true
+M11_RSI_PERIOD_15M: 14
+M11_RSI_PERIOD_1H: 14
+M11_REQUIRE_AGREEMENT: true
+
+# ─── M12: ORDER BOOK ────────────────────────────────────────
+M12_ENABLED: true
+M12_WEIGHT: 0.00
+M12_LIVE_ONLY: true
+
+# ─── ADAPTIVE DIRECTION BIAS ────────────────────────────────
+ADAPTIVE_DIR_ENABLED: false
+ADAPTIVE_DIR_MIN_BIAS: 0.05
+ADAPTIVE_DIR_BLOCK_THRESHOLD: 0.40
+
+# ─── DATA FRESHNESS ─────────────────────────────────────────
+DATA_FRESHNESS_ENABLED: true
+DATA_FRESHNESS_MAX_AGE_MIN: 20
+DATA_FRESHNESS_CHECK_INTERVAL: 5
+
+# ─── VETO SYSTEM ────────────────────────────────────────────
+VETO_ENABLED: true
+VETO_CRISIS_HARD: true
+VETO_CHOP_HARD: false
+VETO_STALE_DATA_HARD: true
+VETO_MONTHLY_DD_HARD: true
+VETO_DIR_CONFLICT_HARD: false
+
+# ─── ADAPTIVE WEIGHTS ───────────────────────────────────────
+ADAPTIVE_WEIGHTS_ENABLED: true
+ADAPTIVE_DECAY: 0.97
+ADAPTIVE_MIN_MULT: 0.8
+ADAPTIVE_MAX_MULT: 1.2
+ADAPTIVE_WARMUP_TRADES: 15
+
+# ─── SESSION AWARENESS ──────────────────────────────────────
+SESSION_AWARENESS_ENABLED: true
+SESSION_ASIAN_MULT: 1.10
+SESSION_EU_MULT: 1.0
+SESSION_US_MULT: 0.70
+SESSION_LATE_US_MULT: 0.90
+SESSION_US_OPEN_BOOST: 0.60
+
+# ─── MULTI-TF ENTRY CONFIRMATION ────────────────────────────
+MTF_CONFIRM_ENABLED: true
+MTF_1H_CANDLE_CHECK: true
+MTF_4H_EMA_CHECK: false
+
+# ─── M13: STRUCTURAL BIAS ─────────────────────────────────────
+M13_ENABLED: true
+M13_WEIGHT: 0.10
+# M13 defers to M9 during chop (anti-predictive when agreeing)
+M13_DEFER_IN_CHOP: true
+
+# ─── COHERENCE CHECK ────────────────────────────────────────
+COHERENCE_CHECK_ENABLED: true
+COHERENCE_MAX_CONFLICTS: 3
+COHERENCE_M4_PENALTY: 0.01    # v8: was 0.02 — M4 at 6% weight + sigmoid-gated, penalty was 33% of max contribution
+COHERENCE_M5_PENALTY: 0.03
+COHERENCE_M13_PENALTY: 0.03
+COHERENCE_M7_PENALTY: 0.02
+COHERENCE_MAX_PENALTY: 0.10
+
+# ─── LIQUIDITY-AWARE TP ─────────────────────────────────────
+LIQUIDITY_TP_ENABLED: true
+LIQUIDITY_FRICTION_THRESHOLD: 0.60
+LIQUIDITY_VOID_THRESHOLD: 0.20
+LIQUIDITY_TP1_ADJUST_UP: 0.08
+LIQUIDITY_TP1_ADJUST_DOWN: 0.05
+STOP_RISK_THRESHOLD: 0.55
+STOP_RISK_TIGHTEN: true
+STOP_RISK_TIGHTEN_FACTOR: 0.85
+
+# ─── M14: SWEEP-RETEST-RECLAIM ──────────────────────────────
+M14_ENABLED: true
+M14_WEIGHT: 0.08
+M14_SWEEP_LOOKBACK: 20
+M14_SWEEP_DEPTH_MIN: 0.001
+M14_SWEEP_DEPTH_MAX: 0.020
+M14_RECLAIM_BARS: 3
+M14_RECLAIM_WICK_RATIO: 0.40
+M14_VOL_CONFIRM_MULT: 1.2
+M14_STRONG_SCORE: 0.85
+M14_WEAK_SCORE: 0.55
+M14_SLICE_PENALTY: 0.30
+M14_NO_SWEEP_SCORE: 0.50
+WICK_SLICE_BLOCK: false
+
+# ─── M1 ENHANCEMENT ─────────────────────────────────────────
+M1_RSI_ENABLED: true
+M1_MOMENTUM_ENABLED: true
+M1_RSI_PERIOD: 14
+M1_RSI_OVERBOUGHT: 70
+M1_RSI_OVERSOLD: 30
+M1_MOMENTUM_LOOKBACK: 6
+
+# ─── M1 MACD DIVERGENCE ─────────────────────────────────────
+# Swing-based MACD histogram divergence on 1H, alongside RSI divergence.
+# Fires when price makes a new extreme but MACD histogram doesn't confirm.
+M1_MACD_DIV_ENABLED: true
+M1_MACD_DIV_LOOKBACK: 40       # bars to scan for divergence swings
+
+# M1 v2 blend weights (RSI div + MACD div + crossover + momentum)
+M1_W_RSI_DIV: 0.25
+M1_W_MACD_DIV: 0.20
+M1_W_CROSSOVER: 0.35
+M1_W_MOMENTUM: 0.20
+M1_DIV_AGREE_BOOST: 0.03       # bonus when both RSI + MACD div fire same side
+
+# ─── LIQUIDITY-AWARE SL/TP ─────────────────────────────────
+LIQUIDITY_LEVELS_ENABLED: true     # use liquidity data for SL/TP placement
+SL_VOID_BUFFER_PCT: 0.003          # buffer around levels = "clustered"
+SL_VOID_MIN_DIST_PCT: 0.002        # min SL distance as % of price
+SL_VOID_MAX_DIST_PCT: 0.025        # max SL distance (2.5% cap)
+TP1_USE_MAGNET: true               # target nearest unswept magnet for TP1
+TP1_MAGNET_MIN_DIST_PCT: 0.002     # min distance to magnet
+
+# ─── M14 SWEEP GATE ────────────────────────────────────────
+M14_ENTRY_GATE: false              # require M14 sweep before signaling
+
+# ─── POWER OF 3 PHASE DETECTOR ─────────────────────────────
+P3_MIN_KEY_LEVEL_DIST_PCT: 0.005   # min 0.5% distance for actionable key levels
+P3_SWEEP_LOOKBACK: 96              # bars to check for completed sweep (96 = 24h on 15m)
+
+# ─── CROSS-ASSET CORRELATION ────────────────────────────────
+CROSS_ASSET_ENABLED: true
+CROSS_ASSET_BTC_WEIGHT: 0.08
+CROSS_ASSET_LOOKBACK: 48
+
+# ─── DATA ────────────────────────────────────────────────────
+PAIR: "ETHUSDT"
+WARMUP_BARS_1H: 168
+VETO_SOFT_ENABLED: false

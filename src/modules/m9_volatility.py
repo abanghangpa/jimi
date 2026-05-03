@@ -63,6 +63,7 @@ _M9_DEFAULTS = {
     # NEUTRAL sub-classification thresholds
     'M9_NEUTRAL_DIR_THRESHOLD': 0.40,   # directionality above this = trending neutral
     'M9_NEUTRAL_VOL_THRESHOLD': 1.05,   # vol ratio above this = expanding
+    'M9_NEUTRAL_WHIPSAW_MAX': 0.40,     # whipsaw below this = clean enough for trending
 }
 
 
@@ -276,6 +277,10 @@ class RegimeState:
             if signals['whipsaw_rate'] < hyst.get('whipsaw_exit', 0.45) and signals['retrace_ratio'] < hyst.get('retrace_exit', 0.50):
                 should_transition = True
                 transition_reason = "CHOP exit: becoming directional"
+            # Allow CHOP → NEUTRAL_TRENDING when directionality improves
+            elif raw_regime in ('NEUTRAL_TRENDING', 'NEUTRAL_TRENDING_BULL', 'NEUTRAL_TRENDING_BEAR'):
+                should_transition = True
+                transition_reason = f"CHOP exit: directional improvement → {raw_regime}"
 
         else:
             should_transition = True
@@ -766,9 +771,10 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None, config
         # distinguish momentum from noise in the "nothing special" zone.
         neutral_dir_threshold = _cfg(config, 'M9_NEUTRAL_DIR_THRESHOLD')
         neutral_vol_threshold = _cfg(config, 'M9_NEUTRAL_VOL_THRESHOLD')
+        neutral_whipsaw_max = _cfg(config, 'M9_NEUTRAL_WHIPSAW_MAX')
         if (directionality > neutral_dir_threshold and
                 vol_ratio > neutral_vol_threshold and
-                whipsaw_rate < 0.40):
+                whipsaw_rate < neutral_whipsaw_max):
             # Directional split — same signal as CHOP_MILD
             if chop_split_enabled and chop_direction < -0.1:
                 raw_regime = 'NEUTRAL_TRENDING_BEAR'
