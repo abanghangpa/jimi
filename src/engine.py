@@ -319,6 +319,41 @@ def check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, 
     phase0_min = cfg.get('PHASE0_MIN_BLOCK', 0.0)
     if phase0_min > 0 and phase0_val < phase0_min:
         return False, "phase0_death_zone"
+
+    # ── Survival filter: momentum gate ──
+    # Reject entries when recent bars show no directional momentum.
+    # Uses 3 signals: recent close direction, vol expansion, and bar consistency.
+    survival_enabled = cfg.get('SURVIVAL_FILTER_ENABLED', True)
+    if survival_enabled and idx >= 12:
+        lookback = cfg.get('SURVIVAL_LOOKBACK', 12)  # 3 hours on 15m
+        closes = df_15m['Close'].iloc[idx - lookback:idx + 1].values.astype(float)
+        opens = df_15m['Open'].iloc[idx - lookback:idx + 1].values.astype(float)
+        highs = df_15m['High'].iloc[idx - lookback:idx + 1].values.astype(float)
+        lows = df_15m['Low'].iloc[idx - lookback:idx + 1].values.astype(float)
+
+        # 1. Directional move: net change over lookback
+        net_move = (closes[-1] - closes[0]) / closes[0]
+        if direction == 'LONG' and net_move < cfg.get('SURVIVAL_MIN_MOVE', -0.002):
+            return False, "survival_no_momentum"
+        if direction == 'SHORT' and net_move > cfg.get('SURVIVAL_MIN_MOVE', -0.002) * -1:
+            return False, "survival_no_momentum"
+
+        # 2. Bar consistency: how many bars closed in trade direction
+        bull_bars = sum(1 for i in range(len(closes)) if closes[i] >= opens[i])
+        bear_bars = len(closes) - bull_bars
+        if direction == 'LONG':
+            consistency = bull_bars / len(closes)
+        else:
+            consistency = bear_bars / len(closes)
+        if consistency < cfg.get('SURVIVAL_MIN_CONSISTENCY', 0.35):
+            return False, "survival_inconsistent"
+
+        # 3. Vol expansion: recent ATR vs longer ATR
+        if not pd.isna(atr_1h) and atr_1h > 0:
+            recent_range = np.mean(highs[-4:] - lows[-4:])  # last 1h
+            if recent_range / atr_1h < cfg.get('SURVIVAL_VOL_RATIO', 0.30):
+                return False, "survival_low_vol"
+
     return True, "ok"
 
 
@@ -521,6 +556,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'coherence_block', 'coherence_penalty',
         'm14_pass', 'm14_fail', 'm14_skip',
         'wick_reclaim_bonus', 'wick_reclaim_penalty', 'wick_slice_block',
+        'exits_time_stop',
     ]}
 
     adaptive_tracker = None
@@ -577,6 +613,17 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     trade.close(row['Close'], ts, 'EARLY_EXIT')
                     stats['exits_early'] += 1
                     continue
+
+            # ── Time-stop: exit if TP1 not hit within N bars ──
+            # Prevents trades from lingering in dead momentum.
+            # Based on scanner eval: losers average 39.5 bars to SL,
+            # winners average 25.3 bars to TP1. If TP1 isn't hit in
+            # TIME_STOP_BARS, the setup has likely failed.
+            time_stop_bars = cfg.get('TIME_STOP_BARS', 30)
+            if time_stop_bars > 0 and trade.bars_held >= time_stop_bars and not trade.tp1_hit:
+                trade.close(row['Close'], ts, 'TIME_STOP')
+                stats['exits_time_stop'] = stats.get('exits_time_stop', 0) + 1
+                continue
 
             if trade.direction == 'LONG' and low <= trade.sl:
                 trade.close(trade.sl, ts, 'SL'); stats['exits_sl'] += 1; continue

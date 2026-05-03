@@ -60,6 +60,9 @@ _M9_DEFAULTS = {
     'M9_CHOP_SPLIT_ENABLED': True,
     'M9_CHOP_MAX_BARS': 96,
     'M9_CHOP_EXIT_COOLDOWN': 12,
+    # NEUTRAL sub-classification thresholds
+    'M9_NEUTRAL_DIR_THRESHOLD': 0.40,   # directionality above this = trending neutral
+    'M9_NEUTRAL_VOL_THRESHOLD': 1.05,   # vol ratio above this = expanding
 }
 
 
@@ -134,6 +137,8 @@ class RegimeState:
             'CHOP_MILD_BEAR': _cfg(config, 'M9_CHOP_MILD_COOLDOWN'),
             'CHOP_MILD_BULL': _cfg(config, 'M9_CHOP_MILD_COOLDOWN'),
             'NEUTRAL': 2,
+            'NEUTRAL_TRENDING': 2,
+            'NEUTRAL_CHOP': 2,
         }
 
         self.prev_regime = 'NEUTRAL'
@@ -189,6 +194,23 @@ class RegimeState:
             entry = {
                 'timestamp': timestamp, 'from': old, 'to': raw_regime,
                 'reason': f'CHOP direction flip: {old} → {raw_regime}',
+                'signals': {k: round(v, 3) if isinstance(v, float) else v for k, v in signals.items()},
+            }
+            self.transition_log.append(entry)
+            details['transition'] = entry
+            return raw_regime, True, details
+
+        # ── Instant flip between NEUTRAL sub-types ──
+        _neutral_family = ('NEUTRAL', 'NEUTRAL_TRENDING', 'NEUTRAL_CHOP')
+        if (self.prev_regime in _neutral_family and raw_regime in _neutral_family and
+                raw_regime != self.prev_regime):
+            old = self.prev_regime
+            self.prev_regime = raw_regime
+            self.regime_bar_count = 0
+            self.cooldown_remaining = 0
+            entry = {
+                'timestamp': timestamp, 'from': old, 'to': raw_regime,
+                'reason': f'NEUTRAL sub-type flip: {old} → {raw_regime}',
                 'signals': {k: round(v, 3) if isinstance(v, float) else v for k, v in signals.items()},
             }
             self.transition_log.append(entry)
@@ -735,8 +757,20 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None, config
         score = 0.80
 
     else:
-        raw_regime = 'NEUTRAL'
-        score = 0.50
+        # ── NEUTRAL sub-classification ──
+        # Split NEUTRAL into TRENDING_NEUTRAL vs CHOP_NEUTRAL based on
+        # directionality and vol expansion. This helps downstream filters
+        # distinguish momentum from noise in the "nothing special" zone.
+        neutral_dir_threshold = _cfg(config, 'M9_NEUTRAL_DIR_THRESHOLD')
+        neutral_vol_threshold = _cfg(config, 'M9_NEUTRAL_VOL_THRESHOLD')
+        if (directionality > neutral_dir_threshold and
+                vol_ratio > neutral_vol_threshold and
+                whipsaw_rate < 0.40):
+            raw_regime = 'NEUTRAL_TRENDING'
+            score = 0.60
+        else:
+            raw_regime = 'NEUTRAL_CHOP'
+            score = 0.40
 
     details['raw_regime'] = raw_regime
 
@@ -750,7 +784,9 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None, config
         regime_scores = {
             'CRISIS': 0.10, 'CHOP_HARD': 0.10, 'CHOP_MILD': 0.35,
             'CHOP_MILD_BEAR': 0.35, 'CHOP_MILD_BULL': 0.35,
-            'COMPRESSING': 0.50, 'TRENDING': 0.80, 'NEUTRAL': 0.50, 'UNKNOWN': 0.50,
+            'COMPRESSING': 0.50, 'TRENDING': 0.80,
+            'NEUTRAL': 0.50, 'NEUTRAL_TRENDING': 0.60, 'NEUTRAL_CHOP': 0.40,
+            'UNKNOWN': 0.50,
         }
         score = regime_scores.get(regime, 0.50)
     else:
@@ -797,6 +833,11 @@ def score_vol_regime(regime, vol_regime_score, direction, trend_dir):
         base *= 0.15
     if regime == 'COMPRESSING':
         base *= 0.85
+    # NEUTRAL sub-types: NEUTRAL_TRENDING has momentum, NEUTRAL_CHOP is noise
+    if regime == 'NEUTRAL_TRENDING':
+        base = min(base * 1.10, 1.0)  # slight boost for momentum
+    if regime == 'NEUTRAL_CHOP':
+        base *= 0.85  # penalize noise
 
     score = max(0.0, min(1.0, base))
     status = 'PASS' if score >= 0.45 else 'FAIL'

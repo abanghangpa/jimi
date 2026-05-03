@@ -249,6 +249,22 @@ M9_CHOP_SPLIT_ENABLED: true
 M9_CHOP_MAX_BARS: 96
 M9_CHOP_EXIT_COOLDOWN: 12
 
+# NEUTRAL sub-classification: split NEUTRAL into TRENDING vs CHOP
+M9_NEUTRAL_DIR_THRESHOLD: 0.40
+M9_NEUTRAL_VOL_THRESHOLD: 1.05
+
+# ─── SURVIVAL FILTER ────────────────────────────────────────
+# Momentum gate: reject entries when recent bars show no directional push
+SURVIVAL_FILTER_ENABLED: true
+SURVIVAL_LOOKBACK: 12           # bars to check (12 = 3h on 15m)
+SURVIVAL_MIN_MOVE: 0.002        # min net move in trade direction (0.2%)
+SURVIVAL_MIN_CONSISTENCY: 0.35  # min fraction of bars closing in trade direction
+SURVIVAL_VOL_RATIO: 0.30        # min recent ATR / 1H ATR ratio
+
+# ─── TIME-STOP ──────────────────────────────────────────────
+# Exit trade if TP1 not hit within N bars (0 = disabled)
+TIME_STOP_BARS: 30
+
 # ─── M10: CROSS-ASSET MACRO ─────────────────────────────────
 M10_ENABLED: true
 M10_FETCH_ON_BACKTEST: true
