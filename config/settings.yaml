@@ -5,36 +5,40 @@
 # Switch between "modes" by passing --config v615.yaml etc.
 
 # ─── GATE THRESHOLDS ─────────────────────────────────────────
-ICS_THRESHOLD_NORMAL: 0.58
-ICS_THRESHOLD_CAUTION: 0.58
+ICS_THRESHOLD_NORMAL: 0.62
+ICS_THRESHOLD_CAUTION: 0.62
 ICS_FLOOR: 0.48
 
 # ─── M4b: INTRABAR CVD (LucF-style) ─────────────────────────
 M4B_INTRABAR_ENABLED: true
 M4B_INTRABAR_HOURS: 48
 ICS_FLOOR_M4_FALSE: 0.48
-ICS_CEILING: 0.65       # cap — 0.7+ bucket was 28% WR (inverted confidence)
+ICS_CEILING: 0.75       # relaxed — 0.7+ bucket was strong in 10d attribution
 
 # Pre-check gate (M1-M4+M10 only, before M5/M7/M8/M11-M14)
 # Separate from final ICS threshold — pre-check has fewer modules
-ICS_PRECHECK_FLOOR: 0.42
+ICS_PRECHECK_FLOOR: 0.45
 ICS_PRECHECK_THRESHOLD: 0.45
 
 # ─── MODULE WEIGHTS (ICS) ────────────────────────────────────
-# Forensic rebalance based on 71-trade permutation analysis (2026 Q1):
-#   M10: ONLY statistically significant module (permutation p<0.05) → boost
-#   M3:  Predictive (delta +0.032) → keep
-#   M4:  Only useful in 0.5-0.7 range → reduce
-#   M5:  INVERTED (higher scores → worse results) → minimize
-#   M1, M11, M12: Noise per permutation test → zero out
-#   ICS correlation with PnL was -0.121 (inverted!) → fix weights
-M1_WEIGHT: 0.05       # direction-aware scoring fix applied (was 0.00)
+# Rebalance based on 10-day attribution (2026-04-24 → 2026-05-03) + OOS validation:
+#   M4 (CVD): STRONG — +0.22 delta, 100% WR at ≥0.7. Moderate boost.
+#   M10 (Macro): stabilizer, restore to 0.20 for regime gating.
+#   M11 (MTF Mom): INVERTED — high scores predict losses → zero.
+#   M5 (Liquidation): no differentiating power → zero.
+#   M1 (MACD): decent at 0.6-0.7 → small boost.
+#   M3 (VWAP): stable predictor → boost to 0.20.
+#   M6 (Derivatives): reduce to 0.08.
+#   M12 (OrderBook): live-only, no backtest signal → zero.
+#   Weights sum to 1.00 (base=0.65 + extras=0.35).
+#   ICS threshold raised to 0.62 (weights lower = easier to cross).
+M1_WEIGHT: 0.10       # decent at 0.6-0.7 bucket (was 0.05)
 M2_WEIGHT: 0.00       # veto-only
-M3_WEIGHT: 0.16       # predictive, keep (was 0.22)
-M4_WEIGHT: 0.06       # only 0.5-0.7 range works, reduce (was 0.20)
-M5_WEIGHT: 0.05       # INVERTED — minimize (was 0.15)
-M10_WEIGHT: 0.40      # only significant module, boost hard (was 0.10→0.25)
-M11_WEIGHT: 0.05      # direction-aware, small weight (was 0.00)
+M3_WEIGHT: 0.20       # stable, boost slightly (was 0.16)
+M4_WEIGHT: 0.15       # STRONG predictor, moderate boost (was 0.06)
+M5_WEIGHT: 0.00       # no signal power — zero (was 0.05)
+M10_WEIGHT: 0.20      # stabilizer, moderate restore (was 0.40)
+M11_WEIGHT: 0.00      # INVERTED — high scores predict losses → zero (was 0.05)
 
 # ─── V6.12 IMPROVEMENTS ─────────────────────────────────────
 BIAS_GATE_ENABLED: true
@@ -69,7 +73,7 @@ SHOULDER_MAX_TRADES_DAY: 3
 # ─── MODULE GATES ────────────────────────────────────────────
 M2_VETO_ENABLED: true
 M2_VETO_THRESHOLD: 0.40
-M5_FAIL_ICS_BOOST: 0.06
+M5_FAIL_ICS_BOOST: 0.00
 M5_FAIL_HARD_THRESHOLD: 0.25
 M7_HARD_GATE: false
 M7_GATE_THRESHOLD: 0.30
@@ -183,7 +187,7 @@ PHASE0_MIN_BLOCK: 0.10
 M5_REGIME_GATE_ENABLED: true
 
 # ─── M6: DERIVATIVES ────────────────────────────────────────
-M6_WEIGHT: 0.10
+M6_WEIGHT: 0.08
 M3_WEIGHT_DERIV: 0.25
 M4_WEIGHT_DERIV: 0.20
 DERIV_ENABLED: true
@@ -277,7 +281,7 @@ M11_REQUIRE_AGREEMENT: true
 
 # ─── M12: ORDER BOOK ────────────────────────────────────────
 M12_ENABLED: true
-M12_WEIGHT: 0.05
+M12_WEIGHT: 0.00
 M12_LIVE_ONLY: true
 
 # ─── ADAPTIVE DIRECTION BIAS ────────────────────────────────
