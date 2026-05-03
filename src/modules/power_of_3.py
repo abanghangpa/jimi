@@ -25,6 +25,10 @@ from typing import List, Optional, Dict
 MIN_KEY_LEVEL_DIST_PCT = 0.005  # 0.5%
 # How many bars back to check for a completed sweep
 SWEEP_LOOKBACK_BARS = 96  # 24h on 15m
+# Maximum age (in bars) for a sweep to still be considered actionable
+SWEEP_MAX_ACTIONABLE_AGE = 24  # 6h on 15m — older sweeps are stale
+# Minimum distance reversal target must have from current price to be actionable
+SWEEP_TARGET_MIN_DIST_PCT = 0.003  # 0.3%
 
 
 @dataclass
@@ -55,10 +59,18 @@ def _check_sweep_completed(price, key_level, df_15m_highs, df_15m_lows,
     """Check if key_level has been swept by recent price action.
 
     Returns:
-        (swept: bool, swept_at: int or None, sweep_depth_pct: float)
+        dict with keys:
+            swept: bool
+            swept_at: int or None (index of sweep bar)
+            sweep_depth_pct: float
+            bars_ago: int (how many bars since sweep, 0 = current bar)
+            is_stale: bool (True if sweep is too old to be actionable)
+            sweep_price: float or None (the extreme price that triggered the sweep)
     """
+    none_result = {'swept': False, 'swept_at': None, 'sweep_depth_pct': 0.0,
+                   'bars_ago': -1, 'is_stale': False, 'sweep_price': None}
     if key_level is None or df_15m_highs is None:
-        return False, None, 0.0
+        return none_result
 
     start = max(0, current_idx - lookback + 1)
     highs = df_15m_highs[start:current_idx + 1].astype(float)
@@ -67,6 +79,7 @@ def _check_sweep_completed(price, key_level, df_15m_highs, df_15m_lows,
     swept = False
     swept_at = None
     sweep_depth_pct = 0.0
+    sweep_price = None
 
     if key_level > price:
         # Level is above — swept if high reached it
@@ -75,6 +88,7 @@ def _check_sweep_completed(price, key_level, df_15m_highs, df_15m_lows,
                 swept = True
                 swept_at = i + start
                 sweep_depth_pct = (highs[i] - key_level) / key_level
+                sweep_price = float(highs[i])
                 break
     else:
         # Level is below — swept if low reached it
@@ -83,9 +97,70 @@ def _check_sweep_completed(price, key_level, df_15m_highs, df_15m_lows,
                 swept = True
                 swept_at = i + start
                 sweep_depth_pct = (key_level - lows[i]) / key_level
+                sweep_price = float(lows[i])
                 break
 
-    return swept, swept_at, sweep_depth_pct
+    bars_ago = (current_idx - swept_at) if swept and swept_at is not None else -1
+    is_stale = bars_ago > SWEEP_MAX_ACTIONABLE_AGE
+
+    return {
+        'swept': swept,
+        'swept_at': swept_at,
+        'sweep_depth_pct': sweep_depth_pct,
+        'bars_ago': bars_ago,
+        'is_stale': is_stale,
+        'sweep_price': sweep_price,
+    }
+
+
+def _check_target_already_hit(reversal_target, df_15m_highs, df_15m_lows,
+                               current_idx, direction_after_sweep, lookback=SWEEP_LOOKBACK_BARS):
+    """Check if the reversal target has already been reached since the sweep.
+
+    Returns:
+        dict with keys:
+            hit: bool
+            hit_at: int or None (index of bar that hit target)
+            bars_ago: int (how many bars since target was hit)
+            overshoot_pct: float (how far past target price went)
+    """
+    none_result = {'hit': False, 'hit_at': None, 'bars_ago': -1, 'overshoot_pct': 0.0}
+    if reversal_target is None or df_15m_highs is None:
+        return none_result
+
+    start = max(0, current_idx - lookback + 1)
+    highs = df_15m_highs[start:current_idx + 1].astype(float)
+    lows = df_15m_lows[start:current_idx + 1].astype(float)
+
+    hit = False
+    hit_at = None
+    overshoot_pct = 0.0
+
+    if direction_after_sweep == 'SHORT':
+        # Target is below — hit if low reached it
+        for i in range(len(lows) - 1, -1, -1):
+            if lows[i] <= reversal_target:
+                hit = True
+                hit_at = i + start
+                overshoot_pct = (reversal_target - lows[i]) / reversal_target
+                break
+    else:
+        # Target is above — hit if high reached it
+        for i in range(len(highs) - 1, -1, -1):
+            if highs[i] >= reversal_target:
+                hit = True
+                hit_at = i + start
+                overshoot_pct = (highs[i] - reversal_target) / reversal_target
+                break
+
+    bars_ago = (current_idx - hit_at) if hit and hit_at is not None else -1
+
+    return {
+        'hit': hit,
+        'hit_at': hit_at,
+        'bars_ago': bars_ago,
+        'overshoot_pct': overshoot_pct,
+    }
 
 
 def _find_reversal_target(price, swept_level, magnets, sr_levels, liq, direction_after_sweep):
@@ -452,19 +527,109 @@ def detect_phase(result: dict, config: dict = None, df_15m=None) -> PhaseResult:
 
     # Determine which level to check for sweep
     if key_level is not None:
-        swept, swept_at, depth = _check_sweep_completed(
+        sweep_result = _check_sweep_completed(
             price, key_level, highs_arr, lows_arr,
             len(df_15m) - 1 if df_15m is not None else 0,
             lookback=cfg.get('P3_SWEEP_LOOKBACK', SWEEP_LOOKBACK_BARS))
 
-        if swept:
-            sweep_status = 'COMPLETED'
-            sweep_level = key_level
-            # Sweep already happened — compute reversal target
+        swept = sweep_result['swept']
+        bars_ago = sweep_result['bars_ago']
+        is_stale = sweep_result['is_stale']
+
+        if swept and is_stale:
+            # Sweep happened but it's too old — the move already played out.
+            # Check if reversal target was also hit (fully completed thesis).
             reversal_target, reversal_target_name, _ = _find_reversal_target(
                 price, key_level, magnets, sr_levels, liq, impl_direction)
 
-            # If sweep completed + reversal target exists, upgrade trade bias
+            target_result = _check_target_already_hit(
+                reversal_target, highs_arr, lows_arr,
+                len(df_15m) - 1 if df_15m is not None else 0,
+                impl_direction,
+                lookback=cfg.get('P3_SWEEP_LOOKBACK', SWEEP_LOOKBACK_BARS))
+
+            if target_result['hit']:
+                # Both sweep AND target hit — thesis fully completed, nothing to trade
+                narrative = (f"Sweep at ${key_level:.0f} occurred {bars_ago} bars ago "
+                             f"and reversal target ${reversal_target:.0f} was already reached "
+                             f"{target_result['bars_ago']} bars ago. Move is done — no actionable setup.")
+                return PhaseResult(
+                    phase=phase, confidence=round(confidence, 3),
+                    direction='NEUTRAL', narrative=narrative,
+                    signals_for=[], signals_against=['Sweep + target both completed'],
+                    key_level=key_level, key_level_name=key_level_name,
+                    trade_bias='AVOID',
+                    sweep_status='EXPIRED', sweep_level=key_level,
+                    reversal_target=reversal_target,
+                    reversal_target_name=reversal_target_name,
+                    timing_signal='NONE',
+                    entry_zone_low=None, entry_zone_high=None,
+                    invalidation=None,
+                )
+            else:
+                # Sweep happened, target NOT hit yet, but sweep is old.
+                # The setup is degraded — still watchable but not "enter now".
+                dist_to_target = abs(reversal_target - price) / price if reversal_target else 0
+                if reversal_target and dist_to_target >= SWEEP_TARGET_MIN_DIST_PCT:
+                    narrative = (f"Sweep at ${key_level:.0f} occurred {bars_ago} bars ago (stale). "
+                                 f"Reversal target ${reversal_target:.0f} not yet reached "
+                                 f"({dist_to_target*100:.1f}% away). Setup degraded — reduced confidence.")
+                    trade_bias = 'WATCH'
+                else:
+                    narrative = (f"Sweep at ${key_level:.0f} occurred {bars_ago} bars ago (stale). "
+                                 f"No actionable reversal target remains. Move is likely done.")
+                    trade_bias = 'AVOID'
+
+                return PhaseResult(
+                    phase=phase, confidence=round(confidence * 0.5, 3),  # halve confidence for stale sweeps
+                    direction=impl_direction if trade_bias == 'WATCH' else 'NEUTRAL',
+                    narrative=narrative,
+                    signals_for=[f'Sweep {bars_ago} bars ago — stale'],
+                    signals_against=[f'Sweep older than {SWEEP_MAX_ACTIONABLE_AGE} bars — setup degraded'],
+                    key_level=key_level, key_level_name=key_level_name,
+                    trade_bias=trade_bias,
+                    sweep_status='STALE', sweep_level=key_level,
+                    reversal_target=reversal_target,
+                    reversal_target_name=reversal_target_name,
+                    timing_signal='NONE',
+                    entry_zone_low=None, entry_zone_high=None,
+                    invalidation=None,
+                )
+
+        elif swept and not is_stale:
+            # Fresh sweep — actionable
+            sweep_status = 'COMPLETED'
+            sweep_level = key_level
+            reversal_target, reversal_target_name, _ = _find_reversal_target(
+                price, key_level, magnets, sr_levels, liq, impl_direction)
+
+            # Check if reversal target was already hit (even for fresh sweeps)
+            target_result = _check_target_already_hit(
+                reversal_target, highs_arr, lows_arr,
+                len(df_15m) - 1 if df_15m is not None else 0,
+                impl_direction,
+                lookback=cfg.get('P3_SWEEP_LOOKBACK', SWEEP_LOOKBACK_BARS))
+
+            if target_result['hit']:
+                # Target already hit even on a fresh sweep — move done
+                narrative = (f"Sweep at ${key_level:.0f} completed {bars_ago} bars ago, "
+                             f"but reversal target ${reversal_target:.0f} was already reached "
+                             f"{target_result['bars_ago']} bars ago. Move is done.")
+                return PhaseResult(
+                    phase=phase, confidence=round(confidence, 3),
+                    direction='NEUTRAL', narrative=narrative,
+                    signals_for=[], signals_against=['Reversal target already reached'],
+                    key_level=key_level, key_level_name=key_level_name,
+                    trade_bias='AVOID',
+                    sweep_status='TARGET_HIT', sweep_level=key_level,
+                    reversal_target=reversal_target,
+                    reversal_target_name=reversal_target_name,
+                    timing_signal='NONE',
+                    entry_zone_low=None, entry_zone_high=None,
+                    invalidation=None,
+                )
+
+            # Target not hit — set up the trade
             if reversal_target is not None:
                 dist_to_target = abs(reversal_target - price) / price
                 if dist_to_target >= min_dist_pct:
@@ -489,6 +654,7 @@ def detect_phase(result: dict, config: dict = None, df_15m=None) -> PhaseResult:
                         sweep_status='COMPLETED', sweep_level=key_level,
                         reversal_target=reversal_target, reversal_target_name=reversal_target_name,
                         timing=timing, m4b_divergence=m4b_divergence, m4b_bars_ago=m4b_bars_ago,
+                        bars_ago=bars_ago,
                     )
 
                     return PhaseResult(
@@ -617,7 +783,8 @@ def _build_narrative_v2(phase, direction, structure_bullish, smart_money_bearish
                         phase0, rev_24h, unswept_above, unswept_below, price,
                         sweep_status='NONE', sweep_level=None,
                         reversal_target=None, reversal_target_name='',
-                        timing='NONE', m4b_divergence='NONE', m4b_bars_ago=-1):
+                        timing='NONE', m4b_divergence='NONE', m4b_bars_ago=-1,
+                        bars_ago=-1):
     """Build actionable narrative with sweep status and targets."""
 
     parts = []
@@ -668,7 +835,8 @@ def _build_narrative_v2(phase, direction, structure_bullish, smart_money_bearish
     if sweep_status == 'COMPLETED' and sweep_level and reversal_target:
         sweep_dist = abs(sweep_level - price) / price * 100
         target_dist = abs(reversal_target - price) / price * 100
-        parts.append(f"\n✅ Sweep COMPLETED at ${sweep_level:.0f} ({sweep_dist:.1f}% from price).")
+        age_str = f" ({bars_ago} bars ago)" if bars_ago >= 0 else ""
+        parts.append(f"\n✅ Sweep COMPLETED at ${sweep_level:.0f}{age_str} ({sweep_dist:.1f}% from price).")
         parts.append(f"🎯 Reversal target: ${reversal_target:.0f} ({reversal_target_name}, {target_dist:+.1f}% from price).")
         parts.append(f"→ Entry NOW at ${price:.0f}, target ${reversal_target:.0f}.")
 
@@ -730,7 +898,8 @@ def format_phase(pr: PhaseResult) -> str:
 
     # Sweep status
     if pr.sweep_status and pr.sweep_status != 'NONE':
-        sweep_icons = {'COMPLETED': '✅', 'IN_PROGRESS': '⏳', 'PENDING': '🔄'}
+        sweep_icons = {'COMPLETED': '✅', 'IN_PROGRESS': '⏳', 'PENDING': '🔄',
+                       'EXPIRED': '💀', 'STALE': '⚠️', 'TARGET_HIT': '🎯'}
         icon = sweep_icons.get(pr.sweep_status, '❓')
         lines.append(f'  Sweep: {icon} {pr.sweep_status}' +
                      (f' at ${pr.sweep_level:.0f}' if pr.sweep_level else ''))
@@ -755,9 +924,9 @@ def format_phase(pr: PhaseResult) -> str:
     action_map = {
         'ENTER_LONG': '✅ Enter LONG — sweep completed, reversal target above',
         'ENTER_SHORT': '✅ Enter SHORT — sweep completed, reversal target below',
-        'WATCH': '⏳ Watch — sweep in progress, prepare entry on completion',
+        'WATCH': '⏳ Watch — stale sweep, target not yet reached. Reduced confidence.',
         'WAIT': f'⏳ Wait — let the sweep play out, then enter {pr.direction}',
-        'AVOID': '🚫 Avoid — no clear edge',
+        'AVOID': '🚫 Avoid — no actionable setup (sweep/target already completed)',
     }
     action = action_map.get(pr.trade_bias, '❓ Unknown')
     if pr.trade_bias.startswith('ENTER_') and pr.entry_zone_low:
