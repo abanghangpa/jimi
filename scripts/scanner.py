@@ -1552,7 +1552,7 @@ def main():
         # Add conflict resolution and phase detection to JSON output
         cr = detect_conflict(result, config=scaled_config)
         result['conflict_resolution'] = conflict_to_dict(cr)
-        p3 = detect_phase(result, config=scaled_config)
+        p3 = detect_phase(result, config=scaled_config, df_15m=df_base)
         result['power_of_3'] = phase_to_dict(p3)
         print(json.dumps(result, indent=2, default=str))
     else:
@@ -1560,7 +1560,7 @@ def main():
         print_summary(result)
 
         # ── Power of 3 Phase Detection ──
-        p3 = detect_phase(result, config=scaled_config)
+        p3 = detect_phase(result, config=scaled_config, df_15m=df_base)
         print(format_phase(p3))
         result['power_of_3'] = phase_to_dict(p3)
 
