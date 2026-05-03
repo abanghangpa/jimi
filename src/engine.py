@@ -186,17 +186,20 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
     if use_m14 and cfg.get('M14_ENABLED', False):
         extra_modules.append(('M14', m14_score, cfg.get('M14_WEIGHT', 0.08)))
 
+    base_sum = (cfg['M1_WEIGHT'] + cfg['M2_WEIGHT'] +
+                cfg['M3_WEIGHT'] + cfg['M4_WEIGHT'] + cfg['M5_WEIGHT'])
+
     if extra_modules:
         extra_w = sum(w for _, _, w in extra_modules)
-        other_w = 1.0 - extra_w
-        base_sum = (cfg['M1_WEIGHT'] + cfg['M2_WEIGHT'] +
-                    cfg['M3_WEIGHT'] + cfg['M4_WEIGHT'] + cfg['M5_WEIGHT'])
+        # Normalize base weights to fill remaining space after extras
+        # so total always sums to 1.0
+        base_w = max(1.0 - extra_w, 0.0)
         ics = (
-            m1_score * (cfg['M1_WEIGHT'] / base_sum * other_w) +
-            m2_score * (cfg['M2_WEIGHT'] / base_sum * other_w) +
-            m3_score * (cfg['M3_WEIGHT'] / base_sum * other_w) +
-            m4_contrib * (cfg['M4_WEIGHT'] / base_sum * other_w) +
-            m5_score * (cfg['M5_WEIGHT'] / base_sum * other_w)
+            m1_score * (cfg['M1_WEIGHT'] / base_sum * base_w) +
+            m2_score * (cfg['M2_WEIGHT'] / base_sum * base_w) +
+            m3_score * (cfg['M3_WEIGHT'] / base_sum * base_w) +
+            m4_contrib * (cfg['M4_WEIGHT'] / base_sum * base_w) +
+            m5_score * (cfg['M5_WEIGHT'] / base_sum * base_w)
         )
         for _, score, weight in extra_modules:
             ics += score * weight
@@ -208,11 +211,14 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
                m5_score * cfg['M5_WEIGHT'] +
                m6_score * cfg['M6_WEIGHT'])
     else:
-        ics = (m1_score * cfg['M1_WEIGHT'] +
-               m2_score * cfg['M2_WEIGHT'] +
-               m3_score * cfg['M3_WEIGHT'] +
-               m4_contrib * cfg['M4_WEIGHT'] +
-               m5_score * cfg['M5_WEIGHT'])
+        # Normalize base weights to sum to 1.0
+        ics = (
+            m1_score * (cfg['M1_WEIGHT'] / base_sum) +
+            m2_score * (cfg['M2_WEIGHT'] / base_sum) +
+            m3_score * (cfg['M3_WEIGHT'] / base_sum) +
+            m4_contrib * (cfg['M4_WEIGHT'] / base_sum) +
+            m5_score * (cfg['M5_WEIGHT'] / base_sum)
+        )
 
     if cascade_dir == 'WITH' and cascade_strength > 0:
         ics *= 1.0 + (cfg.get('CASCADE_MULTIPLIER', 1.12) - 1.0) * cascade_strength
@@ -932,14 +938,14 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     m4b_score = 0.70
 
         # Blend M4b into M4 if intrabar catches div that taker CVD missed
-        # Advisory only: affects ICS score but does NOT trigger veto/block
+        # When M4 has no divergence but M4b does → use M4b's score (matches scanner behavior)
         m4_div_str = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else 'NONE'
         if m4_div_str == 'NONE' and m4b_divergence != 'NONE':
-            # Soft penalty: reduce m4_score but keep m4_status as-is
-            m4_score = max(0.0, m4_score - 0.10)
+            # M4 missed it, M4b caught it — apply M4b's signal
+            m4_score = m4b_score
             if isinstance(m4_div, dict):
                 m4_div['intrabar_div'] = m4b_divergence
-                m4_div['intrabar_source'] = 'advisory'
+                m4_div['intrabar_source'] = 'lucf_style'
 
         # M10 scored early — feeds into ICS pre-check (Proposal 1)
         m10_score = 0.5; m10_status = 'SKIP'; use_m10 = False
@@ -1034,6 +1040,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     continue
                 # SKIP (no sweep detected) → invisible, don't affect ICS
 
+        # Extract M4 divergence string early — needed by both veto and coherence
+        m4_div_str_veto = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else ('NONE' if m4_div is None else str(m4_div))
+
         # Veto System
         if cfg.get('VETO_ENABLED', False):
             data_fresh = True; data_age = 0
@@ -1054,7 +1063,6 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
             dir_conflict = False
             if cfg.get('DIR_VETO_ENABLED', False):
-                m4_div_str_veto = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else ('NONE' if m4_div is None else str(m4_div))
                 # M4b is advisory only — not used for veto blocking
                 m4_disagree = (direction == 'LONG' and m4_div_str_veto == 'BEARISH') or (direction == 'SHORT' and m4_div_str_veto == 'BULLISH')
                 m5_disagree = (m5_status == 'FAIL')
@@ -1246,8 +1254,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 stats['mtf_blocked'] += 1
                 continue
 
-        # Position Sizing — Fixed size, PnL edge comes from TP ladder
-        size = cfg['SIZE_STD']
+        # Position Sizing — base size * direction resolver multiplier
+        size = cfg['SIZE_STD'] * dir_size_mult
         transition_range = cfg.get('TRANSITION_SCORE_RANGE', 0.20)
         is_transition = abs(trend_val) < transition_range
 

@@ -54,6 +54,38 @@ def m10_compute_emas(data_dict):
     return data_dict
 
 
+def _directional_score(raw_value, direction, thresholds=(0.02, -0.02)):
+    """Map a raw directional value to a 0.0-1.0 score with continuous scaling.
+
+    Args:
+        raw_value: the raw metric (e.g., EMA diff, ROC)
+        direction: 'LONG' or 'SHORT'
+        thresholds: (bullish_threshold, bearish_threshold) — values beyond these get max/min scores
+
+    Returns:
+        score: 0.0-1.0 where 0.5 is neutral
+    """
+    pos_thresh, neg_thresh = thresholds
+
+    # For SHORT, invert the value so same logic applies
+    if direction == 'SHORT':
+        raw_value = -raw_value
+
+    # Continuous mapping: linear interpolation between thresholds
+    if raw_value >= pos_thresh:
+        score = 0.80
+    elif raw_value <= neg_thresh:
+        score = 0.20
+    elif raw_value >= 0:
+        # 0 to pos_thresh → 0.50 to 0.80
+        score = 0.50 + (raw_value / pos_thresh) * 0.30
+    else:
+        # neg_thresh to 0 → 0.20 to 0.50
+        score = 0.50 + (raw_value / abs(neg_thresh)) * 0.30
+
+    return max(0.0, min(1.0, score))
+
+
 def score_m10_macro(macro_row, direction, trend_dir):
     """Score cross-asset macro regime for trade direction."""
     details = {}
@@ -62,6 +94,7 @@ def score_m10_macro(macro_row, direction, trend_dir):
     btc_row = macro_row.get('btc')
     ethbtc_row = macro_row.get('ethbtc')
 
+    # BTC trend: EMA21 vs EMA55 diff
     btc_trend_s = 0.5
     if btc_row and 'close' in btc_row:
         close = btc_row.get('close', 0)
@@ -70,78 +103,36 @@ def score_m10_macro(macro_row, direction, trend_dir):
 
         if ema21 and ema55 and ema55 > 0:
             ema_diff = (ema21 - ema55) / ema55
-            if direction == 'LONG':
-                if ema_diff > 0.02:
-                    btc_trend_s = 0.80
-                elif ema_diff > 0:
-                    btc_trend_s = 0.65
-                elif ema_diff < -0.02:
-                    btc_trend_s = 0.25
-                else:
-                    btc_trend_s = 0.40
-            else:
-                if ema_diff < -0.02:
-                    btc_trend_s = 0.80
-                elif ema_diff < 0:
-                    btc_trend_s = 0.65
-                elif ema_diff > 0.02:
-                    btc_trend_s = 0.25
-                else:
-                    btc_trend_s = 0.40
+            btc_trend_s = _directional_score(ema_diff, direction, (0.02, -0.02))
             details['btc_ema_diff'] = round(ema_diff, 4)
     scores['btc_trend'] = btc_trend_s
 
+    # ETH/BTC relative strength: 7d ROC
     ethbtc_s = 0.5
     if ethbtc_row and 'close' in ethbtc_row:
         ethbtc_roc7 = ethbtc_row.get('roc_7d', np.nan)
         if not np.isnan(ethbtc_roc7):
-            if direction == 'LONG':
-                if ethbtc_roc7 > 0.03:
-                    ethbtc_s = 0.80
-                elif ethbtc_roc7 > 0:
-                    ethbtc_s = 0.65
-                elif ethbtc_roc7 < -0.03:
-                    ethbtc_s = 0.25
-                else:
-                    ethbtc_s = 0.40
-            else:
-                if ethbtc_roc7 < -0.03:
-                    ethbtc_s = 0.80
-                elif ethbtc_roc7 < 0:
-                    ethbtc_s = 0.65
-                elif ethbtc_roc7 > 0.03:
-                    ethbtc_s = 0.25
-                else:
-                    ethbtc_s = 0.40
+            ethbtc_s = _directional_score(ethbtc_roc7, direction, (0.03, -0.03))
             details['ethbtc_roc7'] = round(ethbtc_roc7, 4)
     scores['ethbtc_rel'] = ethbtc_s
 
+    # BTC momentum: 7d ROC (with 14d confirmation bonus)
     btc_mom_s = 0.5
     if btc_row:
         btc_roc7 = btc_row.get('roc_7d', np.nan)
         btc_roc14 = btc_row.get('roc_14d', np.nan)
         if not np.isnan(btc_roc7):
-            if direction == 'LONG':
-                if btc_roc7 > 0.05 and (np.isnan(btc_roc14) or btc_roc14 > 0.08):
-                    btc_mom_s = 0.85
-                elif btc_roc7 > 0.02:
-                    btc_mom_s = 0.68
-                elif btc_roc7 < -0.05:
-                    btc_mom_s = 0.20
-                elif btc_roc7 < -0.02:
-                    btc_mom_s = 0.35
-            else:
-                if btc_roc7 < -0.05 and (np.isnan(btc_roc14) or btc_roc14 < -0.08):
-                    btc_mom_s = 0.85
-                elif btc_roc7 < -0.02:
-                    btc_mom_s = 0.68
-                elif btc_roc7 > 0.05:
-                    btc_mom_s = 0.20
-                elif btc_roc7 > 0.02:
-                    btc_mom_s = 0.35
+            btc_mom_s = _directional_score(btc_roc7, direction, (0.05, -0.05))
+            # 14d confirmation bonus: if 14d ROC agrees with 7d, boost slightly
+            if not np.isnan(btc_roc14):
+                if direction == 'LONG' and btc_roc14 > 0.08 and btc_roc7 > 0:
+                    btc_mom_s = min(btc_mom_s + 0.05, 1.0)
+                elif direction == 'SHORT' and btc_roc14 < -0.08 and btc_roc7 < 0:
+                    btc_mom_s = min(btc_mom_s + 0.05, 1.0)
             details['btc_roc7'] = round(btc_roc7, 4)
     scores['btc_momentum'] = btc_mom_s
 
+    # Consensus: how many sub-signals agree
     agreeing = sum(1 for s in scores.values() if s > 0.55)
     disagreeing = sum(1 for s in scores.values() if s < 0.45)
     total = len(scores)
