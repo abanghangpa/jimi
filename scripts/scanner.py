@@ -591,6 +591,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     # ── Phase 4: Score all modules ──
     # M1 (now an ICS contributor, not the gate)
     m1_dir, m1_score, _m1_details = score_m1(df_1h, idx_1h, cfg, df_15m=df_15m, idx_15m=idx)
+    # Direction-aware scoring: flip M1 score when direction disagrees with trade
+    # M1 returns score 0.5-1.0 (distance from neutral), but doesn't encode trade direction.
+    # If M1 says BEARISH and trade is LONG, high score should penalize, not boost.
+    if m1_dir == 'BEARISH' and direction == 'LONG':
+        m1_score = 1.0 - m1_score
+    elif m1_dir == 'BULLISH' and direction == 'SHORT':
+        m1_score = 1.0 - m1_score
     result['m1'] = {'direction': m1_dir, 'score': round(float(m1_score), 3)}
 
     # M2

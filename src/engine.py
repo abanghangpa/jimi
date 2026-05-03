@@ -797,6 +797,11 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         # M1 + M2 still scored for ICS (not direction source)
         m1_dir, m1_score, _m1_details = score_m1(df_1h, idx_1h, cfg, df_15m=df_15m, idx_15m=idx)
+        # Direction-aware scoring: flip M1 score when direction disagrees with trade
+        if m1_dir == 'BEARISH' and direction == 'LONG':
+            m1_score = 1.0 - m1_score
+        elif m1_dir == 'BULLISH' and direction == 'SHORT':
+            m1_score = 1.0 - m1_score
         m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
 
         # M2 Veto (still applies)
