@@ -867,8 +867,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         invalidation.append(f'Historical conflict: similar setups reverse {conflict["historical"]["windows"].get("24h", {}).get("reversal_rate", 0):.0f}% at 24h')
 
     # Phase0 death zone
-    if phase0_val is not None and phase0_val < 0.15:
-        invalidation.append(f'Phase0={phase0_val:.3f} (death zone <0.15) — weak macro context')
+    phase0_min = cfg.get('PHASE0_MIN_BLOCK', 0.10)
+    if phase0_val is not None and phase0_val < phase0_min:
+        invalidation.append(f'Phase0={phase0_val:.3f} (death zone <{phase0_min}) — weak macro context')
 
     # M2 EMA failure
     if m2_status == 'FAIL':
