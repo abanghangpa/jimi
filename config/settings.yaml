@@ -352,6 +352,19 @@ M1_RSI_OVERBOUGHT: 70
 M1_RSI_OVERSOLD: 30
 M1_MOMENTUM_LOOKBACK: 6
 
+# ─── M1 MACD DIVERGENCE ─────────────────────────────────────
+# Swing-based MACD histogram divergence on 1H, alongside RSI divergence.
+# Fires when price makes a new extreme but MACD histogram doesn't confirm.
+M1_MACD_DIV_ENABLED: true
+M1_MACD_DIV_LOOKBACK: 40       # bars to scan for divergence swings
+
+# M1 v2 blend weights (RSI div + MACD div + crossover + momentum)
+M1_W_RSI_DIV: 0.25
+M1_W_MACD_DIV: 0.20
+M1_W_CROSSOVER: 0.35
+M1_W_MOMENTUM: 0.20
+M1_DIV_AGREE_BOOST: 0.03       # bonus when both RSI + MACD div fire same side
+
 # ─── LIQUIDITY-AWARE SL/TP ─────────────────────────────────
 LIQUIDITY_LEVELS_ENABLED: true     # use liquidity data for SL/TP placement
 SL_VOID_BUFFER_PCT: 0.003          # buffer around levels = "clustered"
