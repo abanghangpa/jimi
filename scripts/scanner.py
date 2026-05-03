@@ -44,6 +44,7 @@ from src.modules.m13_structure import score_m13
 from src.modules.direction_resolver import resolve_direction, score_targets
 from src.modules.veto_system import evaluate_vetoes
 from src.modules.coherence_liquidity import check_coherence
+from src.modules.m12_orderbook import score_m12_orderbook
 from src.modules.m14_sweep import score_m14
 from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_exchange_data, compute_exchange_signals, score_exchange_activity, score_spot_signals
 from src.sl_tp import calc_trade_levels, check_sweep_gate
@@ -716,6 +717,16 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         except Exception:
             pass
 
+    # M12 (order book imbalance) — live only
+    m12_score = 0.5
+    m12_status = 'SKIP'
+    if cfg.get('M12_ENABLED', False) and cfg.get('M12_LIVE_ONLY', True):
+        try:
+            m12_status, m12_score, m12_details = score_m12_orderbook(direction, live=True)
+            result['m12'] = {'status': m12_status, 'score': round(float(m12_score), 3), 'details': m12_details}
+        except Exception as e:
+            result['m12'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
     # M14 (sweep-retest-reclaim)
     m14_score = 0.5
     m14_status = 'SKIP'
@@ -734,6 +745,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         m9_score=m9_score, use_m9=True,
         m10_score=m10_score, use_m10=m10_status != 'SKIP',
         m11_score=m11_score, use_m11=m11_status != 'SKIP',
+        m12_score=m12_score, use_m12=m12_status != 'SKIP',
         m13_score=m13_score, use_m13=cfg.get('M13_ENABLED', False),
         m14_score=m14_score, use_m14=m14_status == 'PASS',
         config=cfg,
@@ -1021,6 +1033,11 @@ def print_signal(result):
     if 'm13' in result:
         m13 = result['m13']
         print(f"    M13 (Struct):  {m13['status']:>8}  score={m13['score']:.2f}  bias={m13['bias']}")
+    if 'm12' in result:
+        m12 = result['m12']
+        m12_ob = m12.get('details', {}).get('bid_ask_ratio', '')
+        ob_str = f"  OB={m12_ob:.2f}" if m12_ob else ""
+        print(f"    M12 (OrderBook): {m12['status']:>8}  score={m12['score']:.2f}{ob_str}")
     if 'm14' in result:
         print(f"    M14 (Sweep):   {result['m14']['status']:>8}  score={result['m14']['score']:.2f}")
     if 'cascade' in result and result['cascade'].get('cascade'):
@@ -1324,6 +1341,9 @@ def print_summary(result):
     print(f"  {'M11 MTF Momentum':<22} {m11_st:>10}  {m11_sc:>6.2f}")
     print(f"  {'M13 Structure':<22} {m13_st:>10}  {m13_sc:>6.2f}")
     print(f"  {'M14 Sweep':<22} {m14_st:>10}  {m14_sc:>6.2f}")
+    m12_st = result.get('m12', {}).get('status', '—') if 'm12' in result else '—'
+    m12_sc = result.get('m12', {}).get('score', 0) if 'm12' in result else 0
+    print(f"  {'M12 Order Book':<22} {m12_st:>10}  {m12_sc:>6.2f}")
     m16_exch = result.get('exchange_activity', {})
     m16_sc = m16_exch.get('score', 0) if m16_exch else 0
     m16_st = m16_exch.get('status', '—') if m16_exch else '—'
