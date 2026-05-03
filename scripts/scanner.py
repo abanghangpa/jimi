@@ -36,6 +36,7 @@ from src.modules.m6_derivatives import score_derivatives, get_derivatives_summar
 from src.modules.m15_liq_levels import get_liquidity_summary
 from src.modules.m7_market_regime import m7_prepare_data, m7_get_row, score_m7
 from src.modules.m8_funding import score_m8_funding
+from src.modules.m10_macro import m10_prepare_data, m10_get_row, m10_compute_emas, score_m10_macro
 from src.engine import calc_ics, check_entry_filters, get_tp_multipliers, run_gatekeepers
 from src.modules.m_conflict import get_conflict_stats
 from src.modules.m9_volatility import RegimeState, compute_vol_regime, score_vol_regime
@@ -679,9 +680,22 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         except Exception:
             pass
 
-    # M10 (cross-asset macro) — skip in live scanner (requires historical data)
+    # M10 (cross-asset macro) — BTC trend + ETH/BTC relative strength
     m10_score = 0.5
     m10_status = 'SKIP'
+    m10_details = {}
+    m10_data = None
+    if cfg.get('M10_ENABLED', False):
+        try:
+            m10_data = m10_prepare_data(df_15m)
+            if m10_data:
+                m10_data = m10_compute_emas(m10_data)
+                macro_row = m10_get_row(m10_data, ts)
+                if macro_row:
+                    m10_status, m10_score, m10_details = score_m10_macro(macro_row, direction, trend_dir)
+                    result['m10'] = {'status': m10_status, 'score': round(float(m10_score), 3), 'details': m10_details}
+        except Exception as e:
+            result['m10'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
     # M11 (MTF momentum)
     m11_score = 0.5
@@ -990,6 +1004,11 @@ def print_signal(result):
         m9_st = m9.get('status', '—')
         m9_sc = m9.get('score', 0)
         print(f"    M9 (VolRegime):{m9_st:>8}  score={m9_sc:.2f}  regime={m9['regime']}")
+    if 'm10' in result:
+        m10 = result['m10']
+        m10_comp = m10.get('details', {}).get('m10_components', {})
+        m10_agree = m10.get('details', {}).get('macro_agreement', '')
+        print(f"    M10 (Macro):   {m10['status']:>8}  score={m10['score']:.2f}  {m10_agree}")
     if 'm11' in result:
         print(f"    M11 (MTF Mom): {result['m11']['status']:>8}  score={result['m11']['score']:.2f}")
     if 'm13' in result:
@@ -1292,6 +1311,9 @@ def print_summary(result):
     print(f"  {'M5 Liquidation':<22} {m5_st:>10}  {m5_sc:>6.2f}")
     print(f"  {'M8 Funding':<22} {m8_st:>10}  {m8_sc:>6.2f}")
     print(f"  {'M9 Vol Regime':<22} {m9_st:>10}  {m9_sc:>6.2f}")
+    m10_st = result.get('m10', {}).get('status', '—') if 'm10' in result else '—'
+    m10_sc = result.get('m10', {}).get('score', 0) if 'm10' in result else 0
+    print(f"  {'M10 Cross-Asset':<22} {m10_st:>10}  {m10_sc:>6.2f}")
     print(f"  {'M11 MTF Momentum':<22} {m11_st:>10}  {m11_sc:>6.2f}")
     print(f"  {'M13 Structure':<22} {m13_st:>10}  {m13_sc:>6.2f}")
     print(f"  {'M14 Sweep':<22} {m14_st:>10}  {m14_sc:>6.2f}")
@@ -1344,6 +1366,23 @@ def print_summary(result):
             fr_dir = "longs pay" if fr > 0 else "shorts pay"
             print(f"  • Funding rate: {fr*100:+.4f}% ({fr_dir})")
         print(f"  • OI: ${oi_usd/1e9:.2f}B  Δ1h: {deriv.get('oi_roc_1h', 0):+.3f}%")
+
+    # M10 macro summary
+    m10 = result.get('m10', {})
+    if m10 and m10.get('status') not in ('SKIP', 'ERROR', None):
+        m10_comp = m10.get('details', {}).get('m10_components', {})
+        m10_agree = m10.get('details', {}).get('macro_agreement', '')
+        btc_roc = m10.get('details', {}).get('btc_roc7', '')
+        ethbtc_roc = m10.get('details', {}).get('ethbtc_roc7', '')
+        parts = []
+        if btc_roc:
+            parts.append(f"BTC 7d ROC={btc_roc:+.1%}")
+        if ethbtc_roc:
+            parts.append(f"ETH/BTC 7d ROC={ethbtc_roc:+.1%}")
+        if m10_agree:
+            parts.append(m10_agree)
+        if parts:
+            print(f"  • M10 macro: {m10['status']} ({', '.join(parts)})")
 
     # Exchange Activity summary
     exch = result.get('exchange_activity', {})

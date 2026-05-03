@@ -251,12 +251,10 @@ M9_CHOP_EXIT_COOLDOWN: 12
 
 # ─── M10: CROSS-ASSET MACRO ─────────────────────────────────
 M10_ENABLED: true
-M10_WEIGHT: 0.25      # increased from 0.10 — only module with multi-year permutation significance
 M10_FETCH_ON_BACKTEST: true
 
 # ─── M11: MULTI-TF MOMENTUM ─────────────────────────────────
 M11_ENABLED: true
-M11_WEIGHT: 0.12
 M11_RSI_PERIOD_15M: 14
 M11_RSI_PERIOD_1H: 14
 M11_REQUIRE_AGREEMENT: true
