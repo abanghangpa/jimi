@@ -15,6 +15,7 @@ from src.modules.m1_macd_v2 import score_m1_v2 as score_m1
 from src.modules.m2_ema import score_m2
 from src.modules.m3_vwap import score_m3
 from src.modules.m4_cvd import calc_cvd_15m, detect_cvd_divergence_15m, calc_cvd_2h, detect_cvd_zero_cross, score_m4
+from src.modules.intrabar_cvd import compute_intrabar_delta, aggregate_to_timeframe, detect_intrabar_divergence, score_intrabar_divergence
 from src.modules.m5_liquidation import score_m5, detect_cascade_setup
 from src.modules.m6_derivatives import (
     fetch_all_derivatives, compute_oi_signals, compute_positioning_signals,
@@ -375,6 +376,20 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
     df_15m['cvd_15m'] = calc_cvd_15m(df_15m)
     df_15m['cvd_divergence_15m'] = detect_cvd_divergence_15m(df_15m, cfg['CVD_LOOKBACK'], cfg['CVD_DIVERGENCE_WINDOW'])
     print(f"  CVD divergences (15m): {(df_15m['cvd_divergence_15m']=='BULLISH').sum()} bullish, {(df_15m['cvd_divergence_15m']=='BEARISH').sum()} bearish")
+
+    # M4b: Intrabar CVD (LucF-style, adapted for backtest with 15m bars)
+    # Uses close vs open of each 15m bar to classify volume direction
+    if cfg.get('M4B_INTRABAR_ENABLED', True):
+        intrabar_delta = compute_intrabar_delta(df_15m)
+        df_15m['cvd_intrabar'] = intrabar_delta.cumsum()
+        df_15m['cvd_intrabar_div'] = detect_intrabar_divergence(
+            df_15m.rename(columns={'cvd_intrabar': 'cvd'}), lookback=24, window=12)
+        bull = (df_15m['cvd_intrabar_div'] == 'BULLISH').sum()
+        bear = (df_15m['cvd_intrabar_div'] == 'BEARISH').sum()
+        print(f"  CVD intrabar (M4b):    {bull} bullish, {bear} bearish divergences")
+    else:
+        df_15m['cvd_intrabar'] = 0.0
+        df_15m['cvd_intrabar_div'] = 'NONE'
 
     df_2h['cvd_2h'] = calc_cvd_2h(df_2h)
     df_2h['cvd_zl_state'], df_2h['cvd_zl_cross_bar'], df_2h['cvd_zl_cross_dir'] = detect_cvd_zero_cross(df_2h)
@@ -845,6 +860,35 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, cfg)
 
+        # M4b: Intrabar CVD check (LucF-style)
+        m4b_divergence = 'NONE'
+        m4b_score = 0.5
+        if cfg.get('M4B_INTRABAR_ENABLED', True):
+            for ci in range(max(0, idx - 24), idx + 1):
+                d = df_15m['cvd_intrabar_div'].iloc[ci]
+                if d != 'NONE':
+                    m4b_divergence = d
+                    break
+            if m4b_divergence != 'NONE':
+                is_opposing = (direction == 'LONG' and m4b_divergence == 'BEARISH') or \
+                              (direction == 'SHORT' and m4b_divergence == 'BULLISH')
+                is_confirming = (direction == 'LONG' and m4b_divergence == 'BULLISH') or \
+                                (direction == 'SHORT' and m4b_divergence == 'BEARISH')
+                if is_opposing:
+                    m4b_score = 0.30
+                elif is_confirming:
+                    m4b_score = 0.70
+
+        # Blend M4b into M4 if intrabar catches div that taker CVD missed
+        # Advisory only: affects ICS score but does NOT trigger veto/block
+        m4_div_str = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else 'NONE'
+        if m4_div_str == 'NONE' and m4b_divergence != 'NONE':
+            # Soft penalty: reduce m4_score but keep m4_status as-is
+            m4_score = max(0.0, m4_score - 0.10)
+            if isinstance(m4_div, dict):
+                m4_div['intrabar_div'] = m4b_divergence
+                m4_div['intrabar_source'] = 'advisory'
+
         # M10 scored early — feeds into ICS pre-check (Proposal 1)
         m10_score = 0.5; m10_status = 'SKIP'; use_m10 = False
         if cfg.get('M10_ENABLED', False) and m10_data is not None:
@@ -958,7 +1002,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
             dir_conflict = False
             if cfg.get('DIR_VETO_ENABLED', False):
-                m4_disagree = (direction == 'LONG' and m4_div == 'BEARISH') or (direction == 'SHORT' and m4_div == 'BULLISH')
+                m4_div_str_veto = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else ('NONE' if m4_div is None else str(m4_div))
+                # M4b is advisory only — not used for veto blocking
+                m4_disagree = (direction == 'LONG' and m4_div_str_veto == 'BEARISH') or (direction == 'SHORT' and m4_div_str_veto == 'BULLISH')
                 m5_disagree = (m5_status == 'FAIL')
                 if m4_disagree and m5_disagree:
                     dir_conflict = True
@@ -1033,7 +1079,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         coherence_penalty = 0.0
         if cfg.get('COHERENCE_CHECK_ENABLED', True):
             is_coherent, coherence_conflicts, coherence_penalty = check_coherence(
-                direction, m4_div, m5_details if isinstance(m5_details, dict) else {},
+                direction, m4_div_str_veto, m5_details if isinstance(m5_details, dict) else {},
                 m13_bias if not _in_chop else 'NEUTRAL', vol_regime,
                 m7_score=m7_score, m2_status=m2_status, config=cfg,
             )
@@ -1274,7 +1320,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         trade = Trade(ts, direction, entry_price, sl, tp1, tp2, tp3, size,
                       m1_dir, m2_status, m3_score, m4_status, m5_status, m5_score,
                       ics, phase0_val,
-                      f"M9={vol_regime} M13={m13_bias} M1={m1_dir} M2={m2_status} M3={m3_status} M4={m4_status} M5={m5_status} ICS={ics:.3f}",
+                      f"M9={vol_regime} M13={m13_bias} M1={m1_dir} M2={m2_status} M3={m3_status} M4={m4_status} M4b={m4b_divergence} M5={m5_status} ICS={ics:.3f}",
                       m1_score=m1_score, m2_score=m2_score, m4_score=m4_score, m7_score=m7_score,
                       m8_score=m8_score, m8_status=m8_status, m9_score=m9_score, m9_status=m9_status,
                       m10_score=m10_score, m10_status=m10_status, m11_score=m11_score, m11_status=m11_status,
