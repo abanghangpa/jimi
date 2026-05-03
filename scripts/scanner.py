@@ -46,6 +46,7 @@ from src.modules.coherence_liquidity import check_coherence
 from src.modules.m14_sweep import score_m14
 from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_exchange_data, compute_exchange_signals, score_exchange_activity, score_spot_signals
 from src.sl_tp import calc_trade_levels, check_sweep_gate
+from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
@@ -1547,10 +1548,32 @@ def main():
     print(f"\n  💾 Saved: {scan_file}")
 
     if args.json:
+        # Add conflict resolution to JSON output
+        cr = detect_conflict(result, config=scaled_config)
+        result['conflict_resolution'] = conflict_to_dict(cr)
         print(json.dumps(result, indent=2, default=str))
     else:
         print_signal(result)
         print_summary(result)
+
+        # ── Conflict Resolution ──
+        cr = detect_conflict(result, config=scaled_config)
+        if cr.has_conflict:
+            print(format_conflict(cr))
+            result['conflict_resolution'] = conflict_to_dict(cr)
+
+            # Re-save with conflict data
+            with open(scan_file, 'w') as f:
+                json.dump(result, f, indent=2, default=str)
+
+            # Offer to spawn forward test
+            if cr.forward_test:
+                ft = cr.forward_test
+                print(f"\n  💡 To start forward test, run:")
+                print(f"     python3 scripts/forward_test.py --level {ft.key_level_low:.0f} {ft.key_level_high:.0f} "
+                      f"--scenarios {','.join(s.name.lower() for s in ft.scenarios)}")
+        else:
+            print(f"\n  ✅ No conflict — scanner verdict stands.")
 
 
 if __name__ == '__main__':
