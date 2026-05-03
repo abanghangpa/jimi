@@ -160,6 +160,10 @@ REGIME_SIZE_MAP = {
     'COMPRESSING': 0.80,  # Slightly reduced — waiting for breakout
     'TRENDING': 1.0,      # Full size — this is the edge
     'NEUTRAL': 0.65,      # Moderate — some uncertainty
+    'NEUTRAL_TRENDING': 0.70,  # Has momentum but no direction
+    'NEUTRAL_TRENDING_BULL': 0.70,  # Momentum + bullish lean
+    'NEUTRAL_TRENDING_BEAR': 0.70,  # Momentum + bearish lean
+    'NEUTRAL_CHOP': 0.55,     # Noise — reduced
     'UNKNOWN': 0.50,      # Conservative default
 }
 
@@ -218,15 +222,16 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
     elif m13_bias in ('BEARISH', 'LEAN_BEAR'):
         direction = 'SHORT'
 
-    # ── Phase 2a: Regime Direction Hint (CHOP_MILD_BEAR/BULL) ──
+    # ── Phase 2a: Regime Direction Hint (CHOP_MILD_BEAR/BULL, NEUTRAL_TRENDING_BEAR/BULL) ──
     # When M13 is NEUTRAL and regime has a directional lean, use it
-    if direction == 'NEUTRAL' and regime in ('CHOP_MILD_BEAR', 'CHOP_MILD_BULL'):
-        if regime == 'CHOP_MILD_BEAR':
+    if direction == 'NEUTRAL' and regime in ('CHOP_MILD_BEAR', 'CHOP_MILD_BULL',
+                                               'NEUTRAL_TRENDING_BEAR', 'NEUTRAL_TRENDING_BULL'):
+        if regime in ('CHOP_MILD_BEAR', 'NEUTRAL_TRENDING_BEAR'):
             direction = 'SHORT'
-            details['regime_direction_hint'] = 'CHOP_MILD_BEAR → SHORT'
-        elif regime == 'CHOP_MILD_BULL':
+            details['regime_direction_hint'] = f'{regime} → SHORT'
+        elif regime in ('CHOP_MILD_BULL', 'NEUTRAL_TRENDING_BULL'):
             direction = 'LONG'
-            details['regime_direction_hint'] = 'CHOP_MILD_BULL → LONG'
+            details['regime_direction_hint'] = f'{regime} → LONG'
 
     # ── Phase 2a-2: Target Tiebreaker ──
     # When direction is still NEUTRAL, use target clarity to pick a side.

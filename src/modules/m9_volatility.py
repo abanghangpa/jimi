@@ -138,6 +138,8 @@ class RegimeState:
             'CHOP_MILD_BULL': _cfg(config, 'M9_CHOP_MILD_COOLDOWN'),
             'NEUTRAL': 2,
             'NEUTRAL_TRENDING': 2,
+            'NEUTRAL_TRENDING_BULL': 2,
+            'NEUTRAL_TRENDING_BEAR': 2,
             'NEUTRAL_CHOP': 2,
         }
 
@@ -201,7 +203,8 @@ class RegimeState:
             return raw_regime, True, details
 
         # ── Instant flip between NEUTRAL sub-types ──
-        _neutral_family = ('NEUTRAL', 'NEUTRAL_TRENDING', 'NEUTRAL_CHOP')
+        _neutral_family = ('NEUTRAL', 'NEUTRAL_TRENDING', 'NEUTRAL_TRENDING_BULL',
+                           'NEUTRAL_TRENDING_BEAR', 'NEUTRAL_CHOP')
         if (self.prev_regime in _neutral_family and raw_regime in _neutral_family and
                 raw_regime != self.prev_regime):
             old = self.prev_regime
@@ -766,7 +769,13 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None, config
         if (directionality > neutral_dir_threshold and
                 vol_ratio > neutral_vol_threshold and
                 whipsaw_rate < 0.40):
-            raw_regime = 'NEUTRAL_TRENDING'
+            # Directional split — same signal as CHOP_MILD
+            if chop_split_enabled and chop_direction < -0.1:
+                raw_regime = 'NEUTRAL_TRENDING_BEAR'
+            elif chop_split_enabled and chop_direction > 0.1:
+                raw_regime = 'NEUTRAL_TRENDING_BULL'
+            else:
+                raw_regime = 'NEUTRAL_TRENDING'
             score = 0.60
         else:
             raw_regime = 'NEUTRAL_CHOP'
@@ -785,7 +794,9 @@ def compute_vol_regime(df_15m, df_1h, idx_15m, idx_1h, regime_state=None, config
             'CRISIS': 0.10, 'CHOP_HARD': 0.10, 'CHOP_MILD': 0.35,
             'CHOP_MILD_BEAR': 0.35, 'CHOP_MILD_BULL': 0.35,
             'COMPRESSING': 0.50, 'TRENDING': 0.80,
-            'NEUTRAL': 0.50, 'NEUTRAL_TRENDING': 0.60, 'NEUTRAL_CHOP': 0.40,
+            'NEUTRAL': 0.50, 'NEUTRAL_TRENDING': 0.60,
+            'NEUTRAL_TRENDING_BULL': 0.60, 'NEUTRAL_TRENDING_BEAR': 0.60,
+            'NEUTRAL_CHOP': 0.40,
             'UNKNOWN': 0.50,
         }
         score = regime_scores.get(regime, 0.50)
@@ -836,6 +847,18 @@ def score_vol_regime(regime, vol_regime_score, direction, trend_dir):
     # NEUTRAL sub-types: NEUTRAL_TRENDING has momentum, NEUTRAL_CHOP is noise
     if regime == 'NEUTRAL_TRENDING':
         base = min(base * 1.10, 1.0)  # slight boost for momentum
+    if regime == 'NEUTRAL_TRENDING_BULL':
+        base = min(base * 1.10, 1.0)
+        if direction == 'LONG':
+            base = min(base * 1.15, 1.0)  # momentum + direction aligned
+        elif direction == 'SHORT':
+            base *= 0.80  # momentum against you
+    if regime == 'NEUTRAL_TRENDING_BEAR':
+        base = min(base * 1.10, 1.0)
+        if direction == 'SHORT':
+            base = min(base * 1.15, 1.0)
+        elif direction == 'LONG':
+            base *= 0.80
     if regime == 'NEUTRAL_CHOP':
         base *= 0.85  # penalize noise
 
