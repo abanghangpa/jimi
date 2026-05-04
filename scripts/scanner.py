@@ -51,7 +51,7 @@ from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_ex
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
-from src.modules.m18_squeeze import detect_squeeze_v2 as detect_squeeze, format_squeeze
+from src.modules.m18_squeeze import detect_squeeze_v3 as detect_squeeze, format_squeeze
 
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
@@ -524,8 +524,61 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     # ── M18 Squeeze Detection (after derivatives data is available) ──
     result['rsi'] = float(df_15m['rsi'].iloc[idx]) if 'rsi' in df_15m.columns else 50
     result['vol_trend'] = float(df_15m['Volume'].iloc[idx] / df_15m['vol_ma20'].iloc[idx]) if 'vol_ma20' in df_15m.columns else 1.0
-    squeeze_result = detect_squeeze(result, config=cfg)
+    result['atr'] = float(df_15m['atr'].iloc[idx]) if 'atr' in df_15m.columns else 0
+
+    # Squeeze quality: compute from raw market features
+    roll_high_48 = float(df_15m['High'].iloc[max(0,idx-47):idx+1].max())
+    roll_low_48 = float(df_15m['Low'].iloc[max(0,idx-47):idx+1].min())
+    range_width = (roll_high_48 - roll_low_48) / float(df_15m['Close'].iloc[idx]) * 100
+
+    vol_ratio_val = float(df_15m['vol_ratio'].iloc[idx]) if 'vol_ratio' in df_15m.columns and not pd.isna(df_15m['vol_ratio'].iloc[idx]) else 0.15
+    taker_base = float(df_15m['Taker buy base asset volume'].iloc[idx]) if 'Taker buy base asset volume' in df_15m.columns else 0
+    total_vol = float(df_15m['Volume'].iloc[idx])
+    taker_ratio = taker_base / total_vol if total_vol > 0 else 0.5
+
+    # VWAP distance
+    vwap_val = float(df_15m['vwap'].iloc[idx]) if 'vwap' in df_15m.columns else float(df_15m['Close'].iloc[idx])
+    vwap_dist = (float(df_15m['Close'].iloc[idx]) - vwap_val) / vwap_val * 100 if vwap_val > 0 else 0
+
+    # OI proxy: volume accumulation relative to average
+    vol_cumsum_48 = float(df_15m['Volume'].iloc[max(0,idx-47):idx+1].sum())
+    vol_cumsum_ma = float(df_15m['Volume'].iloc[max(0,idx-67):idx+1].rolling(20).mean().iloc[-1]) if idx > 67 else vol_cumsum_48
+    oi_proxy = vol_cumsum_48 / vol_cumsum_ma if vol_cumsum_ma > 0 else 1.0
+
+    # Bar-level ignition
+    bar_vol_spike = float(df_15m['Volume'].iloc[idx] / df_15m['vol_ma20'].iloc[idx]) if 'vol_ma20' in df_15m.columns else 1.0
+    bar_range = (float(df_15m['High'].iloc[idx]) - float(df_15m['Low'].iloc[idx])) / float(df_15m['Close'].iloc[idx]) * 100
+    bar_range_ma = float(df_15m['High'].iloc[max(0,idx-19):idx+1].sub(df_15m['Low'].iloc[max(0,idx-19):idx+1]).div(df_15m['Close'].iloc[max(0,idx-19):idx+1]).mean() * 100) if idx > 19 else bar_range
+    bar_range_expansion = bar_range / bar_range_ma if bar_range_ma > 0 else 1.0
+    bar_taker_extreme = taker_ratio > 0.65 or taker_ratio < 0.35
+
+    # Quality percentile (use rolling rank)
+    # For now, use a simplified quality score
+    # Lower range_width, lower vol_ratio, higher oi_proxy, closer to VWAP = better
+    result['range_width'] = range_width
+    result['vol_ratio'] = vol_ratio_val
+    result['oi_proxy'] = oi_proxy
+    result['vwap_dist'] = vwap_dist
+    result['bar_vol_spike'] = bar_vol_spike
+    result['bar_range_expansion'] = bar_range_expansion
+    result['bar_taker_extreme'] = bar_taker_extreme
+
+    # Simplified quality: normalize each factor to 0-1 and combine
+    # Using rough thresholds from backtest analysis
+    rw_score = max(0, min(1, 1 - (range_width - 1.5) / 4.0))  # 1.5% = best, 5.5% = worst
+    vr_score = max(0, min(1, 1 - (vol_ratio_val - 0.05) / 0.20))  # 0.05 = best, 0.25 = worst
+    oip_score = max(0, min(1, (oi_proxy - 0.7) / 0.5))  # 0.7 = worst, 1.2 = best
+    vd_score = max(0, min(1, 1 - abs(vwap_dist) / 1.0))  # 0 = best, 1.0% = worst
+
+    result['squeeze_quality'] = (rw_score * 0.30 + vr_score * 0.25 +
+                                  oip_score * 0.25 + vd_score * 0.20)
+
+    squeeze_result = detect_squeeze(result, config=cfg,
+                                     last_signal_bar=result.get('_last_squeeze_bar', -1),
+                                     current_bar=idx)
     result['squeeze'] = squeeze_result
+    if squeeze_result['squeeze_type'] != 'NONE':
+        result['_last_squeeze_bar'] = idx
 
     # If squeeze fires and overrides regime, unblock
     if squeeze_result['squeeze_type'] != 'NONE' and squeeze_result['overrides_regime']:
