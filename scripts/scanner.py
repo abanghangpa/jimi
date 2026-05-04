@@ -46,6 +46,7 @@ from src.modules.veto_system import evaluate_vetoes
 from src.modules.coherence_liquidity import check_coherence
 from src.modules.m12_orderbook import score_m12_orderbook
 from src.modules.m14_sweep import score_m14
+from src.modules.m17_resistance_quality import score_resistance_quality, format_resistance_quality
 from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_exchange_data, compute_exchange_signals, score_exchange_activity, score_spot_signals
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
@@ -736,6 +737,30 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
             m14_status, m14_score, _ = score_m14(df_15m, idx, direction, _swing_levels, config=cfg)
             result['m14'] = {'status': m14_status, 'score': round(float(m14_score), 3)}
 
+    # M17 (resistance quality) — validate nearest S/R level
+    m17_score = 0.5
+    m17_status = 'SKIP'
+    m17_result = None
+    if cfg.get('M17_ENABLED', True) and sr_levels:
+        if direction == 'LONG':
+            resistances = [sr for sr in sr_levels if sr[4] == 'RESISTANCE']
+            if resistances:
+                nearest_res = min(resistances, key=lambda x: abs(x[0] - current_price))
+                m17_result = score_resistance_quality(
+                    nearest_res[0], df_15m, idx, bin_centers, vol_profile,
+                    result.get('derivatives', {}), 'LONG', config=cfg)
+        elif direction == 'SHORT':
+            supports = [sr for sr in sr_levels if sr[4] == 'SUPPORT']
+            if supports:
+                nearest_sup = min(supports, key=lambda x: abs(x[0] - current_price))
+                m17_result = score_resistance_quality(
+                    nearest_sup[0], df_15m, idx, bin_centers, vol_profile,
+                    result.get('derivatives', {}), 'SHORT', config=cfg)
+        if m17_result:
+            m17_score = m17_result['composite']
+            m17_status = 'PASS'
+            result['m17'] = {**m17_result, 'status': m17_status, 'score': round(float(m17_score), 4)}
+
     # ── ICS ──
     ics, effective_floor = calc_ics(
         m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
@@ -748,6 +773,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         m12_score=m12_score, use_m12=m12_status != 'SKIP',
         m13_score=m13_score, use_m13=cfg.get('M13_ENABLED', False),
         m14_score=m14_score, use_m14=m14_status == 'PASS',
+        m17_score=m17_score, use_m17=m17_status == 'PASS',
         config=cfg,
     )
     result['ics'] = round(float(ics), 4)
@@ -1041,6 +1067,13 @@ def print_signal(result):
         print(f"    M12 (OrderBook): {m12['status']:>8}  score={m12['score']:.2f}{ob_str}")
     if 'm14' in result:
         print(f"    M14 (Sweep):   {result['m14']['status']:>8}  score={result['m14']['score']:.2f}")
+    if 'm17' in result:
+        m17 = result['m17']
+        m17_zv = m17.get('zone_volume', {}).get('zone_vol_ratio', '?')
+        m17_rej = m17.get('rejection', {}).get('status', '?')
+        m17_dfn = m17.get('defender', {}).get('status', '?')
+        print(f"    M17 (ResQual): {m17['status']:>8}  score={m17['score']:.3f}  "
+              f"zone={m17_zv}x  reject={m17_rej}  defender={m17_dfn}  → {m17['verdict']}")
     if 'cascade' in result and result['cascade'].get('cascade'):
         c = result['cascade']
         print(f"    ⚡ CASCADE:    momentum={c['momentum']}% vol_spike={c['vol_spike']}x range={c['range_expansion']}x")
@@ -1078,6 +1111,10 @@ def print_signal(result):
             for i, (p, s, _, touches, bounces) in enumerate(resistances[:4]):
                 dist = (p - price) / price * 100
                 print(f"    #{i+1}: ${p:.2f}  strength={s:.1f}  touches={touches} bounces={bounces}  ({dist:+.2f}%)")
+
+    # M17 Resistance Quality
+    if 'm17' in result and result['m17'].get('status') != 'SKIP':
+        print(format_resistance_quality(result['m17']))
 
     # Derivatives
     deriv = result.get('derivatives', {})
@@ -1342,6 +1379,10 @@ def print_summary(result):
     print(f"  {'M11 MTF Momentum':<22} {m11_st:>10}  {m11_sc:>6.2f}")
     print(f"  {'M13 Structure':<22} {m13_st:>10}  {m13_sc:>6.2f}")
     print(f"  {'M14 Sweep':<22} {m14_st:>10}  {m14_sc:>6.2f}")
+    m17_st = result.get('m17', {}).get('status', '—') if 'm17' in result else '—'
+    m17_sc = result.get('m17', {}).get('score', 0) if 'm17' in result else 0
+    m17_vd = result.get('m17', {}).get('verdict', '') if 'm17' in result else ''
+    print(f"  {'M17 Resist Qual':<22} {m17_st:>10}  {m17_sc:>6.3f}  {m17_vd}")
     m12_st = result.get('m12', {}).get('status', '—') if 'm12' in result else '—'
     m12_sc = result.get('m12', {}).get('score', 0) if 'm12' in result else 0
     print(f"  {'M12 Order Book':<22} {m12_st:>10}  {m12_sc:>6.2f}")

@@ -30,6 +30,7 @@ _MODULE_WEIGHT_PAIRS = [
     ('M12_ENABLED', 'M12_WEIGHT', True),
     ('M13_ENABLED', 'M13_WEIGHT', True),
     ('M14_ENABLED', 'M14_WEIGHT', True),
+    ('M17_ENABLED', 'M17_WEIGHT', True),
 ]
 
 # Expected types for each key (None = any)
@@ -53,6 +54,7 @@ _TYPE_MAP = {
     'M12_WEIGHT': (int, float),
     'M13_WEIGHT': (int, float),
     'M14_WEIGHT': (int, float),
+    'M17_WEIGHT': (int, float),
     'MACD_FAST': int, 'MACD_SLOW': int, 'MACD_SIGNAL': int,
     'EMA_FAST': int, 'EMA_SLOW': int, 'RSI_PERIOD': int, 'ATR_PERIOD': int,
     'VWAP_LOOKBACK': int, 'CVD_LOOKBACK': int, 'M4_ZL_LOOKBACK': int,
@@ -438,6 +440,27 @@ _DEFAULTS = {
     "M14_SLICE_PENALTY": 0.30,
     "M14_NO_SWEEP_SCORE": 0.50,
     "WICK_SLICE_BLOCK": False,
+    # M17 Resistance Quality
+    "M17_ENABLED": True,
+    "M17_WEIGHT": 0.05,
+    "M17_ZONE_LOOKBACK": 960,
+    "M17_ZONE_WIDTH_PCT": 0.5,
+    "M17_ZONE_THIN_THRESHOLD": 0.5,
+    "M17_ZONE_THICK_THRESHOLD": 1.5,
+    "M17_REJECT_MIN_TOUCHES": 3,
+    "M17_REJECT_VOL_STRONG": 2.5,
+    "M17_REJECT_VOL_WEAK": 1.2,
+    "M17_REJECT_WICK_STRONG": 5.0,
+    "M17_DEFENDER_TRAPPED_Z": -2.0,
+    "M17_DEFENDER_TRAPPED_Z_LONG": 2.0,
+    "M17_DEFENDER_LEAVING_OI_ROC": -0.5,
+    "M17_DEFENDER_ADDING_OI_ROC": 1.0,
+    "M17_BREAKOUT_VOL_MIN": 1.2,
+    "M17_BREAKOUT_MOMENTUM_MIN": 0.3,
+    "M17_W_ZONE": 0.25,
+    "M17_W_REJECT": 0.30,
+    "M17_W_DEFENDER": 0.25,
+    "M17_W_READINESS": 0.20,
     # Data freshness
     "DATA_FRESHNESS_ENABLED": True,
     "DATA_FRESHNESS_MAX_AGE_MIN": 20,
