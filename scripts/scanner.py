@@ -51,7 +51,7 @@ from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_ex
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
-from src.modules.m18_squeeze import detect_squeeze, format_squeeze
+from src.modules.m18_squeeze import detect_squeeze_v2 as detect_squeeze, format_squeeze
 
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
@@ -522,6 +522,8 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     result['cascade_risk'] = _detect_cascade_risk(df_15m, idx, result)
 
     # ── M18 Squeeze Detection (after derivatives data is available) ──
+    result['rsi'] = float(df_15m['rsi'].iloc[idx]) if 'rsi' in df_15m.columns else 50
+    result['vol_trend'] = float(df_15m['Volume'].iloc[idx] / df_15m['vol_ma20'].iloc[idx]) if 'vol_ma20' in df_15m.columns else 1.0
     squeeze_result = detect_squeeze(result, config=cfg)
     result['squeeze'] = squeeze_result
 
