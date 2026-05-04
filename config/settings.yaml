@@ -429,6 +429,23 @@ CROSS_ASSET_ENABLED: true
 CROSS_ASSET_BTC_WEIGHT: 0.08
 CROSS_ASSET_LOOKBACK: 48
 
+# ─── M18 SQUEEZE DETECTOR ───────────────────────────────────
+M18_ENABLED: true
+M18_WEIGHT: 0.08                   # ICS weight for squeeze module
+SQUEEZE_ATR_PCTL_MAX: 0.50         # ATR percentile below this = compressed
+SQUEEZE_RANGE_WIDTH_MAX: 0.04      # Range width < 4% = compressed
+SQUEEZE_LS_ZSCORE_MIN: 1.8         # L/S z-score threshold for extreme
+SQUEEZE_LS_ZSCORE_STRONG: 2.5      # Strong extreme
+SQUEEZE_FUNDING_NEGATIVE: true     # Squeeze requires negative funding (shorts paying)
+SQUEEZE_FUNDING_FLIP_BONUS: 0.15   # Bonus if funding just flipped
+SQUEEZE_OI_RISING_THRESHOLD: 0.3   # OI rising > 0.3%/hr = loading
+SQUEEZE_OI_RISING_STRONG: 1.0      # OI rising > 1%/hr = heavy loading
+SQUEEZE_SCORE_THRESHOLD: 0.55      # Composite score to trigger squeeze
+SQUEEZE_STRONG_THRESHOLD: 0.70     # Strong squeeze threshold
+SQUEEZE_OVERRIDE_REGIME: true      # Override M9 regime block when squeeze fires
+SQUEEZE_ICS_BOOST: 0.08            # ICS boost when squeeze is active
+SQUEEZE_SIZE_MULT: 0.80            # Position size multiplier during squeeze
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

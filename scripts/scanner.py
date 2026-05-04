@@ -51,6 +51,7 @@ from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_ex
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
+from src.modules.m18_squeeze import detect_squeeze, format_squeeze
 
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
@@ -520,6 +521,16 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
 
     result['cascade_risk'] = _detect_cascade_risk(df_15m, idx, result)
 
+    # ── M18 Squeeze Detection (after derivatives data is available) ──
+    squeeze_result = detect_squeeze(result, config=cfg)
+    result['squeeze'] = squeeze_result
+
+    # If squeeze fires and overrides regime, unblock
+    if squeeze_result['squeeze_type'] != 'NONE' and squeeze_result['overrides_regime']:
+        regime_blocked = False
+        result['regime_blocked'] = False
+        result['squeeze_override'] = True
+
     # Exchange Activity (cross-exchange funding, OI, L/S)
     try:
         exchange_summary = get_exchange_summary()
@@ -544,10 +555,15 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     except Exception:
         pass
 
-    # When regime blocks direction, force LONG so all modules score for display
+    # When regime blocks direction, use squeeze direction if available, else force LONG for display
     if direction == 'NEUTRAL' and result.get('regime_blocked'):
-        direction = 'LONG'
-        dir_details['reason'] = f"regime={vol_regime} blocked — scoring LONG for display"
+        sq_dir = squeeze_result.get('direction', 'NEUTRAL')
+        if sq_dir != 'NEUTRAL':
+            direction = sq_dir
+            dir_details['reason'] = f"Squeeze {squeeze_result['squeeze_type']} override → {direction}"
+        else:
+            direction = 'LONG'
+            dir_details['reason'] = f"regime={vol_regime} blocked — scoring LONG for display"
 
     result['direction'] = direction
     result['direction_resolver'] = {
@@ -777,6 +793,12 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     )
     result['ics'] = round(float(ics), 4)
     result['effective_floor'] = round(float(effective_floor), 4)
+
+    # ── Squeeze ICS boost ──
+    if squeeze_result['squeeze_type'] != 'NONE' and squeeze_result['ics_boost'] > 0:
+        ics += squeeze_result['ics_boost']
+        result['ics'] = round(float(ics), 4)
+        result['squeeze_ics_boost'] = squeeze_result['ics_boost']
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -1297,9 +1319,19 @@ def print_signal(result):
         for f in cr.get('factors', []):
             print(f"    • {f}")
 
+    # Squeeze Detector
+    sq = result.get('squeeze', {})
+    if sq and sq.get('squeeze_type', 'NONE') != 'NONE':
+        sq_output = format_squeeze(sq)
+        if sq_output:
+            print(sq_output)
+        if result.get('squeeze_override'):
+            print(f"\n  ⚡ SQUEEZE OVERRIDE: regime block lifted!")
+
     # ICS & Signal
     if 'ics' in result:
-        print(f"\n  ICS: {result['ics']:.3f}  (floor={result['effective_floor']:.3f})")
+        boost_str = f"  (squeeze +{result.get('squeeze_ics_boost', 0):.4f})" if result.get('squeeze_ics_boost') else ''
+        print(f"\n  ICS: {result['ics']:.3f}  (floor={result['effective_floor']:.3f}){boost_str}")
 
     status = result['status']
     if status == 'SIGNAL':
@@ -1398,6 +1430,16 @@ def print_summary(result):
     m16_sp_sc = m16_exch.get('spot_score', 0) if m16_exch else 0
     m16_sp_st = m16_exch.get('spot_status', '—') if m16_exch else '—'
     print(f"  {'M16 Exch Spot':<22} {m16_sp_st:>10}  {m16_sp_sc:>6.2f}")
+
+    # Squeeze in summary
+    sq = result.get('squeeze', {})
+    if sq and sq.get('squeeze_type', 'NONE') != 'NONE':
+        sq_st = 'STRONG' if sq.get('squeeze_strong') else 'ACTIVE'
+        sq_sc = sq.get('squeeze_score', 0)
+        sq_dir = sq.get('direction', '?')
+        print(f"  {'M18 Squeeze':<22} {sq_st:>10}  {sq_sc:>6.3f}  → {sq_dir}")
+        if result.get('squeeze_override'):
+            print(f"  {'⚡ Regime Override':<22} {'ACTIVE':>10}")
 
     ics = result.get('ics', 0)
     status = result.get('status', 'N/A')
