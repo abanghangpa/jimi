@@ -435,8 +435,10 @@ M18_WEIGHT: 0.08
 SQUEEZE_ATR_PCTL_MAX: 0.35          # compression gate
 SQUEEZE_ZSCORE_MIN: 1.8             # minimum |z|
 SQUEEZE_VOL_SPIKE_MIN: 1.2          # volume / MA20
-SQUEEZE_QUALITY_MIN: 0.65           # minimum quality percentile
+SQUEEZE_QUALITY_MIN: 0.80           # minimum quality percentile (raised from 0.65 for 75%+ WR)
 SQUEEZE_SCORE_THRESHOLD: 0.50       # composite score threshold
+SQUEEZE_M4B_AGREE_REQUIRED: true    # require intrabar CVD divergence to agree with direction
+SQUEEZE_M4B_MAX_AGO: 12             # max bars since M4b divergence (recency filter)
 SQUEEZE_TP_PCT: 0.3                 # 0.3% TP = 76.9% WR
 SQUEEZE_SL_ATR_MULT: 1.5            # SL = 1.5x ATR
 SQUEEZE_OVERRIDE_REGIME: true

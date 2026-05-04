@@ -9,7 +9,7 @@ from src.config import CONFIG
 from src.utils.data_handler import load_data
 from src.utils.indicators import calc_atr, calc_rsi, calc_vol_ratio
 from src.modules.m4_cvd import calc_cvd_15m, detect_cvd_divergence_15m
-from src.modules.m18_squeeze import detect_squeeze_v2, SQUEEZE_V2_DEFAULTS
+from src.modules.m18_squeeze import detect_squeeze_v3 as detect_squeeze_v2, SQUEEZE_V3_DEFAULTS as SQUEEZE_V2_DEFAULTS
 
 CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)), "eth_15m_merged.csv")
 df = load_data(CSV)

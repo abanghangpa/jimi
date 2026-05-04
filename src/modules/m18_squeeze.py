@@ -31,8 +31,12 @@ SQUEEZE_V3_DEFAULTS = {
     'SQUEEZE_VD_WEIGHT': 0.20,          # VWAP distance
 
     # Thresholds
-    'SQUEEZE_QUALITY_MIN': 0.65,        # minimum quality percentile
+    'SQUEEZE_QUALITY_MIN': 0.80,        # minimum quality percentile (raised from 0.65)
     'SQUEEZE_SCORE_THRESHOLD': 0.50,    # composite score threshold
+
+    # M4b agreement gate (key 75%+ WR filter)
+    'SQUEEZE_M4B_AGREE_REQUIRED': True, # require intrabar CVD divergence to agree
+    'SQUEEZE_M4B_MAX_AGO': 12,          # max bars since M4b divergence (recency)
 
     # Take profit (adaptive)
     'SQUEEZE_TP_PCT': 0.3,             # 0.3% TP = 76.9% WR
@@ -120,6 +124,20 @@ def detect_squeeze_v3(result, config=None, last_signal_bar=-1, current_bar=0):
     else:
         squeeze_type = 'LONG_SQUEEZE'
         direction = 'SHORT'
+
+    # Gate 4: M4b intrabar CVD agreement (75%+ WR filter)
+    m4b_div = result.get('m4b', {}).get('divergence', 'NONE')
+    m4b_agree = (direction == 'LONG' and m4b_div == 'BEARISH') or \
+                (direction == 'SHORT' and m4b_div == 'BULLISH')
+    m4b_none = m4b_div == 'NONE'
+
+    if cfg['SQUEEZE_M4B_AGREE_REQUIRED'] and not m4b_agree:
+        return _empty_result(f'M4b={m4b_div} disagree (need {direction})')
+
+    # Gate 5: M4b recency
+    m4b_ago = result.get('m4b', {}).get('bars_ago', 99)
+    if m4b_agree and m4b_ago > cfg['SQUEEZE_M4B_MAX_AGO']:
+        return _empty_result(f'M4b ago={m4b_ago} > {cfg["SQUEEZE_M4B_MAX_AGO"]}')
 
     # Compute composite score
     factors = [f'regime compressed', f'|z|={abs(ls_z):.2f}', f'vol={vol_trend:.1f}x']

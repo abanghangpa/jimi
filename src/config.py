@@ -31,6 +31,7 @@ _MODULE_WEIGHT_PAIRS = [
     ('M13_ENABLED', 'M13_WEIGHT', True),
     ('M14_ENABLED', 'M14_WEIGHT', True),
     ('M17_ENABLED', 'M17_WEIGHT', True),
+    ('M18_ENABLED', 'M18_WEIGHT', True),
 ]
 
 # Expected types for each key (None = any)
@@ -61,6 +62,17 @@ _TYPE_MAP = {
     'M5_VP_LOOKBACK': int, 'M5_VP_BINS': int,
     'SUMMER_MONTHS': list, 'SHOULDER_MONTHS': list,
     'M9_BLOCK_REGIMES': list,
+    'M18_WEIGHT': (int, float),
+    'SQUEEZE_ATR_PCTL_MAX': (int, float),
+    'SQUEEZE_ZSCORE_MIN': (int, float),
+    'SQUEEZE_VOL_SPIKE_MIN': (int, float),
+    'SQUEEZE_QUALITY_MIN': (int, float),
+    'SQUEEZE_SCORE_THRESHOLD': (int, float),
+    'SQUEEZE_TP_PCT': (int, float),
+    'SQUEEZE_SL_ATR_MULT': (int, float),
+    'SQUEEZE_ICS_BOOST': (int, float),
+    'SQUEEZE_SIZE_MULT': (int, float),
+    'SQUEEZE_COOLDOWN_BARS': int,
     'PAIR': str,
     'WARMUP_BARS_1H': int,
 }
@@ -533,6 +545,51 @@ _DEFAULTS = {
     # Forensic recommendations (P0-P2)
     "PHASE0_MIN_BLOCK": 0.20,
     "M5_REGIME_GATE_ENABLED": True,
+    # M18 Squeeze Detector v3
+    "M18_ENABLED": True,
+    "M18_WEIGHT": 0.08,
+    "SQUEEZE_ATR_PCTL_MAX": 0.35,
+    "SQUEEZE_ZSCORE_MIN": 1.8,
+    "SQUEEZE_VOL_SPIKE_MIN": 1.2,
+    "SQUEEZE_QUALITY_MIN": 0.80,
+    "SQUEEZE_SCORE_THRESHOLD": 0.50,
+    "SQUEEZE_TP_PCT": 0.3,
+    "SQUEEZE_SL_ATR_MULT": 1.5,
+    "SQUEEZE_OVERRIDE_REGIME": True,
+    "SQUEEZE_ICS_BOOST": 0.10,
+    "SQUEEZE_SIZE_MULT": 0.80,
+    "SQUEEZE_COOLDOWN_BARS": 16,
+    "SQUEEZE_RW_WEIGHT": 0.30,
+    "SQUEEZE_VR_WEIGHT": 0.25,
+    "SQUEEZE_OIP_WEIGHT": 0.25,
+    "SQUEEZE_VD_WEIGHT": 0.20,
+    "SQUEEZE_M4B_AGREE_REQUIRED": True,
+    "SQUEEZE_M4B_MAX_AGO": 12,
+    # M4b Intrabar CVD
+    "M4B_INTRABAR_ENABLED": True,
+    "M4B_INTRABAR_HOURS": 48,
+    # M9 Neutral sub-classification
+    "M9_NEUTRAL_DIR_THRESHOLD": 0.40,
+    "M9_NEUTRAL_VOL_THRESHOLD": 1.05,
+    # Survival filter
+    "SURVIVAL_FILTER_ENABLED": True,
+    "SURVIVAL_LOOKBACK": 12,
+    "SURVIVAL_MIN_MOVE": 0.002,
+    "SURVIVAL_MIN_CONSISTENCY": 0.35,
+    "SURVIVAL_VOL_RATIO": 0.30,
+    # Time stop
+    "TIME_STOP_BARS": 20,
+    # M1 MACD divergence
+    "M1_MACD_DIV_ENABLED": True,
+    "M1_MACD_DIV_LOOKBACK": 40,
+    "M1_W_RSI_DIV": 0.25,
+    "M1_W_MACD_DIV": 0.20,
+    "M1_W_CROSSOVER": 0.35,
+    "M1_W_MOMENTUM": 0.20,
+    "M1_DIV_AGREE_BOOST": 0.03,
+    # Power of 3
+    "P3_MIN_KEY_LEVEL_DIST_PCT": 0.005,
+    "P3_SWEEP_LOOKBACK": 96,
 }
 
 
