@@ -595,11 +595,11 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
                                      compression_history=compression_history,
                                      df_15m=df_15m)
     result['squeeze'] = squeeze_result
-    if squeeze_result['squeeze_type'] != 'NONE':
+    if squeeze_result['squeeze_status'] == 'TRIGGERED':
         result['_last_squeeze_bar'] = idx
 
-    # If squeeze fires and overrides regime, unblock
-    if squeeze_result['squeeze_type'] != 'NONE' and squeeze_result['overrides_regime']:
+    # If squeeze TRIGGERED and overrides regime, unblock
+    if squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_result.get('overrides_regime'):
         regime_blocked = False
         result['regime_blocked'] = False
         result['squeeze_override'] = True
@@ -867,8 +867,8 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     result['ics'] = round(float(ics), 4)
     result['effective_floor'] = round(float(effective_floor), 4)
 
-    # ── Squeeze ICS boost ──
-    if squeeze_result['squeeze_type'] != 'NONE' and squeeze_result['ics_boost'] > 0:
+    # ── Squeeze ICS boost (only when TRIGGERED, not PENDING) ──
+    if squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_result['ics_boost'] > 0:
         ics += squeeze_result['ics_boost']
         result['ics'] = round(float(ics), 4)
         result['squeeze_ics_boost'] = squeeze_result['ics_boost']
@@ -1507,10 +1507,13 @@ def print_summary(result):
     # Squeeze in summary
     sq = result.get('squeeze', {})
     if sq and sq.get('squeeze_type', 'NONE') != 'NONE':
-        sq_st = 'STRONG' if sq.get('squeeze_strong') else 'ACTIVE'
+        sq_status = sq.get('squeeze_status', 'NONE')
+        sq_st = f"{'STRONG' if sq.get('squeeze_strong') else 'ACTIVE'} {sq_status}"
         sq_sc = sq.get('squeeze_score', 0)
         sq_dir = sq.get('direction', '?')
         print(f"  {'M18 Squeeze':<22} {sq_st:>10}  {sq_sc:>6.3f}  → {sq_dir}")
+        if sq.get('entry_condition'):
+            print(f"  {'  Entry':<22} {sq['entry_condition']}")
         if result.get('squeeze_override'):
             print(f"  {'⚡ Regime Override':<22} {'ACTIVE':>10}")
 

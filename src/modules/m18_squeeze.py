@@ -1,25 +1,27 @@
 """
-M18: Squeeze Detector v5 — Dual-path: 15m Compression + 2h MACD Coiling.
+M18: Squeeze Detector v5.1 — Dual-path with Entry Trigger System.
 
 Path A (existing): 15m range compression → CVD taker trigger
 Path B (new):      2h MACD(8,17,9) DIF/DEA convergence → histogram flip trigger
 
-Either path can fire independently. When both agree, it's a STRONG signal.
+Entry trigger system:
+  SQUEEZE_PENDING   — squeeze detected, waiting for breakout confirmation
+  SQUEEZE_TRIGGERED — breakout confirmed, entry at breakout level
+
+Entry price = the coil range boundary (high for LONG, low for SHORT)
+Entry condition = "enter when 15m closes above/below $X"
 
 Calibrated against 3 historical samples:
-  - May 2-4 2026:   20h coil → $60+ move (biggest single bar $23.99)
-  - Apr 24-26 2026: 36h coil → $50+ move over 24h
-  - Apr 3-5 2026:   24h coil → $50+ move (biggest single bar $16.16)
-
-Success definition: post-squeeze move produces 15m bars with |O-C| >= $25
-  (typically 2-4 bars into the move, not the first bar)
+  - May 2-4 2026:   20h coil → $60+ move
+  - Apr 24-26 2026: 36h coil → $50+ move
+  - Apr 3-5 2026:   24h coil → $50+ move
 """
 
 import numpy as np
 
 
 SQUEEZE_V5_DEFAULTS = {
-    # ── Path A: 15m compression (from v4) ──
+    # ── Path A: 15m compression ──
     'SQUEEZE_RANGE48_MAX': 1.2,
     'SQUEEZE_COMPRESSION_BARS_MIN': 12,
     'SQUEEZE_DRY_BARS_MIN': 4,
@@ -38,9 +40,22 @@ SQUEEZE_V5_DEFAULTS = {
     'SQUEEZE_COIL_BARS_STRONG': 9,      # strong coil (18h+)
     'SQUEEZE_HIST_FLIP_THRESHOLD': 0.0, # histogram crosses zero
 
+    # ── Entry filters (v5.1 tuned) ──
+    'SQUEEZE_REQUIRE_HIST_FLIP': True,  # only HIST_FLIP trigger (kills TAKER_SPIKE/COIL_DIR)
+    'SQUEEZE_EMA_FILTER': True,          # require direction aligned with EMA21/55 trend
+    'SQUEEZE_MIN_RSI': 20,              # RSI floor (oversold = good for longs)
+    'SQUEEZE_MAX_RSI': 80,              # RSI ceiling (overbought = good for shorts)
+
+    # ── Entry trigger ──
+    'SQUEEZE_ENTRY_BUFFER_PCT': 0.001,  # 0.1% buffer above/below coil range
+    'SQUEEZE_ENTRY_EXPIRY_BARS': 32,    # entry expires after 8h (32 x 15m)
+    'SQUEEZE_BREAKOUT_VOL_MULT': 1.0,   # volume confirmation on breakout bar
+
     # ── Exit levels ──
-    'SQUEEZE_TP_PCT': 0.5,
-    'SQUEEZE_SL_ATR_MULT': 0.3,
+    'SQUEEZE_TP_ATR_MULT': 2.0,         # TP = 2x ATR from entry
+    'SQUEEZE_SL_ATR_MULT': 0.8,         # SL = 0.8x ATR (tighter than v4)
+    'SQUEEZE_TP_MIN_PCT': 0.3,          # minimum TP distance
+    'SQUEEZE_TP_MAX_PCT': 1.5,          # maximum TP distance
 
     # ── Override ──
     'SQUEEZE_OVERRIDE_REGIME': True,
@@ -49,6 +64,7 @@ SQUEEZE_V5_DEFAULTS = {
 
     # ── Cooldown ──
     'SQUEEZE_COOLDOWN_BARS': 32,        # 8h on 15m
+    'SQUEEZE_MAX_PENDING': 1,           # only 1 pending entry at a time (dedup)
 }
 
 
@@ -94,15 +110,10 @@ def _check_compression(range48, compression_history, cfg):
 
 
 def _compute_2h_macd(df_15m, cfg):
-    """Resample 15m data to 2h and compute MACD(8,17,9).
-
-    Returns:
-        dict with dif, dea, hist arrays + timestamps, or None if insufficient data.
-    """
-    if len(df_15m) < 40:  # need at least ~10 2h bars
+    """Resample 15m data to 2h and compute MACD(8,17,9)."""
+    if len(df_15m) < 40:
         return None
 
-    # Resample to 2h
     df_copy = df_15m.copy()
     if 'Open time' in df_copy.columns:
         df_copy = df_copy.set_index('Open time')
@@ -128,6 +139,8 @@ def _compute_2h_macd(df_15m, cfg):
 
     return {
         'close': close.values,
+        'high': df_2h['High'].values,
+        'low': df_2h['Low'].values,
         'dif': dif.values,
         'dea': dea.values,
         'hist': hist.values,
@@ -139,31 +152,26 @@ def _compute_2h_macd(df_15m, cfg):
 def _detect_macd_coil(macd_data, cfg):
     """Detect 2h MACD DIF/DEA coiling (Path B).
 
-    A "coil" = DIF and DEA converged within <COIL_DELTA_MAX% for N+ bars.
-    The squeeze fires when histogram flips zero after a coil period.
-
-    Returns:
-        (is_coiled, coil_bars, last_coil_bar, hist_flip, direction, details)
+    Returns coil stats + histogram flip status.
     """
     dif = macd_data['dif']
     dea = macd_data['dea']
     hist = macd_data['hist']
     close = macd_data['close']
+    high = macd_data['high']
+    low = macd_data['low']
     ts = macd_data['timestamps']
 
     n = len(dif)
     if n < 3:
-        return False, 0, -1, False, 'NEUTRAL', {}
+        return False, 0, False, 'NEUTRAL', {}
 
-    # Compute DIF-DEA delta as % of price
+    # DIF-DEA delta as % of price
     delta_pct = np.abs(dif - dea) / np.where(close > 0, close, 1.0) * 100
 
-    # Scan for coiling: consecutive bars with delta < threshold
-    # Allow 2 non-consecutive gaps (same as 15m compression logic)
+    # Find most recent coil streak (backwards from current bar)
     coil_threshold = cfg['SQUEEZE_COIL_DELTA_MAX']
     min_bars = cfg['SQUEEZE_COIL_BARS_MIN']
-
-    # Find the most recent coil streak (working backwards from current bar)
     coil_bars = 0
     gap_count = 0
     max_gaps = 2
@@ -178,7 +186,7 @@ def _detect_macd_coil(macd_data, cfg):
         else:
             break
 
-    # Also find longest coil streak anywhere in the data
+    # Longest streak anywhere
     max_streak = 0
     streak = 0
     for i in range(n):
@@ -190,14 +198,22 @@ def _detect_macd_coil(macd_data, cfg):
 
     is_coiled = coil_bars >= min_bars
 
-    # Detect histogram flip: check if histogram changed sign in last 2 bars
+    # Compute coil range from the coiled bars
+    if coil_bars > 0:
+        coil_start = max(0, n - coil_bars)
+        coil_high = float(np.max(high[coil_start:n]))
+        coil_low = float(np.min(low[coil_start:n]))
+    else:
+        coil_high = float(close[-1])
+        coil_low = float(close[-1])
+
+    # Histogram flip detection
     hist_flip = False
     flip_direction = 'NEUTRAL'
 
     if n >= 2:
         prev_hist = hist[-2]
         curr_hist = hist[-1]
-        # Flip: crossed zero
         if prev_hist < 0 and curr_hist >= 0:
             hist_flip = True
             flip_direction = 'LONG'
@@ -205,7 +221,7 @@ def _detect_macd_coil(macd_data, cfg):
             hist_flip = True
             flip_direction = 'SHORT'
 
-    # Also check: histogram was near zero and now expanding
+    # Histogram expanding (magnitude growing after near-zero)
     hist_expanding = False
     if n >= 3:
         prev_abs = abs(hist[-2])
@@ -240,10 +256,52 @@ def _detect_macd_coil(macd_data, cfg):
         'flip_direction': flip_direction,
         'dif_current': round(float(dif[-1]), 3),
         'dea_current': round(float(dea[-1]), 3),
+        'coil_high': round(coil_high, 2),
+        'coil_low': round(coil_low, 2),
         'timestamp': str(ts[-1]) if n > 0 else '',
     }
 
-    return is_coiled, coil_bars, n - 1, hist_flip, direction, details
+    return is_coiled, coil_bars, hist_flip, direction, details
+
+
+def _compute_coil_range_15m(df_15m, comp_bars, current_idx):
+    """Compute the 15m compression range (high/low) for Path A."""
+    if comp_bars <= 0 or current_idx < comp_bars:
+        return None, None
+
+    start = max(0, current_idx - comp_bars)
+    h = float(df_15m['High'].iloc[start:current_idx+1].max())
+    l = float(df_15m['Low'].iloc[start:current_idx+1].min())
+    return h, l
+
+
+def _check_entry_trigger(current_close, current_vol, vol_ma20,
+                          coil_high, coil_low, direction, cfg):
+    """Check if entry trigger fires (price breaks out of coil range).
+
+    Returns:
+        (triggered, entry_price, condition_text)
+    """
+    buffer = cfg['SQUEEZE_ENTRY_BUFFER_PCT']
+    vol_mult = cfg['SQUEEZE_BREAKOUT_VOL_MULT']
+
+    vol_confirmed = current_vol >= vol_ma20 * vol_mult if vol_ma20 > 0 else True
+
+    if direction == 'LONG':
+        breakout_level = coil_high * (1 + buffer)
+        if current_close > breakout_level and vol_confirmed:
+            return True, breakout_level, f"enter when 15m closes above ${breakout_level:.2f} (✅ CONFIRMED)"
+        else:
+            return False, breakout_level, f"enter when 15m closes above ${breakout_level:.2f} (⏳ waiting)"
+
+    elif direction == 'SHORT':
+        breakout_level = coil_low * (1 - buffer)
+        if current_close < breakout_level and vol_confirmed:
+            return True, breakout_level, f"enter when 15m closes below ${breakout_level:.2f} (✅ CONFIRMED)"
+        else:
+            return False, breakout_level, f"enter when 15m closes below ${breakout_level:.2f} (⏳ waiting)"
+
+    return False, current_close, "no direction"
 
 
 def _check_cvd_trigger(taker_ratio, pre_taker_avg, cfg):
@@ -263,10 +321,7 @@ def _check_cvd_trigger(taker_ratio, pre_taker_avg, cfg):
 
 
 def _score_quality(path_a, path_b, cfg):
-    """Score squeeze quality based on which paths fired and their strength.
-
-    Returns: (quality, is_strong, factors)
-    """
+    """Score squeeze quality based on which paths fired and their strength."""
     quality = 0.0
     factors = []
     is_strong = False
@@ -274,7 +329,7 @@ def _score_quality(path_a, path_b, cfg):
     a_compressed, a_comp_bars, a_dry, a_doji = path_a
     b_coiled, b_coil_bars, b_hist_flip, b_direction, b_details = path_b
 
-    # ── Path A scoring (15m compression) ──
+    # Path A scoring
     if a_compressed:
         a_score = 0.0
         if a_comp_bars >= 24:
@@ -283,58 +338,40 @@ def _score_quality(path_a, path_b, cfg):
         elif a_comp_bars >= 12:
             a_score += 0.15
             factors.append(f'15m compression: {a_comp_bars} bars')
-
         a_score += min(0.15, a_dry / 12 * 0.15)
         a_score += min(0.10, a_doji / 12 * 0.10)
-
         quality += a_score
-        factors.append(f'15m dry={a_dry} doji={a_doji}')
-    else:
-        # Partial credit if close to threshold
-        if a_comp_bars >= 8:
-            quality += 0.05
-            factors.append(f'15m near-compression: {a_comp_bars} bars (need {cfg["SQUEEZE_COMPRESSION_BARS_MIN"]})')
 
-    # ── Path B scoring (2h MACD coil) ──
+    # Path B scoring
     if b_coiled:
         b_score = 0.0
         coil_hours = b_details.get('coil_hours', 0)
-        max_hours = b_details.get('max_streak_hours', 0)
 
-        # Duration scoring: longer coil = higher quality
-        if coil_hours >= 18:
-            b_score += 0.30
+        if coil_hours >= 24:
+            b_score += 0.35
+            factors.append(f'2h MACD coil: {coil_hours}h (DEEP)')
+        elif coil_hours >= 18:
+            b_score += 0.25
             factors.append(f'2h MACD coil: {coil_hours}h (STRONG)')
         elif coil_hours >= 12:
-            b_score += 0.20
+            b_score += 0.15
             factors.append(f'2h MACD coil: {coil_hours}h')
-        else:
-            b_score += 0.10
-            factors.append(f'2h MACD coil: {coil_hours}h (short)')
 
-        # Max streak bonus (even if current streak is shorter)
-        if max_hours >= 24:
+        if b_details.get('max_streak_hours', 0) >= 24:
             b_score += 0.10
-            factors.append(f'Max coil streak: {max_hours}h (extended)')
+            factors.append(f'Max coil streak: {b_details["max_streak_hours"]}h')
 
-        # Histogram flip bonus
         if b_hist_flip:
             b_score += 0.20
             factors.append(f'2h histogram flip → {b_direction}')
 
-        # Histogram expanding bonus
         if b_details.get('hist_expanding'):
             b_score += 0.10
             factors.append('2h histogram expanding')
 
         quality += b_score
-    else:
-        # Partial credit if some coiling detected
-        if b_coil_bars >= 3:
-            quality += 0.05
-            factors.append(f'2h partial coil: {b_coil_bars} bars (need {cfg["SQUEEZE_COIL_BARS_MIN"]})')
 
-    # ── Dual-path agreement bonus ──
+    # Dual-path agreement bonus
     if a_compressed and b_coiled:
         quality += 0.15
         factors.append('DUAL PATH: 15m + 2h both compressed')
@@ -342,7 +379,6 @@ def _score_quality(path_a, path_b, cfg):
             is_strong = True
             factors.append('STRONG: dual compression + histogram flip')
 
-    # ── Determine strength ──
     if quality >= 0.70:
         is_strong = True
 
@@ -353,18 +389,11 @@ def _score_quality(path_a, path_b, cfg):
 
 def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
                        compression_history=None, df_15m=None):
-    """Dual-path squeeze detection: 15m compression + 2h MACD coiling.
+    """Dual-path squeeze detection with entry trigger system.
 
-    Args:
-        result: scan_signal() output dict
-        config: Optional config overrides
-        last_signal_bar: Bar index of last squeeze signal (cooldown)
-        current_bar: Current bar index
-        compression_history: list of (range48, vol_ratio, bar_range_pct, taker_ratio)
-        df_15m: Full 15m DataFrame for 2h MACD computation
-
-    Returns:
-        dict with squeeze_type, score, direction, paths fired, tp/sl levels
+    Returns dict with:
+        squeeze_type, squeeze_status (PENDING/TRIGGERED/NONE),
+        entry_price, entry_condition, coil_high, coil_low, ...
     """
     cfg = {**SQUEEZE_V5_DEFAULTS, **(config or {})}
 
@@ -377,16 +406,13 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
     atr = result.get('atr', 0)
     range48 = result.get('range_width', 5)
     taker_ratio = result.get('raw_taker_ratio', 0.5)
+    vol = result.get('vol_trend', 1.0)  # current vol / MA20
 
-    # ═══════════════════════════════════════════
-    # PATH A: 15m Compression Detection
-    # ═══════════════════════════════════════════
+    # ── PATH A: 15m Compression ──
     a_compressed, a_comp_bars, a_dry, a_doji = _check_compression(
         range48, compression_history or [], cfg)
 
-    # ═══════════════════════════════════════════
-    # PATH B: 2h MACD Coiling Detection
-    # ═══════════════════════════════════════════
+    # ── PATH B: 2h MACD Coiling ──
     b_coiled = False
     b_coil_bars = 0
     b_hist_flip = False
@@ -396,14 +422,12 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
     if df_15m is not None:
         macd_data = _compute_2h_macd(df_15m, cfg)
         if macd_data is not None:
-            b_coiled, b_coil_bars, _, b_hist_flip, b_direction, b_details = \
+            b_coiled, b_coil_bars, b_hist_flip, b_direction, b_details = \
                 _detect_macd_coil(macd_data, cfg)
 
-    # ═══════════════════════════════════════════
-    # Determine if either path triggered
-    # ═══════════════════════════════════════════
+    # ── Check if either path detected a squeeze ──
     path_a_fired = a_compressed
-    path_b_fired = b_coiled and b_hist_flip  # need both coil + flip
+    path_b_fired = b_coiled  # coil detection only (no hist_flip requirement for detection)
 
     if not path_a_fired and not path_b_fired:
         reasons = []
@@ -411,13 +435,9 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
             reasons.append(f'15m: range48={range48:.2f}% comp={a_comp_bars}')
         if not b_coiled:
             reasons.append(f'2h: coil={b_coil_bars} bars')
-        elif not b_hist_flip:
-            reasons.append(f'2h: coiled {b_coil_bars} bars but no histogram flip')
         return _empty_result('; '.join(reasons))
 
-    # ═══════════════════════════════════════════
-    # CVD Trigger (for Path A)
-    # ═══════════════════════════════════════════
+    # ── CVD Trigger (for Path A) ──
     pre_taker_avg = None
     if compression_history and len(compression_history) >= 4:
         pre_takers = [tr for _, _, _, tr in compression_history[-12:]]
@@ -426,53 +446,121 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
     cvd_triggered, cvd_direction, cvd_type = _check_cvd_trigger(
         taker_ratio, pre_taker_avg, cfg)
 
-    # ═══════════════════════════════════════════
-    # Resolve Direction
-    # ═══════════════════════════════════════════
+    # ── Resolve Direction ──
     direction = 'NEUTRAL'
     trigger_type = 'NONE'
 
-    if path_b_fired:
-        # Path B direction from histogram flip (most reliable)
+    # Path B histogram flip is the strongest signal
+    if path_b_fired and b_hist_flip:
         direction = b_direction
         trigger_type = 'HIST_FLIP'
+    # Path A with CVD confirmation
     elif path_a_fired and cvd_triggered:
-        # Path A direction from CVD
         direction = cvd_direction
         trigger_type = cvd_type
+    # Path B coil without flip — direction from DIF slope
+    elif path_b_fired and b_direction != 'NEUTRAL':
+        direction = b_direction
+        trigger_type = 'COIL_DIR'
 
     if direction == 'NEUTRAL':
         return _empty_result(f'no direction: cvd={cvd_type} hist_flip={b_hist_flip}')
 
-    # ═══════════════════════════════════════════
-    # Score & Levels
-    # ═══════════════════════════════════════════
+    # ── v5.1 Filters (tuned for 70%+ WR) ──
+
+    # Filter 1: Require HIST_FLIP trigger (kills TAKER_SPIKE/COIL_DIR noise)
+    if cfg.get('SQUEEZE_REQUIRE_HIST_FLIP', False) and trigger_type != 'HIST_FLIP':
+        return _empty_result(f'trigger={trigger_type} (need HIST_FLIP)')
+
+    # Filter 2: EMA trend alignment
+    if cfg.get('SQUEEZE_EMA_FILTER', False) and df_15m is not None and len(df_15m) >= 55:
+        close_series = df_15m['Close'] if 'Close' in df_15m.columns else df_15m.iloc[:, 4]
+        ema21 = float(close_series.ewm(span=21, adjust=False).mean().iloc[-1])
+        ema55 = float(close_series.ewm(span=55, adjust=False).mean().iloc[-1])
+        ema_trend = 'BULL' if ema21 > ema55 else 'BEAR'
+
+        aligned = (direction == 'LONG' and ema_trend == 'BULL') or \
+                  (direction == 'SHORT' and ema_trend == 'BEAR')
+        if not aligned:
+            return _empty_result(f'EMA contra: dir={direction} trend={ema_trend}')
+
+    # Filter 3: RSI bounds
+    if cfg.get('SQUEEZE_MIN_RSI') is not None and df_15m is not None and len(df_15m) >= 14:
+        close_series = df_15m['Close'] if 'Close' in df_15m.columns else df_15m.iloc[:, 4]
+        delta = close_series.diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + gain.iloc[-1] / loss.iloc[-1])) if loss.iloc[-1] > 0 else 50
+
+        if direction == 'LONG' and rsi > cfg['SQUEEZE_MAX_RSI']:
+            return _empty_result(f'RSI={rsi:.0f} overbought for LONG')
+        if direction == 'SHORT' and rsi < cfg['SQUEEZE_MIN_RSI']:
+            return _empty_result(f'RSI={rsi:.0f} oversold for SHORT')
+
+    # ── Compute Coil Range (entry levels) ──
+    coil_high = b_details.get('coil_high', price)
+    coil_low = b_details.get('coil_low', price)
+
+    # If Path A also fired, use its range if tighter
+    if path_a_fired and df_15m is not None:
+        a_high, a_low = _compute_coil_range_15m(df_15m, a_comp_bars, len(df_15m) - 1)
+        if a_high is not None and a_low is not None:
+            # Use the tighter of the two ranges
+            if (a_high - a_low) < (coil_high - coil_low):
+                coil_high = a_high
+                coil_low = a_low
+
+    # ── Entry Trigger ──
+    vol_ma20 = result.get('vol_ma20', vol * 20)  # fallback
+    entry_triggered, entry_price, entry_condition = _check_entry_trigger(
+        price, price * vol, vol_ma20 if vol_ma20 > 0 else price,
+        coil_high, coil_low, direction, cfg)
+
+    # ── Squeeze Status ──
+    if entry_triggered:
+        squeeze_status = 'TRIGGERED'
+    else:
+        squeeze_status = 'PENDING'
+
+    # ── Quality Score ──
     quality, is_strong, factors = _score_quality(
         (a_compressed, a_comp_bars, a_dry, a_doji),
         (b_coiled, b_coil_bars, b_hist_flip, b_direction, b_details),
         cfg
     )
 
-    # Add trigger info to factors
     factors.append(f'Trigger: {trigger_type} → {direction}')
     if cvd_triggered and path_b_fired:
         factors.append(f'CVD confirms: {cvd_direction}')
 
-    # Squeeze type
+    # ── Squeeze Type ──
     squeeze_type = 'SHORT_SQUEEZE' if direction == 'LONG' else 'LONG_SQUEEZE'
 
-    # TP/SL
-    tp_pct = cfg['SQUEEZE_TP_PCT']
-    sl_pct = abs(atr * cfg['SQUEEZE_SL_ATR_MULT'] / price * 100) if price > 0 and atr > 0 else 0.5
-    if direction == 'LONG':
-        tp = price * (1 + tp_pct / 100)
-        sl = price * (1 - sl_pct / 100)
+    # ── TP/SL Levels (ATR-based) ──
+    if atr > 0 and price > 0:
+        tp_dist = max(
+            atr * cfg['SQUEEZE_TP_ATR_MULT'],
+            price * cfg['SQUEEZE_TP_MIN_PCT'] / 100
+        )
+        tp_dist = min(tp_dist, price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
+        sl_dist = atr * cfg['SQUEEZE_SL_ATR_MULT']
     else:
-        tp = price * (1 - tp_pct / 100)
-        sl = price * (1 + sl_pct / 100)
+        tp_dist = price * 0.5 / 100  # fallback 0.5%
+        sl_dist = price * 0.2 / 100  # fallback 0.2%
+
+    tp_pct = tp_dist / price * 100
+    sl_pct = sl_dist / price * 100
+
+    if direction == 'LONG':
+        tp = price + tp_dist
+        sl = price - sl_dist
+    else:
+        tp = price - tp_dist
+        sl = price + sl_dist
 
     return {
         'squeeze_type': squeeze_type,
+        'squeeze_status': squeeze_status,
         'squeeze_score': round(quality, 3),
         'squeeze_strong': is_strong,
         'direction': direction,
@@ -485,16 +573,23 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
         'overrides_regime': cfg['SQUEEZE_OVERRIDE_REGIME'],
         'ics_boost': cfg['SQUEEZE_ICS_BOOST'],
         'size_mult': cfg['SQUEEZE_SIZE_MULT'],
+        # Entry trigger
+        'entry_price': round(entry_price, 2),
+        'entry_condition': entry_condition,
+        'entry_triggered': entry_triggered,
+        'coil_high': round(coil_high, 2),
+        'coil_low': round(coil_low, 2),
+        # Levels
         'tp': round(tp, 2),
         'sl': round(sl, 2),
-        'tp_pct': tp_pct,
+        'tp_pct': round(tp_pct, 3),
         'sl_pct': round(sl_pct, 3),
+        # Meta
         'gates_all_pass': True,
         'gates_passed': factors,
         'gates_failed': [],
         'short_score': round(quality, 3) if squeeze_type == 'SHORT_SQUEEZE' else 0,
         'long_score': round(quality, 3) if squeeze_type == 'LONG_SQUEEZE' else 0,
-        # Path details for diagnostics
         'path_a': {
             'fired': path_a_fired,
             'compressed': a_compressed,
@@ -521,11 +616,14 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
 def _empty_result(reason):
     """Return empty squeeze result."""
     return {
-        'squeeze_type': 'NONE', 'squeeze_score': 0, 'squeeze_strong': False,
+        'squeeze_type': 'NONE', 'squeeze_status': 'NONE',
+        'squeeze_score': 0, 'squeeze_strong': False,
         'direction': 'NEUTRAL', 'factors': [], 'quality': 0,
         'compression_bars': 0, 'dry_count': 0, 'doji_count': 0,
         'trigger_type': 'NONE',
         'overrides_regime': False, 'ics_boost': 0, 'size_mult': 1.0,
+        'entry_price': 0, 'entry_condition': '', 'entry_triggered': False,
+        'coil_high': 0, 'coil_low': 0,
         'tp': 0, 'sl': 0, 'tp_pct': 0, 'sl_pct': 0,
         'gates_all_pass': False, 'gates_passed': [], 'gates_failed': [reason],
         'short_score': 0, 'long_score': 0,
@@ -546,13 +644,18 @@ def format_squeeze(sq):
 
     lines = []
     lines.append('')
-    lines.append('  🔥 SQUEEZE DETECTOR v5')
+    lines.append('  🔥 SQUEEZE DETECTOR v5.1')
 
     icons = {'SHORT_SQUEEZE': '🟩', 'LONG_SQUEEZE': '🟥'}
     icon = icons.get(sq['squeeze_type'], '❓')
     strength = 'STRONG' if sq.get('squeeze_strong') else 'CONFIRMED'
 
+    status = sq.get('squeeze_status', 'NONE')
+    status_icons = {'TRIGGERED': '✅', 'PENDING': '⏳'}
+    status_icon = status_icons.get(status, '❓')
+
     lines.append(f'  Type: {icon} {sq["squeeze_type"]}  ({strength})')
+    lines.append(f'  Status: {status_icon} {status}')
     lines.append(f'  Score: {sq["squeeze_score"]:.3f}  '
                  f'Trigger: {sq.get("trigger_type", "?")}')
 
@@ -563,8 +666,6 @@ def format_squeeze(sq):
     if pa.get('fired'):
         lines.append(f'  Path A (15m): ✅ compressed {pa.get("comp_bars", 0)} bars  '
                      f'dry={pa.get("dry", 0)}  doji={pa.get("doji", 0)}')
-    else:
-        lines.append(f'  Path A (15m): ❌ comp={pa.get("comp_bars", 0)} bars')
 
     if pb.get('coiled') or pb.get('fired'):
         coil_h = pb.get('coil_hours', 0)
@@ -574,12 +675,22 @@ def format_squeeze(sq):
                      f'hist={pb.get("hist_value", 0):.3f}  {flip}')
         lines.append(f'    MACD(8,17,9): DIF={pb.get("dif", 0):.3f}  DEA={pb.get("dea", 0):.3f}  '
                      f'Δ={pb.get("delta_pct", 0):.4f}%')
-    else:
-        lines.append(f'  Path B (2h):  ❌ coil={pb.get("coil_bars", 0)} bars')
 
     lines.append(f'  Direction: {sq["direction"]}')
 
-    if sq.get('overrides_regime'):
+    # Coil range + entry
+    coil_h = sq.get('coil_high', 0)
+    coil_l = sq.get('coil_low', 0)
+    if coil_h > 0 and coil_l > 0:
+        lines.append(f'  Coil range: ${coil_l:.2f} - ${coil_h:.2f}  '
+                     f'(width ${(coil_h - coil_l):.2f})')
+
+    entry_cond = sq.get('entry_condition', '')
+    if entry_cond:
+        lines.append(f'  Entry: {entry_cond}')
+        lines.append(f'  Entry price: ${sq.get("entry_price", 0):.2f}')
+
+    if sq.get('overrides_regime') and status == 'TRIGGERED':
         lines.append(f'  ⚡ Overrides M9 regime block!')
 
     if sq.get('factors'):
@@ -588,10 +699,10 @@ def format_squeeze(sq):
             lines.append(f'    ✅ {f}')
 
     if sq.get('tp', 0) > 0:
-        lines.append(f'\n  TP: ${sq["tp"]:.2f} ({sq["tp_pct"]:.1f}%)  '
+        lines.append(f'\n  TP: ${sq["tp"]:.2f} ({sq["tp_pct"]:.2f}%)  '
                      f'SL: ${sq["sl"]:.2f} ({sq["sl_pct"]:.2f}%)')
 
-    if sq.get('ics_boost', 0) > 0:
+    if sq.get('ics_boost', 0) > 0 and status == 'TRIGGERED':
         lines.append(f'  ICS boost: +{sq["ics_boost"]:.4f}')
 
     return '\n'.join(lines)
