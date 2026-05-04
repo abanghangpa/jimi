@@ -637,6 +637,27 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         else:
             squeeze_filters['quality_high'] = True
 
+        # Filter 5: ATR floor — skip signals when vol is too low for a real move
+        if cfg.get('SQUEEZE_CONFIRM_ATR_FLOOR', True):
+            _atr_now = float(df_15m['atr'].iloc[-1]) if 'atr' in df_15m.columns and not pd.isna(df_15m['atr'].iloc[-1]) else 0
+            _atr_hard_floor = cfg.get('SQUEEZE_MIN_ATR', 12.0)
+            # Rolling percentile floor
+            _atr_lookback = cfg.get('SQUEEZE_ATR_LOOKBACK', 8640)
+            _atr_pctile = cfg.get('SQUEEZE_ATR_FLOOR_PCTILE', 25)
+            _atr_series = df_15m['atr'].dropna()
+            if len(_atr_series) > 100:
+                _atr_window = _atr_series.iloc[-min(len(_atr_series), _atr_lookback):]
+                _atr_threshold = float(np.percentile(_atr_window, _atr_pctile))
+            else:
+                _atr_threshold = _atr_hard_floor
+            # Use the higher of hard floor and percentile floor
+            _atr_effective = max(_atr_hard_floor, _atr_threshold)
+            squeeze_filters['atr_floor'] = _atr_now >= _atr_effective
+            squeeze_filters['_atr_value'] = round(_atr_now, 2)
+            squeeze_filters['_atr_threshold'] = round(_atr_effective, 2)
+        else:
+            squeeze_filters['atr_floor'] = True
+
         squeeze_confirmed = all(squeeze_filters.values())
 
     result['squeeze_filters'] = squeeze_filters
@@ -1452,6 +1473,9 @@ def print_signal(result):
             print(f"    CVD agrees:   {icons.get(sq_filters.get('cvd_agrees'), '?')}")
             print(f"    RSI ok:       {icons.get(sq_filters.get('rsi_ok'), '?')}")
             print(f"    Quality ≥0.5: {icons.get(sq_filters.get('quality_high'), '?')}")
+            _atr_val = sq_filters.get('_atr_value', '?')
+            _atr_thr = sq_filters.get('_atr_threshold', '?')
+            print(f"    ATR floor:    {icons.get(sq_filters.get('atr_floor'), '?')}  (ATR=${_atr_val} vs floor=${_atr_thr})")
             if sq_confirmed:
                 print(f"    → ✅ CONFIRMED (backtested 84.6% WR on 4h)")
             else:
@@ -1575,8 +1599,9 @@ def print_summary(result):
         sq_confirmed = result.get('squeeze_confirmed', False)
         sq_filters = result.get('squeeze_filters', {})
         if sq_filters:
-            n_pass = sum(sq_filters.values())
-            conf_label = f"✅ CONFIRMED ({n_pass}/4)" if sq_confirmed else f"❌ ({n_pass}/4)"
+            n_pass = sum(1 for k, v in sq_filters.items() if v is True)
+            n_total = sum(1 for k in sq_filters if not k.startswith('_'))
+            conf_label = f"✅ CONFIRMED ({n_pass}/{n_total})" if sq_confirmed else f"❌ ({n_pass}/{n_total})"
             print(f"  {'  Confirmation':<22} {conf_label}")
         if result.get('squeeze_override'):
             print(f"  {'⚡ Regime Override':<22} {'ACTIVE':>10}")

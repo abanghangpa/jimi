@@ -449,11 +449,18 @@ SQUEEZE_ENTRY_EXPIRY_BARS: 32        # entry expires after 8h
 SQUEEZE_BREAKOUT_VOL_MULT: 1.0       # volume confirmation on breakout bar
 
 # 4-filter confirmation gate (backtested: 84.6% WR on 4h, 13 signals)
-# ALL 4 must pass for squeeze to be considered "confirmed"
+# ALL must pass for squeeze to be considered "confirmed"
 SQUEEZE_CONFIRM_EMA: true            # require EMA21/55 trend alignment
 SQUEEZE_CONFIRM_CVD: true            # require no CVD divergence against direction
 SQUEEZE_CONFIRM_RSI: true            # require RSI not extreme against direction
 SQUEEZE_CONFIRM_QUALITY: true        # require quality score >= 0.5
+SQUEEZE_CONFIRM_ATR_FLOOR: true      # require ATR above rolling percentile floor
+
+# ATR floor filter (backtest: ATR is #1 predictor of $25+ moves)
+# Skip squeeze signals when ATR is too low — low-vol squeezes can't produce big moves
+SQUEEZE_MIN_ATR: 12.0                # hard floor: skip if ATR(14) < $12
+SQUEEZE_ATR_FLOOR_PCTILE: 25         # rolling percentile floor: ATR must be >25th pctile of last N bars
+SQUEEZE_ATR_LOOKBACK: 8640           # lookback for percentile (8640 x 15m = 90 days)
 
 # Exit levels
 SQUEEZE_TP_ATR_MULT: 2.0
