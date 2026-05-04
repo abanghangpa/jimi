@@ -51,7 +51,7 @@ from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_ex
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
-from src.modules.m18_squeeze import detect_squeeze_v3 as detect_squeeze, format_squeeze
+from src.modules.m18_squeeze import detect_squeeze_v4 as detect_squeeze, format_squeeze
 
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
@@ -573,9 +573,26 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     result['squeeze_quality'] = (rw_score * 0.30 + vr_score * 0.25 +
                                   oip_score * 0.25 + vd_score * 0.20)
 
+    # Build compression history for squeeze detector (last 48 bars)
+    compression_history = []
+    if idx >= 48:
+        for i in range(max(0, idx - 47), idx):
+            r48_h = float(df_15m['High'].iloc[max(0, i-47):i+1].max())
+            r48_l = float(df_15m['Low'].iloc[max(0, i-47):i+1].min())
+            r48_pct = (r48_h - r48_l) / float(df_15m['Close'].iloc[i]) * 100 if float(df_15m['Close'].iloc[i]) > 0 else 5.0
+            vr = float(df_15m['Volume'].iloc[i] / df_15m['vol_ma20'].iloc[i]) if 'vol_ma20' in df_15m.columns and float(df_15m['vol_ma20'].iloc[i]) > 0 else 1.0
+            br = (float(df_15m['High'].iloc[i]) - float(df_15m['Low'].iloc[i])) / float(df_15m['Close'].iloc[i]) * 100 if float(df_15m['Close'].iloc[i]) > 0 else 0.5
+            tr_val = float(df_15m['Taker buy base asset volume'].iloc[i]) / float(df_15m['Volume'].iloc[i]) if float(df_15m['Volume'].iloc[i]) > 0 else 0.5
+            compression_history.append((r48_pct, vr, br, tr_val))
+
+    # Pass raw taker_ratio and bar_range to result for squeeze detector
+    result['raw_taker_ratio'] = taker_ratio
+    result['raw_bar_range_pct'] = bar_range
+
     squeeze_result = detect_squeeze(result, config=cfg,
                                      last_signal_bar=result.get('_last_squeeze_bar', -1),
-                                     current_bar=idx)
+                                     current_bar=idx,
+                                     compression_history=compression_history)
     result['squeeze'] = squeeze_result
     if squeeze_result['squeeze_type'] != 'NONE':
         result['_last_squeeze_bar'] = idx
