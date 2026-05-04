@@ -442,12 +442,11 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         df_15m_for_m9, df_1h, idx_15m_for_m9, idx_1h, regime_state=regime_state, config=cfg)
     result['m9'] = {'regime': vol_regime, 'raw': round(float(m9_raw), 3) if m9_raw else None}
 
-    # Hard block on CRISIS
+    # Regime block — record but don't early-return (all modules still score)
     block_regimes = cfg.get('M9_BLOCK_REGIMES', ['CRISIS'])
-    if vol_regime in block_regimes:
-        result['status'] = 'NO_SIGNAL'
-        result['reason'] = f'M9 regime={vol_regime} (blocked)'
-        return result
+    regime_blocked = vol_regime in block_regimes
+    if regime_blocked:
+        result['regime_blocked'] = True
 
     # ── Phase 2: M13 Structural Bias ──
     m13_status, m13_score_raw, m13_details = score_m13(df_1h, idx_1h, 'NEUTRAL', df_15m_for_m9, idx_15m_for_m9)
@@ -545,7 +544,19 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     except Exception:
         pass
 
-    # Liquidity levels & conflict — need direction, use resolved or NEUTRAL
+    # When regime blocks direction, force LONG so all modules score for display
+    if direction == 'NEUTRAL' and result.get('regime_blocked'):
+        direction = 'LONG'
+        dir_details['reason'] = f"regime={vol_regime} blocked — scoring LONG for display"
+
+    result['direction'] = direction
+    result['direction_resolver'] = {
+        'direction': direction, 'size_mult': round(float(dir_size_mult), 3),
+        'action': dir_details.get('action', '?'),
+        'reason': dir_details.get('reason', '?'),
+    }
+
+    # Liquidity levels & conflict — need direction
     _liq_direction = direction if direction != 'NEUTRAL' else None
     if _liq_direction:
         try:
@@ -566,18 +577,6 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
                     result['conflict'] = conflict
             except Exception:
                 pass
-
-    result['direction'] = direction
-    result['direction_resolver'] = {
-        'direction': direction, 'size_mult': round(float(dir_size_mult), 3),
-        'action': dir_details.get('action', '?'),
-        'reason': dir_details.get('reason', '?'),
-    }
-
-    if direction == 'NEUTRAL':
-        result['status'] = 'NO_SIGNAL'
-        result['reason'] = dir_details.get('reason', 'No direction resolved')
-        return result
 
     # Re-score M9, M7, M13 with actual direction
     m9_status, m9_score, m9_details = score_vol_regime(vol_regime, m9_raw, direction, trend_dir)
@@ -938,6 +937,12 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     if not sweep_passed:
         result['status'] = 'NO_SIGNAL'
         result['reason'] = sweep_reason
+        return result
+
+    # ── Regime block override (all modules scored, but regime kills the signal) ──
+    if result.get('regime_blocked'):
+        result['status'] = 'NO_SIGNAL'
+        result['reason'] = f'M9 regime={vol_regime} (blocked)'
         return result
 
     # ── SIGNAL: set levels ──
