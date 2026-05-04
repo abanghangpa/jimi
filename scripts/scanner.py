@@ -51,7 +51,7 @@ from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_ex
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
-from src.modules.m18_squeeze import detect_squeeze_v4 as detect_squeeze, format_squeeze
+from src.modules.m18_squeeze import detect_squeeze_v5 as detect_squeeze, format_squeeze
 
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
@@ -592,7 +592,8 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     squeeze_result = detect_squeeze(result, config=cfg,
                                      last_signal_bar=result.get('_last_squeeze_bar', -1),
                                      current_bar=idx,
-                                     compression_history=compression_history)
+                                     compression_history=compression_history,
+                                     df_15m=df_15m)
     result['squeeze'] = squeeze_result
     if squeeze_result['squeeze_type'] != 'NONE':
         result['_last_squeeze_bar'] = idx
