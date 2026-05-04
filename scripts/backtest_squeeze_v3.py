@@ -94,7 +94,7 @@ for idx in range(MIN_BARS, len(df)):
     bre = float(df["bar_range_expansion"].iloc[idx]) if not pd.isna(df["bar_range_expansion"].iloc[idx]) else 1.0
     bte = bool(df["bar_taker_extreme"].iloc[idx]) if not pd.isna(df["bar_taker_extreme"].iloc[idx]) else False
 
-    # M4b intrabar CVD divergence
+    # M4b intrabar CVD divergence (forward scan — keep last/most recent)
     m4b_div = "NONE"
     m4b_ago = 99
     for ci in range(max(0, idx - 24), idx + 1):
@@ -102,7 +102,6 @@ for idx in range(MIN_BARS, len(df)):
         if div != "NONE":
             m4b_div = div
             m4b_ago = idx - ci
-            break
 
     # Compute squeeze quality (same formula as scanner)
     rw_score = max(0, min(1, 1 - (rw - 1.5) / 4.0))
