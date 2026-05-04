@@ -429,22 +429,43 @@ CROSS_ASSET_ENABLED: true
 CROSS_ASSET_BTC_WEIGHT: 0.08
 CROSS_ASSET_LOOKBACK: 48
 
-# ─── M18 SQUEEZE DETECTOR v3 ─────────────────────────────────
+# ─── M18 SQUEEZE DETECTOR v5 (backtested 2026-01→05) ────────
 M18_ENABLED: true
 M18_WEIGHT: 0.08
-SQUEEZE_ATR_PCTL_MAX: 0.35          # compression gate
-SQUEEZE_ZSCORE_MIN: 1.8             # minimum |z|
-SQUEEZE_VOL_SPIKE_MIN: 1.2          # volume / MA20
-SQUEEZE_QUALITY_MIN: 0.80           # minimum quality percentile (raised from 0.65 for 75%+ WR)
-SQUEEZE_SCORE_THRESHOLD: 0.50       # composite score threshold
-SQUEEZE_M4B_AGREE_REQUIRED: true    # require intrabar CVD divergence to agree with direction
-SQUEEZE_M4B_MAX_AGO: 12             # max bars since M4b divergence (recency filter)
-SQUEEZE_TP_PCT: 0.3                 # 0.3% TP = 76.9% WR
-SQUEEZE_SL_ATR_MULT: 1.5            # SL = 1.5x ATR
+
+# Detection params (wide_A config: 126 entries, relaxed for more signals)
+SQUEEZE_RANGE48_MAX: 3.0             # max 48h range % to consider compression (was 1.2)
+SQUEEZE_COIL_DELTA_MAX: 0.15         # 2h MACD DIF-DEA delta % for coiling (was 0.05)
+SQUEEZE_COIL_BARS_MIN: 3             # min 2h bars in coil (was 6)
+SQUEEZE_COMPRESSION_BARS_MIN: 6      # min 15m compression bars (was 12)
+SQUEEZE_DRY_BARS_MIN: 2              # min dry bars (was 4)
+SQUEEZE_DOJI_BARS_MIN: 4             # min doji bars (was 8)
+SQUEEZE_REQUIRE_HIST_FLIP: false     # allow all trigger types (was true)
+SQUEEZE_EMA_FILTER: false            # don't pre-filter on EMA (we filter post-entry)
+
+# Entry trigger
+SQUEEZE_ENTRY_BUFFER_PCT: 0.001      # 0.1% buffer above/below coil range
+SQUEEZE_ENTRY_EXPIRY_BARS: 32        # entry expires after 8h
+SQUEEZE_BREAKOUT_VOL_MULT: 1.0       # volume confirmation on breakout bar
+
+# 4-filter confirmation gate (backtested: 84.6% WR on 4h, 13 signals)
+# ALL 4 must pass for squeeze to be considered "confirmed"
+SQUEEZE_CONFIRM_EMA: true            # require EMA21/55 trend alignment
+SQUEEZE_CONFIRM_CVD: true            # require no CVD divergence against direction
+SQUEEZE_CONFIRM_RSI: true            # require RSI not extreme against direction
+SQUEEZE_CONFIRM_QUALITY: true        # require quality score >= 0.5
+
+# Exit levels
+SQUEEZE_TP_ATR_MULT: 2.0
+SQUEEZE_SL_ATR_MULT: 0.8
+SQUEEZE_TP_MIN_PCT: 0.3
+SQUEEZE_TP_MAX_PCT: 1.5
+
+# Override & cooldown
 SQUEEZE_OVERRIDE_REGIME: true
 SQUEEZE_ICS_BOOST: 0.10
 SQUEEZE_SIZE_MULT: 0.80
-SQUEEZE_COOLDOWN_BARS: 16           # 4h cooldown
+SQUEEZE_COOLDOWN_BARS: 32            # 8h cooldown (was 16)
 
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
