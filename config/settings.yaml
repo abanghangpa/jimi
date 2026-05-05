@@ -465,10 +465,10 @@ SQUEEZE_ATR_FLOOR_PCTILE: 15         # rolling percentile floor: ATR must be >15
 SQUEEZE_ATR_LOOKBACK: 8640           # lookback for percentile (8640 x 15m = 90 days)
 
 # Exit levels
-SQUEEZE_TP_ATR_MULT: 2.0
-SQUEEZE_SL_ATR_MULT: 0.8
+SQUEEZE_TP_ATR_MULT: 2.5
+SQUEEZE_SL_ATR_MULT: 1.0
 SQUEEZE_TP_MIN_PCT: 0.3
-SQUEEZE_TP_MAX_PCT: 1.5
+SQUEEZE_TP_MAX_PCT: 2.0
 
 # Override & cooldown
 SQUEEZE_OVERRIDE_REGIME: true

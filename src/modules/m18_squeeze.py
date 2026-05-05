@@ -54,10 +54,10 @@ SQUEEZE_V5_DEFAULTS = {
     'SQUEEZE_COIL_HOURS_MIN': 12,       # skip squeezes with coil < 12h (backtest: <18h = 32% WR)
 
     # ── Exit levels ──
-    'SQUEEZE_TP_ATR_MULT': 2.0,         # TP = 2x ATR from entry
-    'SQUEEZE_SL_ATR_MULT': 0.8,         # SL = 0.8x ATR (tighter than v4)
+    'SQUEEZE_TP_ATR_MULT': 2.5,         # TP = 2.5x ATR from entry
+    'SQUEEZE_SL_ATR_MULT': 1.0,         # SL = 1.0x ATR (data-driven: 0.8x too tight)
     'SQUEEZE_TP_MIN_PCT': 0.3,          # minimum TP distance
-    'SQUEEZE_TP_MAX_PCT': 1.5,          # maximum TP distance
+    'SQUEEZE_TP_MAX_PCT': 2.0,          # maximum TP distance
 
     # ── Override ──
     'SQUEEZE_OVERRIDE_REGIME': True,
@@ -659,7 +659,7 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
     coil_low = b_details.get('coil_low', 0)
     if coil_high > 0 and coil_low > 0:
         coil_width = abs(coil_high - coil_low)
-        measured_move_floor = coil_width * 0.7
+        measured_move_floor = coil_width * 0.3
         if tp_dist < measured_move_floor:
             tp_dist = measured_move_floor
 
