@@ -1526,6 +1526,11 @@ def print_signal(result):
                 print(f"    → ❌ NOT CONFIRMED — regime override & ICS boost skipped")
         if result.get('squeeze_override'):
             print(f"\n  ⚡ SQUEEZE OVERRIDE: regime block lifted!")
+    else:
+        # Always show squeeze status even when no active squeeze
+        sq_gates = sq.get('gates_failed', []) if sq else []
+        sq_reason = sq_gates[0] if sq_gates else 'no detection'
+        print(f"\n  🔥 Squeeze: ⚪ NONE  ({sq_reason})")
 
     # Breakout Confirmation (M19)
     bc = result.get('breakout_confirm')
@@ -1658,6 +1663,10 @@ def print_summary(result):
             print(f"  {'  Confirmation':<22} {conf_label}")
         if result.get('squeeze_override'):
             print(f"  {'⚡ Regime Override':<22} {'ACTIVE':>10}")
+    else:
+        sq_gates = sq.get('gates_failed', []) if sq else []
+        sq_reason = sq_gates[0] if sq_gates else 'no detection'
+        print(f"  {'M18 Squeeze':<22} {'NONE':>10}  —  ({sq_reason})")
 
     # Breakout Confirmation summary
     bc = result.get('breakout_confirm')
