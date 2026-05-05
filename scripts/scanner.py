@@ -489,6 +489,21 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         current_price, magnets, gaps, sr_levels, 'SHORT', atr_1h=atr_1h_val)
 
     # ── Phase 3: Resolve Direction (now with target awareness) ──
+    # Compute nearest_liq_direction from unswept magnets
+    nearest_liq_dir = None
+    if magnets:
+        above = [(p, s) for p, v, s in magnets if p > float(row['Close'])]
+        below = [(p, s) for p, v, s in magnets if p < float(row['Close'])]
+        if above and below:
+            nearest_above_dist = min(above, key=lambda x: x[0] - float(row['Close']))
+            nearest_below_dist = min(below, key=lambda x: float(row['Close']) - x[0])
+            above_dist = nearest_above_dist[0] - float(row['Close'])
+            below_dist = float(row['Close']) - nearest_below_dist[0]
+            if above_dist < below_dist * 0.7:
+                nearest_liq_dir = 'LONG'  # closer liquidity above → go long to grab it
+            elif below_dist < above_dist * 0.7:
+                nearest_liq_dir = 'SHORT'  # closer liquidity below → go short to grab it
+
     direction, dir_size_mult, dir_details = resolve_direction(
         vol_regime, m9_raw if m9_raw else 0.5,
         m13_bias, m13_score_raw, m13_details,
@@ -496,6 +511,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
         long_target_score=long_tgt_score, short_target_score=short_tgt_score,
         long_target_details=long_tgt_details, short_target_details=short_tgt_details,
+        nearest_liq_direction=nearest_liq_dir,
     )
     # ── Gather market data (always, regardless of signal status) ──
     swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5])
@@ -593,7 +609,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
                                      last_signal_bar=result.get('_last_squeeze_bar', -1),
                                      current_bar=idx,
                                      compression_history=compression_history,
-                                     df_15m=df_15m)
+                                     df_15m=df_15m,
+                                     magnets=magnets,
+                                     sr_levels=sr_levels)
     result['squeeze'] = squeeze_result
     if squeeze_result['squeeze_status'] == 'TRIGGERED':
         result['_last_squeeze_bar'] = idx
@@ -640,10 +658,10 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         # Filter 5: ATR floor — skip signals when vol is too low for a real move
         if cfg.get('SQUEEZE_CONFIRM_ATR_FLOOR', True):
             _atr_now = float(df_15m['atr'].iloc[-1]) if 'atr' in df_15m.columns and not pd.isna(df_15m['atr'].iloc[-1]) else 0
-            _atr_hard_floor = cfg.get('SQUEEZE_MIN_ATR', 12.0)
+            _atr_hard_floor = cfg.get('SQUEEZE_MIN_ATR', 5.0)
             # Rolling percentile floor
             _atr_lookback = cfg.get('SQUEEZE_ATR_LOOKBACK', 8640)
-            _atr_pctile = cfg.get('SQUEEZE_ATR_FLOOR_PCTILE', 25)
+            _atr_pctile = cfg.get('SQUEEZE_ATR_FLOOR_PCTILE', 15)
             _atr_series = df_15m['atr'].dropna()
             if len(_atr_series) > 100:
                 _atr_window = _atr_series.iloc[-min(len(_atr_series), _atr_lookback):]
@@ -887,7 +905,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     if cfg.get('M14_ENABLED', True):
         _swing_levels = m13_details.get('swing_lows', []) if direction == 'LONG' else m13_details.get('swing_highs', [])
         if _swing_levels:
-            m14_status, m14_score, _ = score_m14(df_15m, idx, direction, _swing_levels, config=cfg)
+            m14_status, m14_score, _ = score_m14(df_15m, idx, direction, _swing_levels, config=cfg, magnets=magnets)
             result['m14'] = {'status': m14_status, 'score': round(float(m14_score), 3)}
 
     # M17 (resistance quality) — validate nearest S/R level

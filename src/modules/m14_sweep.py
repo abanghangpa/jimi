@@ -233,7 +233,7 @@ def _check_reclaim_after_sweep(df_15m, idx, direction, sweep_details,
 # MAIN SCORING FUNCTION
 # ═══════════════════════════════════════════════════════════════
 
-def score_m14(df_15m, idx, direction, swing_levels, config=None):
+def score_m14(df_15m, idx, direction, swing_levels, config=None, magnets=None):
     """
     Score M14: Sweep-Retest-Reclaim.
 
@@ -266,7 +266,20 @@ def score_m14(df_15m, idx, direction, swing_levels, config=None):
     )
 
     if not sweep_found:
-        # No sweep — neutral, don't penalize
+        # No sweep — check if price is approaching nearest unswept liquidity
+        # (within 0.5% of a magnet in trade direction)
+        approach_score = None
+        if magnets:
+            current_price = float(df_15m['Close'].iloc[idx])
+            for mag_price, mag_vol, mag_strength in magnets:
+                dist_pct = abs(mag_price - current_price) / current_price
+                if dist_pct < 0.005:  # within 0.5%
+                    if (direction == 'LONG' and mag_price > current_price) or \
+                       (direction == 'SHORT' and mag_price < current_price):
+                        approach_score = 0.45  # slightly below neutral — approaching
+                        break
+        if approach_score is not None:
+            return 'FAIL', approach_score, {'reason': 'approaching_liquidity', 'note': 'price near unswept level — watch for sweep'}
         return 'SKIP', cfg['M14_NO_SWEEP_SCORE'], {'reason': 'no_sweep_detected'}
 
     # Step 2: Check for reclaim

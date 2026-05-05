@@ -173,7 +173,8 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
                       swing_bias_1d=None, trend_dir=None,
                       config=None,
                       long_target_score=None, short_target_score=None,
-                      long_target_details=None, short_target_details=None):
+                      long_target_details=None, short_target_details=None,
+                      nearest_liq_direction=None):
     """
     Resolve unified direction and sizing from regime + structure + macro.
 
@@ -338,6 +339,23 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
             size_mult = min(size_mult * 1.10, 1.0)
             details['trend_agree_bonus'] = 1.10
 
+    # ── Phase 2e: Nearest Liquidity Tiebreaker ──
+    # When conflict is detected and nearest unswept liquidity has a clear direction,
+    # use it to resolve ambiguity. The analysis shows squeeze direction matches
+    # nearest liquidity 100% of the time.
+    if nearest_liq_direction is not None and nearest_liq_direction in ('LONG', 'SHORT'):
+        has_conflict = details.get('daily_conflict_penalty') or details.get('m7_conflict_penalty')
+        if has_conflict and direction != nearest_liq_direction:
+            # Liquidity disagrees with current direction — flip and penalize
+            details['liq_tiebreaker'] = f'Nearest liquidity {nearest_liq_direction} overrides {direction}'
+            direction = nearest_liq_direction
+            size_mult *= 0.85
+            details['liq_tiebreaker_penalty'] = 0.85
+        elif direction == nearest_liq_direction:
+            # Liquidity confirms — slight boost
+            size_mult = min(size_mult * 1.05, 1.0)
+            details['liq_tiebreaker_bonus'] = 1.05
+
     # ── Phase 3: Regime-Specific Adjustments ──
     if regime == 'TRENDING':
         # In trending regime, structure alignment is critical
@@ -395,6 +413,11 @@ def format_direction_summary(direction, size_mult, details):
         lines.append(f"  Daily Swing: {details['daily_swing']}")
     if 'trend_dir' in details:
         lines.append(f"  Trend: {details['trend_dir']}")
+
+    if 'target_tiebreaker' in details:
+        lines.append(f"    🎯 Target tiebreaker: {details['target_tiebreaker']}")
+    if 'liq_tiebreaker' in details:
+        lines.append(f"    💧 {details['liq_tiebreaker']}")
 
     lines.append(f"  → Direction: {direction} | Size: {size_mult:.2f} | {action}")
 

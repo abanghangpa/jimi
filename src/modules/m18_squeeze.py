@@ -388,7 +388,8 @@ def _score_quality(path_a, path_b, cfg):
 
 
 def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
-                       compression_history=None, df_15m=None):
+                       compression_history=None, df_15m=None,
+                       magnets=None, liq_levels=None, sr_levels=None):
     """Dual-path squeeze detection with entry trigger system.
 
     Returns dict with:
@@ -536,17 +537,69 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
     # ── Squeeze Type ──
     squeeze_type = 'SHORT_SQUEEZE' if direction == 'LONG' else 'LONG_SQUEEZE'
 
-    # ── TP/SL Levels (ATR-based) ──
-    if atr > 0 and price > 0:
-        tp_dist = max(
-            atr * cfg['SQUEEZE_TP_ATR_MULT'],
-            price * cfg['SQUEEZE_TP_MIN_PCT'] / 100
-        )
-        tp_dist = min(tp_dist, price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
-        sl_dist = atr * cfg['SQUEEZE_SL_ATR_MULT']
+    # ── Extract coil hours for TP scaling ──
+    coil_hours = b_details.get('coil_hours', 0)
+
+    # ── TP/SL Levels (liquidity-aware with ATR fallback) ──
+    tp1_source = 'ATR'
+    if magnets is not None and liq_levels is not None:
+        # Use liquidity-aware calc_trade_levels from src.sl_tp
+        try:
+            from src.sl_tp import calc_trade_levels
+            vol_ratio = result.get('vol_ratio', 1.0)
+            _liq_for_tp = liq_levels if isinstance(liq_levels, dict) else None
+            _levels = calc_trade_levels(
+                price, direction, atr, vol_ratio,
+                magnets=magnets,
+                sr_levels=sr_levels or [],
+                liq_levels=_liq_for_tp,
+                cfg=cfg,
+            )
+            # Use liquidity TP only if it found an unswept pool (not ATR fallback)
+            if _levels.get('tp1_source') == 'UNSWEPT_POOL':
+                tp_dist = abs(_levels['tp1'] - price)
+                sl_dist = abs(price - _levels['sl'])
+                tp1_source = 'UNSWEPT_POOL'
+            else:
+                # ATR fallback from calc_trade_levels or raw ATR
+                raise ValueError('ATR fallback')
+        except Exception:
+            # Fall back to raw ATR
+            if atr > 0 and price > 0:
+                tp_dist = max(
+                    atr * cfg['SQUEEZE_TP_ATR_MULT'],
+                    price * cfg['SQUEEZE_TP_MIN_PCT'] / 100
+                )
+                tp_dist = min(tp_dist, price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
+                sl_dist = atr * cfg['SQUEEZE_SL_ATR_MULT']
+            else:
+                tp_dist = price * 0.5 / 100
+                sl_dist = price * 0.2 / 100
     else:
-        tp_dist = price * 0.5 / 100  # fallback 0.5%
-        sl_dist = price * 0.2 / 100  # fallback 0.2%
+        if atr > 0 and price > 0:
+            tp_dist = max(
+                atr * cfg['SQUEEZE_TP_ATR_MULT'],
+                price * cfg['SQUEEZE_TP_MIN_PCT'] / 100
+            )
+            tp_dist = min(tp_dist, price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
+            sl_dist = atr * cfg['SQUEEZE_SL_ATR_MULT']
+        else:
+            tp_dist = price * 0.5 / 100
+            sl_dist = price * 0.2 / 100
+
+    # ── Scale TP by coil duration (long coils have further targets) ──
+    if coil_hours >= 18:
+        tp_duration_mult = 1.0 + min((coil_hours - 18) / 36, 1.0)  # up to 2x for 54h+ coils
+    elif coil_hours >= 12:
+        tp_duration_mult = 1.0 + (coil_hours - 12) / 18 * 0.3  # 1.0-1.3x
+    else:
+        tp_duration_mult = 1.0
+
+    tp_dist *= tp_duration_mult
+
+    # Clamp TP distance
+    if price > 0:
+        tp_dist = min(tp_dist, price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
 
     tp_pct = tp_dist / price * 100
     sl_pct = sl_dist / price * 100
@@ -584,6 +637,9 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
         'sl': round(sl, 2),
         'tp_pct': round(tp_pct, 3),
         'sl_pct': round(sl_pct, 3),
+        'tp1_source': tp1_source,
+        'tp_duration_mult': round(tp_duration_mult, 3),
+        'coil_hours': coil_hours,
         # Meta
         'gates_all_pass': True,
         'gates_passed': factors,
@@ -625,6 +681,7 @@ def _empty_result(reason):
         'entry_price': 0, 'entry_condition': '', 'entry_triggered': False,
         'coil_high': 0, 'coil_low': 0,
         'tp': 0, 'sl': 0, 'tp_pct': 0, 'sl_pct': 0,
+        'tp1_source': 'ATR', 'tp_duration_mult': 1.0, 'coil_hours': 0,
         'gates_all_pass': False, 'gates_passed': [], 'gates_failed': [reason],
         'short_score': 0, 'long_score': 0,
         'path_a': {'fired': False}, 'path_b': {'fired': False},
@@ -699,7 +756,11 @@ def format_squeeze(sq):
             lines.append(f'    ✅ {f}')
 
     if sq.get('tp', 0) > 0:
-        lines.append(f'\n  TP: ${sq["tp"]:.2f} ({sq["tp_pct"]:.2f}%)  '
+        tp_src = sq.get('tp1_source', 'ATR')
+        dur_mult = sq.get('tp_duration_mult', 1.0)
+        coil_h = sq.get('coil_hours', 0)
+        dur_note = f'  coil={coil_h}h dur_mult={dur_mult:.2f}' if dur_mult > 1.0 else ''
+        lines.append(f'\n  TP: ${sq["tp"]:.2f} ({sq["tp_pct"]:.2f}%)  [{tp_src}]{dur_note}  '
                      f'SL: ${sq["sl"]:.2f} ({sq["sl_pct"]:.2f}%)')
 
     if sq.get('ics_boost', 0) > 0 and status == 'TRIGGERED':
