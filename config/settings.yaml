@@ -447,6 +447,8 @@ SQUEEZE_EMA_FILTER: false            # don't pre-filter on EMA (we filter post-e
 SQUEEZE_ENTRY_BUFFER_PCT: 0.001      # 0.1% buffer above/below coil range
 SQUEEZE_ENTRY_EXPIRY_BARS: 32        # entry expires after 8h
 SQUEEZE_BREAKOUT_VOL_MULT: 1.0       # volume confirmation on breakout bar
+SQUEEZE_ENTRY_MODE: TWO_BAR          # TWO_BAR (2 consecutive closes) or BASELINE (single close)
+SQUEEZE_COIL_HOURS_MIN: 12           # skip squeezes with coil < 12h
 
 # 4-filter confirmation gate (backtested: 84.6% WR on 4h, 13 signals)
 # ALL must pass for squeeze to be considered "confirmed"

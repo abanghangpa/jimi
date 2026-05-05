@@ -50,6 +50,8 @@ SQUEEZE_V5_DEFAULTS = {
     'SQUEEZE_ENTRY_BUFFER_PCT': 0.001,  # 0.1% buffer above/below coil range
     'SQUEEZE_ENTRY_EXPIRY_BARS': 32,    # entry expires after 8h (32 x 15m)
     'SQUEEZE_BREAKOUT_VOL_MULT': 1.0,   # volume confirmation on breakout bar
+    'SQUEEZE_ENTRY_MODE': 'TWO_BAR',    # 'BASELINE' (single close) or 'TWO_BAR' (2 consecutive)
+    'SQUEEZE_COIL_HOURS_MIN': 12,       # skip squeezes with coil < 12h (backtest: <18h = 32% WR)
 
     # ── Exit levels ──
     'SQUEEZE_TP_ATR_MULT': 2.0,         # TP = 2x ATR from entry
@@ -304,6 +306,39 @@ def _check_entry_trigger(current_close, current_vol, vol_ma20,
     return False, current_close, "no direction"
 
 
+def _check_two_bar_trigger(prev_close, current_close, current_vol, vol_ma20,
+                            coil_high, coil_low, direction, cfg):
+    """Check if 2-bar confirmation trigger fires (2 consecutive closes beyond coil).
+
+    Backtest results show this is the most consistent entry approach:
+      - 2026: 43.5% WR, +0.152% expectancy (best at higher TP)
+      - 2025: 30.0% WR, -0.050% expectancy (best across all approaches)
+    """
+    buffer = cfg['SQUEEZE_ENTRY_BUFFER_PCT']
+    vol_mult = cfg['SQUEEZE_BREAKOUT_VOL_MULT']
+    vol_confirmed = current_vol >= vol_ma20 * vol_mult if vol_ma20 > 0 else True
+
+    if direction == 'LONG':
+        breakout_level = coil_high * (1 + buffer)
+        if current_close > breakout_level and prev_close > breakout_level:
+            return True, breakout_level, f"2-bar close above ${breakout_level:.2f} (✅ CONFIRMED)"
+        elif current_close > breakout_level:
+            return False, breakout_level, f"2-bar: 1/2 closes above ${breakout_level:.2f} (⏳ need 2nd)"
+        else:
+            return False, breakout_level, f"2-bar: enter when 2 consecutive closes above ${breakout_level:.2f} (⏳ waiting)"
+
+    elif direction == 'SHORT':
+        breakout_level = coil_low * (1 - buffer)
+        if current_close < breakout_level and prev_close < breakout_level:
+            return True, breakout_level, f"2-bar close below ${breakout_level:.2f} (✅ CONFIRMED)"
+        elif current_close < breakout_level:
+            return False, breakout_level, f"2-bar: 1/2 closes below ${breakout_level:.2f} (⏳ need 2nd)"
+        else:
+            return False, breakout_level, f"2-bar: enter when 2 consecutive closes below ${breakout_level:.2f} (⏳ waiting)"
+
+    return False, current_close, "no direction"
+
+
 def _check_cvd_trigger(taker_ratio, pre_taker_avg, cfg):
     """Check if CVD trigger fires (taker spike during compression)."""
     if taker_ratio >= cfg['SQUEEZE_TAKER_LONG']:
@@ -467,6 +502,13 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
     if direction == 'NEUTRAL':
         return _empty_result(f'no direction: cvd={cvd_type} hist_flip={b_hist_flip}')
 
+    # ── Coil Duration Filter ──
+    # Backtest: <18h coils have 32% WR vs 58% for ≥18h. Skip short coils.
+    coil_hours = b_details.get('coil_hours', 0)
+    coil_hours_min = cfg.get('SQUEEZE_COIL_HOURS_MIN', 12)
+    if coil_hours < coil_hours_min and not a_compressed:
+        return _empty_result(f'coil={coil_hours}h < {coil_hours_min}h minimum')
+
     # ── v5.1 Filters (tuned for 70%+ WR) ──
 
     # Filter 1: Require HIST_FLIP trigger (kills TAKER_SPIKE/COIL_DIR noise)
@@ -513,9 +555,20 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
 
     # ── Entry Trigger ──
     vol_ma20 = result.get('vol_ma20', vol * 20)  # fallback
-    entry_triggered, entry_price, entry_condition = _check_entry_trigger(
-        price, price * vol, vol_ma20 if vol_ma20 > 0 else price,
-        coil_high, coil_low, direction, cfg)
+    entry_mode = cfg.get('SQUEEZE_ENTRY_MODE', 'TWO_BAR')
+
+    if entry_mode == 'TWO_BAR':
+        # 2-bar confirmation: require 2 consecutive closes beyond coil
+        prev_close = float(df_15m['Close'].iloc[-2]) if df_15m is not None and len(df_15m) >= 2 else price
+        entry_triggered, entry_price, entry_condition = _check_two_bar_trigger(
+            prev_close, price, price * vol,
+            vol_ma20 if vol_ma20 > 0 else price,
+            coil_high, coil_low, direction, cfg)
+    else:
+        # BASELINE: single close beyond coil
+        entry_triggered, entry_price, entry_condition = _check_entry_trigger(
+            price, price * vol, vol_ma20 if vol_ma20 > 0 else price,
+            coil_high, coil_low, direction, cfg)
 
     # ── Squeeze Status ──
     if entry_triggered:
