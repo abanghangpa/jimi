@@ -594,6 +594,8 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
     coil_hours = b_details.get('coil_hours', 0)
 
     # ── TP/SL Levels (liquidity-aware with ATR fallback) ──
+    # NOTE: TP/SL are calculated from ENTRY PRICE (breakout level), not current price.
+    # For LONG: entry = coil_high breakout; for SHORT: entry = coil_low breakdown.
     tp1_source = 'ATR'
     if magnets is not None and liq_levels is not None:
         # Use liquidity-aware calc_trade_levels from src.sl_tp
@@ -602,7 +604,7 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
             vol_ratio = result.get('vol_ratio', 1.0)
             _liq_for_tp = liq_levels if isinstance(liq_levels, dict) else None
             _levels = calc_trade_levels(
-                price, direction, atr, vol_ratio,
+                entry_price, direction, atr, vol_ratio,
                 magnets=magnets,
                 sr_levels=sr_levels or [],
                 liq_levels=_liq_for_tp,
@@ -610,35 +612,35 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
             )
             # Use liquidity TP only if it found an unswept pool (not ATR fallback)
             if _levels.get('tp1_source') == 'UNSWEPT_POOL':
-                tp_dist = abs(_levels['tp1'] - price)
-                sl_dist = abs(price - _levels['sl'])
+                tp_dist = abs(_levels['tp1'] - entry_price)
+                sl_dist = abs(entry_price - _levels['sl'])
                 tp1_source = 'UNSWEPT_POOL'
             else:
                 # ATR fallback from calc_trade_levels or raw ATR
                 raise ValueError('ATR fallback')
         except Exception:
             # Fall back to raw ATR
-            if atr > 0 and price > 0:
+            if atr > 0 and entry_price > 0:
                 tp_dist = max(
                     atr * cfg['SQUEEZE_TP_ATR_MULT'],
-                    price * cfg['SQUEEZE_TP_MIN_PCT'] / 100
+                    entry_price * cfg['SQUEEZE_TP_MIN_PCT'] / 100
                 )
-                tp_dist = min(tp_dist, price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
+                tp_dist = min(tp_dist, entry_price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
                 sl_dist = atr * cfg['SQUEEZE_SL_ATR_MULT']
             else:
-                tp_dist = price * 0.5 / 100
-                sl_dist = price * 0.2 / 100
+                tp_dist = entry_price * 0.5 / 100
+                sl_dist = entry_price * 0.2 / 100
     else:
-        if atr > 0 and price > 0:
+        if atr > 0 and entry_price > 0:
             tp_dist = max(
                 atr * cfg['SQUEEZE_TP_ATR_MULT'],
-                price * cfg['SQUEEZE_TP_MIN_PCT'] / 100
+                entry_price * cfg['SQUEEZE_TP_MIN_PCT'] / 100
             )
-            tp_dist = min(tp_dist, price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
+            tp_dist = min(tp_dist, entry_price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
             sl_dist = atr * cfg['SQUEEZE_SL_ATR_MULT']
         else:
-            tp_dist = price * 0.5 / 100
-            sl_dist = price * 0.2 / 100
+            tp_dist = entry_price * 0.5 / 100
+            sl_dist = entry_price * 0.2 / 100
 
     # ── Scale TP by coil duration (long coils have further targets) ──
     if coil_hours >= 18:
@@ -650,19 +652,20 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
 
     tp_dist *= tp_duration_mult
 
-    # Clamp TP distance
-    if price > 0:
-        tp_dist = min(tp_dist, price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
-
-    tp_pct = tp_dist / price * 100
-    sl_pct = sl_dist / price * 100
+    # Clamp TP distance (from entry price)
+    if entry_price > 0:
+        tp_dist = min(tp_dist, entry_price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
 
     if direction == 'LONG':
-        tp = price + tp_dist
-        sl = price - sl_dist
+        tp = entry_price + tp_dist
+        sl = entry_price - sl_dist
     else:
-        tp = price - tp_dist
-        sl = price + sl_dist
+        tp = entry_price - tp_dist
+        sl = entry_price + sl_dist
+
+    # Percentages from entry price (not current price)
+    tp_pct = tp_dist / entry_price * 100 if entry_price > 0 else 0
+    sl_pct = sl_dist / entry_price * 100 if entry_price > 0 else 0
 
     return {
         'squeeze_type': squeeze_type,
