@@ -52,6 +52,7 @@ from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
 from src.modules.m18_squeeze import detect_squeeze_v5 as detect_squeeze, format_squeeze
+from src.modules.m19_breakout_confirm import check_breakout_filters, format_breakout_confirm
 
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
@@ -710,6 +711,31 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
                 result['exchange_activity']['spot_details'] = _sp_details
     except Exception:
         pass
+
+    # ── M19: Breakout Confirmation Filters ──
+    # Only run when a squeeze is detected (PENDING or TRIGGERED)
+    breakout_result = None
+    sq_type = squeeze_result.get('squeeze_type', 'NONE')
+    if sq_type != 'NONE' and squeeze_result.get('direction', 'NEUTRAL') != 'NEUTRAL':
+        breakout_result = check_breakout_filters(result, df_15m=df_15m, config=cfg)
+        result['breakout_confirm'] = breakout_result
+
+        # If breakout is REJECTED and squeeze was going to trigger,
+        # downgrade to PENDING (wait for filters to pass)
+        if breakout_result['status'] == 'REJECTED':
+            if squeeze_result['squeeze_status'] == 'TRIGGERED':
+                # Don't let a rejected breakout trigger a signal
+                squeeze_confirmed = False
+                result['squeeze_confirmed'] = False
+                result['breakout_rejected'] = True
+                print(f"  ⚠️  Breakout REJECTED ({breakout_result['passed']}/{breakout_result['total']}) "
+                      f"— squeeze trigger suppressed")
+
+        elif breakout_result['status'] == 'WEAK':
+            # Reduce ICS boost by half for weak breakouts
+            if squeeze_result.get('ics_boost', 0) > 0:
+                squeeze_result['ics_boost'] *= 0.5
+                result['squeeze_ics_boost_half'] = True
 
     # When regime blocks direction, use squeeze direction if available, else force LONG for display
     if direction == 'NEUTRAL' and result.get('regime_blocked'):
@@ -1501,6 +1527,15 @@ def print_signal(result):
         if result.get('squeeze_override'):
             print(f"\n  ⚡ SQUEEZE OVERRIDE: regime block lifted!")
 
+    # Breakout Confirmation (M19)
+    bc = result.get('breakout_confirm')
+    if bc and bc.get('filters'):
+        print(format_breakout_confirm(bc))
+        if result.get('breakout_rejected'):
+            print(f"    ⚠️  Squeeze trigger suppressed — breakout filters failed")
+        if result.get('squeeze_ics_boost_half'):
+            print(f"    ⚠️  ICS boost halved — weak breakout confirmation")
+
     # ICS & Signal
     if 'ics' in result:
         boost_str = f"  (squeeze +{result.get('squeeze_ics_boost', 0):.4f})" if result.get('squeeze_ics_boost') else ''
@@ -1624,6 +1659,19 @@ def print_summary(result):
         if result.get('squeeze_override'):
             print(f"  {'⚡ Regime Override':<22} {'ACTIVE':>10}")
 
+    # Breakout Confirmation summary
+    bc = result.get('breakout_confirm')
+    if bc and bc.get('filters'):
+        bc_status = bc.get('status', '?')
+        bc_passed = bc.get('passed', 0)
+        bc_total = bc.get('total', 0)
+        bc_icons = {'CONFIRMED': '✅', 'WEAK': '⚠️', 'REJECTED': '❌'}
+        bc_icon = bc_icons.get(bc_status, '?')
+        print(f"  {'M19 Breakout':<22} {bc_status:>10}  {bc_passed}/{bc_total} {bc_icon}")
+        for f in bc.get('filters', []):
+            check = '✅' if f['passed'] else '❌'
+            print(f"    {check} {f['name']}")
+
     ics = result.get('ics', 0)
     status = result.get('status', 'N/A')
     direction = result.get('direction', 'N/A')
@@ -1729,6 +1777,20 @@ def print_summary(result):
         if spot_parts:
             print(f"  • Spot: {'; '.join(spot_parts)}")
 
+    # Breakout confirmation summary
+    bc = result.get('breakout_confirm')
+    if bc and bc.get('filters'):
+        bc_passed = bc.get('passed', 0)
+        bc_total = bc.get('total', 0)
+        bc_status = bc.get('status', '?')
+        failed = [f['name'] for f in bc.get('filters', []) if not f['passed']]
+        if bc_status == 'CONFIRMED':
+            print(f"  • Breakout: ✅ CONFIRMED ({bc_passed}/{bc_total})")
+        elif bc_status == 'WEAK':
+            print(f"  • Breakout: ⚠️ WEAK ({bc_passed}/{bc_total}), failed: {', '.join(failed)}")
+        else:
+            print(f"  • Breakout: ❌ REJECTED ({bc_passed}/{bc_total}), failed: {', '.join(failed)}")
+
     # Liquidity — unswept only
     if liq:
         above = [z for z in liq.get('above', []) if not z.get('swept')]
@@ -1809,6 +1871,9 @@ def print_summary(result):
             reasons.append("seller-dominated flow")
         if deriv.get('futures_flow') == 'BUYERS_DOMINANT' and direction == 'SHORT':
             reasons.append("buyer-dominated flow")
+        if result.get('breakout_rejected'):
+            bc = result.get('breakout_confirm', {})
+            reasons.append(f"breakout rejected ({bc.get('passed', 0)}/{bc.get('total', 0)} filters)")
         if not reasons:
             reasons.append(result.get('reason', 'unknown'))
         print(f"No trade — {'; '.join(reasons)}")
