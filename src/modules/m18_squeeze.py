@@ -652,6 +652,17 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
 
     tp_dist *= tp_duration_mult
 
+    # ── Measured move floor: coil width as minimum TP ──
+    # A squeeze stores energy proportional to its range. The breakout should
+    # travel at least the coil width. Use 0.7x as floor (conservative).
+    coil_high = b_details.get('coil_high', 0)
+    coil_low = b_details.get('coil_low', 0)
+    if coil_high > 0 and coil_low > 0:
+        coil_width = abs(coil_high - coil_low)
+        measured_move_floor = coil_width * 0.7
+        if tp_dist < measured_move_floor:
+            tp_dist = measured_move_floor
+
     # Clamp TP distance (from entry price)
     if entry_price > 0:
         tp_dist = min(tp_dist, entry_price * cfg['SQUEEZE_TP_MAX_PCT'] / 100)
