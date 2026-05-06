@@ -1,8 +1,7 @@
 # JIMI Framework
 
-Multi-module trading scoring system for ETH/USDT 15m. 12 independent scoring modules, unified backtest engine, live scanner.
+Multi-module trading scoring system for ETH/USDT 15m. 19 independent scoring modules, unified backtest engine, live scanner.
 
-> **🤖 OpenClaw users:** After cloning, read `SETUP.md` for Gemini cross-validation setup. Required for dual-model evaluation of scanner findings.
 
 ## Architecture
 
