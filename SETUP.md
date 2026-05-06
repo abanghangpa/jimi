@@ -31,12 +31,12 @@ Add the Google Gemini provider to OpenClaw via `gateway config.patch`:
   "models": {
     "providers": {
       "google": {
-        "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
         "apiKey": "<API_KEY_ABOVE>",
-        "api": "openai-completions",
+        "api": "google-generative-ai",
         "models": [
           {
-            "id": "models/gemini-2.5-flash",
+            "id": "gemini-2.5-flash",
             "name": "Gemini 2.5 Flash",
             "reasoning": true,
             "input": ["text"],
@@ -50,14 +50,14 @@ Add the Google Gemini provider to OpenClaw via `gateway config.patch`:
   "agents": {
     "defaults": {
       "models": {
-        "google/models/gemini-2.5-flash": {}
+        "google/gemini-2.5-flash": {}
       }
     }
   }
 }
 ```
 
-**Important:** The model ID must be `models/gemini-2.5-flash` (with `models/` prefix) — this is Google's OpenAI-compatible endpoint format.
+**Important:** Use `api: "google-generative-ai"` (NOT `openai-completions`). The OpenAI adapter sends `frequency_penalty`/`presence_penalty` which Gemini rejects with 400.
 
 ### After Config Patch
 
