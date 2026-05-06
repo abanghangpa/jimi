@@ -42,7 +42,7 @@ SQUEEZE_V5_DEFAULTS = {
 
     # ── Entry filters (v5.1 tuned) ──
     'SQUEEZE_REQUIRE_HIST_FLIP': True,  # only HIST_FLIP trigger (kills TAKER_SPIKE/COIL_DIR)
-    'SQUEEZE_EMA_FILTER': True,          # require direction aligned with EMA21/55 trend
+    'SQUEEZE_EMA_FILTER': True,          # require direction CONTRARIAN to EMA21/55 trend (inverted 2026-05-06)
     'SQUEEZE_MIN_RSI': 20,              # RSI floor (oversold = good for longs)
     'SQUEEZE_MAX_RSI': 80,              # RSI ceiling (overbought = good for shorts)
 
@@ -515,17 +515,20 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
     if cfg.get('SQUEEZE_REQUIRE_HIST_FLIP', False) and trigger_type != 'HIST_FLIP':
         return _empty_result(f'trigger={trigger_type} (need HIST_FLIP)')
 
-    # Filter 2: EMA trend alignment
+    # Filter 2: EMA trend — CONTRARIAN required (inverted 2026-05-06)
+    # Backtest 2026: coil+contrarian = 70-74% WR (92 events)
+    #               coil+aligned    = 35-43% WR (70 events)
+    # The old filter required alignment — kept the losers, killed the winners.
     if cfg.get('SQUEEZE_EMA_FILTER', False) and df_15m is not None and len(df_15m) >= 55:
         close_series = df_15m['Close'] if 'Close' in df_15m.columns else df_15m.iloc[:, 4]
         ema21 = float(close_series.ewm(span=21, adjust=False).mean().iloc[-1])
         ema55 = float(close_series.ewm(span=55, adjust=False).mean().iloc[-1])
         ema_trend = 'BULL' if ema21 > ema55 else 'BEAR'
 
-        aligned = (direction == 'LONG' and ema_trend == 'BULL') or \
-                  (direction == 'SHORT' and ema_trend == 'BEAR')
-        if not aligned:
-            return _empty_result(f'EMA contra: dir={direction} trend={ema_trend}')
+        contrarian = (direction == 'LONG' and ema_trend == 'BEAR') or \
+                     (direction == 'SHORT' and ema_trend == 'BULL')
+        if not contrarian:
+            return _empty_result(f'EMA aligned (need contra): dir={direction} trend={ema_trend}')
 
     # Filter 3: RSI bounds
     if cfg.get('SQUEEZE_MIN_RSI') is not None and df_15m is not None and len(df_15m) >= 14:

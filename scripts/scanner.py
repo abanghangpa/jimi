@@ -623,16 +623,18 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     if squeeze_result['squeeze_type'] != 'NONE' and squeeze_result['direction'] != 'NEUTRAL':
         sq_dir = squeeze_result['direction']
 
-        # Filter 1: EMA trend alignment
+        # Filter 1: EMA trend — CONTRARIAN required (inverted 2026-05-06)
+        # Backtest 2026: coil+contrarian = 70-74% WR (92 events)
+        #               coil+aligned    = 35-43% WR (70 events)
         if cfg.get('SQUEEZE_CONFIRM_EMA', True) and len(df_15m) >= 55:
             _close = df_15m['Close']
             _ema21 = float(_close.ewm(span=21, adjust=False).mean().iloc[-1])
             _ema55 = float(_close.ewm(span=55, adjust=False).mean().iloc[-1])
             _ema_trend = 'BULL' if _ema21 > _ema55 else 'BEAR'
-            squeeze_filters['ema_aligned'] = (sq_dir == 'LONG' and _ema_trend == 'BULL') or \
-                                              (sq_dir == 'SHORT' and _ema_trend == 'BEAR')
+            squeeze_filters['ema_contrarian'] = (sq_dir == 'LONG' and _ema_trend == 'BEAR') or \
+                                                 (sq_dir == 'SHORT' and _ema_trend == 'BULL')
         else:
-            squeeze_filters['ema_aligned'] = True
+            squeeze_filters['ema_contrarian'] = True
 
         # Filter 2: CVD divergence agrees
         if cfg.get('SQUEEZE_CONFIRM_CVD', True):
@@ -1513,7 +1515,7 @@ def print_signal(result):
         if sq_filters:
             icons = {True: '✅', False: '❌'}
             print(f"\n  Squeeze Confirmation Gate:")
-            print(f"    EMA aligned:  {icons.get(sq_filters.get('ema_aligned'), '?')}")
+            print(f"    EMA contra:   {icons.get(sq_filters.get('ema_contrarian'), '?')}")
             print(f"    CVD agrees:   {icons.get(sq_filters.get('cvd_agrees'), '?')}")
             print(f"    RSI ok:       {icons.get(sq_filters.get('rsi_ok'), '?')}")
             print(f"    Quality ≥0.5: {icons.get(sq_filters.get('quality_high'), '?')}")
