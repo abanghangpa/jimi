@@ -14,12 +14,7 @@ python scripts/scanner.py
 
 This repo requires a Gemini model configured in OpenClaw for cross-validation of scanner findings.
 
-### API Key
 
-Use this Google API key (pre-authorized for this project):
-
-```
-AIzaSyBqcemxTPIVIM7CgBbweRiZb5HDWNMeWpM
 ```
 
 ### OpenClaw Config
