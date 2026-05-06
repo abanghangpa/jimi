@@ -92,6 +92,30 @@ def print_report(trades, stats):
     early_count = len([t for t in trades if t.exit_reason == 'EARLY_EXIT'])
     if early_count:
         print(f"    EARLY_EXIT: {early_count} ({early_count/total*100:.1f}%)")
+    time_stop_count = len([t for t in trades if t.exit_reason == 'TIME_STOP'])
+    if time_stop_count:
+        print(f"    TIME_STOP: {time_stop_count} ({time_stop_count/total*100:.1f}%)")
+
+    # Squeeze stats
+    squeeze_trades = [t for t in trades if t.squeeze_type != 'NONE']
+    non_squeeze_trades = [t for t in trades if t.squeeze_type == 'NONE']
+    if squeeze_trades:
+        sq_winners = [t for t in squeeze_trades if t.pnl_pct > 0]
+        sq_wr = len(sq_winners) / len(squeeze_trades) * 100
+        sq_avg_pnl = np.mean([t.pnl_pct for t in squeeze_trades])
+        sq_long = [t for t in squeeze_trades if t.direction == 'LONG']
+        sq_short = [t for t in squeeze_trades if t.direction == 'SHORT']
+        sq_fb = [t for t in squeeze_trades if t.squeeze_failed_breakout]
+        print(f"\n  Squeeze Trade Performance:")
+        print(f"    Total squeeze trades: {len(squeeze_trades)}")
+        print(f"    Win rate: {sq_wr:.1f}%  |  Avg PnL: {sq_avg_pnl*100:.3f}%")
+        print(f"    LONG: {len(sq_long)}  |  SHORT: {len(sq_short)}")
+        print(f"    Failed breakout signals: {len(sq_fb)}")
+        if non_squeeze_trades:
+            ns_wr = len([t for t in non_squeeze_trades if t.pnl_pct > 0]) / len(non_squeeze_trades) * 100
+            ns_avg_pnl = np.mean([t.pnl_pct for t in non_squeeze_trades])
+            print(f"\n  Non-squeeze trades: {len(non_squeeze_trades)}, WR={ns_wr:.1f}%, Avg PnL={ns_avg_pnl*100:.3f}%")
+            print(f"    Squeeze vs Non-squeeze WR delta: {sq_wr - ns_wr:+.1f}%")
 
     print(f"\n  Signal Flow:")
     for k in ['signals_checked', 'm1_neutral_skip', 'm3_fail', 'm2_neutral_long_skip',
@@ -104,6 +128,8 @@ def print_report(trades, stats):
               'm9_block', 'm10_pass', 'm10_fail',
               'm11_pass', 'm11_fail', 'm11_skip',
               'm12_pass', 'm12_fail', 'm12_skip',
+              'squeeze_detected', 'squeeze_triggered', 'squeeze_pending',
+              'squeeze_failed_breakout', 'squeeze_entries',
               'entries']:
         if k in stats and stats[k] > 0:
             print(f"    {k+':':<26} {stats[k]}")
@@ -129,7 +155,9 @@ def print_report(trades, stats):
     print("═" * 70)
 
     return {'total_trades': total, 'win_rate': win_rate, 'total_pnl': total_pnl,
-            'profit_factor': profit_factor, 'max_drawdown': max_dd, 'return_dd_ratio': ret_dd}
+            'profit_factor': profit_factor, 'max_drawdown': max_dd, 'return_dd_ratio': ret_dd,
+            'squeeze_trades': len(squeeze_trades), 'squeeze_wr': sq_wr if squeeze_trades else 0,
+            'squeeze_avg_pnl': sq_avg_pnl if squeeze_trades else 0}
 
 
 def export_trades(trades, filepath):
@@ -182,6 +210,9 @@ def export_forensic(trades, filepath):
             'trend_dir': t.trend_dir, 'trend_val': round(t.trend_val, 4),
             'cross_asset_score': round(t.cross_asset_score, 4),
             'session': t.session_name, 'phase0': t.phase0,
+            'squeeze_type': t.squeeze_type, 'squeeze_score': round(t.squeeze_score, 4),
+            'squeeze_strong': t.squeeze_strong, 'squeeze_trigger': t.squeeze_trigger_type,
+            'squeeze_failed_breakout': t.squeeze_failed_breakout,
         })
     df = pd.DataFrame(rows)
     df.to_csv(filepath, index=False)
@@ -273,7 +304,10 @@ def main():
               'gate_m7_block', 'gate_m10_block', 'gate_trend_block',
               'm9_block', 'm10_fail', 'm11_fail', 'post_crash_block',
               'veto_hard_block', 'trend_flip', 'trend_weak',
-              'm4_false_anchored', 'm5_hard_block', 'entries']:
+              'm4_false_anchored', 'm5_hard_block',
+              'squeeze_detected', 'squeeze_triggered', 'squeeze_pending',
+              'squeeze_failed_breakout', 'squeeze_entries',
+              'entries']:
         if k in stats and stats[k] > 0:
             print(f"    {k+':':<26} {stats[k]}")
 

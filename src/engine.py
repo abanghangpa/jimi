@@ -38,6 +38,7 @@ from src.modules.coherence_liquidity import check_coherence, compute_liquidity_a
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.m14_sweep import score_m14
 from src.modules.entry_optimizer import detect_wick_reclaim
+from src.modules.m18_squeeze import detect_squeeze_v5 as detect_squeeze, SQUEEZE_V5_DEFAULTS
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -56,7 +57,9 @@ class Trade:
                  trend_dir='NEUTRAL', trend_val=0.0, cross_asset_score=0.5,
                  session_name='UNKNOWN', veto_soft_penalty=0.0,
                  gatekeeper_passed=True, m7_details=None,
-                 tp1_close_frac=None, tp2_close_frac=None):
+                 tp1_close_frac=None, tp2_close_frac=None,
+                 squeeze_type='NONE', squeeze_score=0.0, squeeze_strong=False,
+                 squeeze_trigger_type='NONE', squeeze_failed_breakout=False):
         self.entry_time = entry_time
         self.direction = direction
         self.entry_price = entry_price
@@ -102,6 +105,12 @@ class Trade:
         self.veto_soft_penalty = veto_soft_penalty
         self.gatekeeper_passed = gatekeeper_passed
         self.m7_details = m7_details or {}
+        # Squeeze tracking
+        self.squeeze_type = squeeze_type
+        self.squeeze_score = squeeze_score
+        self.squeeze_strong = squeeze_strong
+        self.squeeze_trigger_type = squeeze_trigger_type
+        self.squeeze_failed_breakout = squeeze_failed_breakout
         # Lifecycle
         self.remaining = 1.0
         self.tp1_hit = False
@@ -566,6 +575,10 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'm14_pass', 'm14_fail', 'm14_skip',
         'wick_reclaim_bonus', 'wick_reclaim_penalty', 'wick_slice_block',
         'exits_time_stop',
+        # Squeeze stats
+        'squeeze_detected', 'squeeze_triggered', 'squeeze_pending',
+        'squeeze_failed_breakout', 'squeeze_entries', 'squeeze_wins',
+        'squeeze_long', 'squeeze_short', 'squeeze_direction_block',
     ]}
 
     adaptive_tracker = None
@@ -576,6 +589,12 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             max_mult=cfg.get('ADAPTIVE_MAX_MULT', 2.0),
             warmup=cfg.get('ADAPTIVE_WARMUP_TRADES', 10),
         )
+
+    # Squeeze tracking state
+    squeeze_enabled = cfg.get('SQUEEZE_ENABLED', True)
+    squeeze_compression_history = []  # list of (range48, vol_ratio, bar_range, taker_ratio)
+    last_squeeze_bar = -999
+    squeeze_last_squeeze_bar = -999  # squeeze-specific cooldown
 
     for idx in range(len(df_15m)):
         row = df_15m.iloc[idx]
@@ -588,6 +607,20 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             continue
         if pd.isna(row['taker_ratio']) or pd.isna(row['atr']):
             continue
+
+        # Build compression history for squeeze detector (rolling 48-bar window)
+        if squeeze_enabled and idx >= 47:
+            _r48_h = float(df_15m['High'].iloc[max(0, idx-47):idx+1].max())
+            _r48_l = float(df_15m['Low'].iloc[max(0, idx-47):idx+1].min())
+            _close_val = float(row['Close'])
+            _r48_pct = (_r48_h - _r48_l) / _close_val * 100 if _close_val > 0 else 5.0
+            _vr = float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0
+            _br = (float(row['High']) - float(row['Low'])) / _close_val * 100 if _close_val > 0 else 0.5
+            _tr = float(row['taker_ratio'])
+            squeeze_compression_history.append((_r48_pct, _vr, _br, _tr))
+            # Keep only last 96 bars (24h) to avoid memory growth
+            if len(squeeze_compression_history) > 96:
+                squeeze_compression_history = squeeze_compression_history[-96:]
 
         idx_1h = find_tf_idx(ts, df_1h)
         idx_2h = find_tf_idx(ts, df_2h)
@@ -1224,6 +1257,37 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             stats['filter_blocked'] += 1
             continue
 
+        # ═══════════════════════════════════════════════════════════
+        # SQUEEZE DETECTION (M18) — Run per bar, track signals
+        # ═══════════════════════════════════════════════════════════
+        squeeze_result = {'squeeze_type': 'NONE', 'squeeze_status': 'NONE'}
+        if squeeze_enabled and idx >= 47:
+            sq_result = {
+                'price': float(row['Close']),
+                'atr': float(row['atr']),
+                'range_width': squeeze_compression_history[-1][0] if squeeze_compression_history else 5.0,
+                'raw_taker_ratio': float(row['taker_ratio']),
+                'vol_trend': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
+                'vol_ratio': float(row.get('vol_ratio', 1.0)),
+                'vol_ma20': float(row['vol_ma20']) if row['vol_ma20'] > 0 else 0,
+            }
+            squeeze_result = detect_squeeze(
+                sq_result, config=cfg,
+                last_signal_bar=squeeze_last_squeeze_bar,
+                current_bar=idx,
+                compression_history=squeeze_compression_history,
+                df_15m=df_15m.iloc[:idx+1],
+            )
+            if squeeze_result['squeeze_type'] != 'NONE':
+                stats['squeeze_detected'] += 1
+                if squeeze_result.get('failed_breakout'):
+                    stats['squeeze_failed_breakout'] += 1
+                if squeeze_result['squeeze_status'] == 'TRIGGERED':
+                    stats['squeeze_triggered'] += 1
+                    squeeze_last_squeeze_bar = idx
+                elif squeeze_result['squeeze_status'] == 'PENDING':
+                    stats['squeeze_pending'] += 1
+
         # Entry Dedup
         min_dist = cfg.get('MIN_ENTRY_DIST_PCT', 0)
         if min_dist > 0 and trades:
@@ -1394,7 +1458,12 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                       cross_asset_score=cross_asset_score, session_name=session_name,
                       veto_soft_penalty=veto_soft_penalty, gatekeeper_passed=gatekeeper.passed,
                       m7_details=m7_details,
-                      tp1_close_frac=tp1_close_frac, tp2_close_frac=tp2_close_frac)
+                      tp1_close_frac=tp1_close_frac, tp2_close_frac=tp2_close_frac,
+                      squeeze_type=squeeze_result.get('squeeze_type', 'NONE'),
+                      squeeze_score=squeeze_result.get('squeeze_score', 0.0),
+                      squeeze_strong=squeeze_result.get('squeeze_strong', False),
+                      squeeze_trigger_type=squeeze_result.get('trigger_type', 'NONE'),
+                      squeeze_failed_breakout=squeeze_result.get('failed_breakout', False))
         trade.dir_size_mult = dir_size_mult
         open_trades.append(trade); trades.append(trade)
         daily_trades[today] += 1; stats['entries'] += 1

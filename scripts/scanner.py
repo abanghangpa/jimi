@@ -538,6 +538,47 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
 
     result['cascade_risk'] = _detect_cascade_risk(df_15m, idx, result)
 
+    # ── Intrabar CVD (compute early — needed by squeeze confirmation gate) ──
+    m4b_status = 'SKIP'
+    m4b_score = 0.5
+    m4b_details = {}
+    m4b_divergence = 'NONE'
+    _intrabar_result_early = None
+    if cfg.get('M4B_INTRABAR_ENABLED', True):
+        try:
+            _tf_map = {'15m': '15min', '1h': '1h', '5m': '5min', '1m': '1min'}
+            _target_tf = _tf_map.get(cfg.get('_base_timeframe', '15m'), '15min')
+            _hours = cfg.get('M4B_INTRABAR_HOURS', 48)
+            _intrabar_df, _intrabar_result_early = get_intrabar_cvd_summary(
+                symbol='ETHUSDT', target_tf=_target_tf, hours=_hours)
+            if _intrabar_result_early and 'error' not in _intrabar_result_early:
+                m4b_status, m4b_score, m4b_details = score_intrabar_divergence(
+                    _intrabar_result_early, direction)
+                m4b_divergence = _intrabar_result_early.get('divergence', 'NONE')
+                result['m4b'] = {
+                    'status': m4b_status,
+                    'score': round(float(m4b_score), 3),
+                    'divergence': m4b_divergence,
+                    'bars_ago': _intrabar_result_early.get('bars_ago', -1),
+                    'cvd_slope': round(_intrabar_result_early.get('cvd_slope_12', 0), 2),
+                    'details': m4b_details,
+                }
+        except Exception as e:
+            result['m4b'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # ── Liquidity levels (compute early — needed by squeeze TP/SL) ──
+    _liq_for_squeeze = None
+    _liq_direction = direction if direction != 'NEUTRAL' else None
+    if _liq_direction:
+        try:
+            oi_usd = result.get('derivatives', {}).get('oi_usd', 0)
+            ls_ratio = result.get('derivatives', {}).get('ls_ratio', 1.0)
+            _liq_for_squeeze = get_liquidity_summary(
+                df_15m, idx, sr_levels, oi_usd, ls_ratio, _liq_direction)
+            result['liquidity_levels'] = _liq_for_squeeze
+        except Exception:
+            pass
+
     # ── M18 Squeeze Detection (after derivatives data is available) ──
     result['rsi'] = float(df_15m['rsi'].iloc[idx]) if 'rsi' in df_15m.columns else 50
     result['vol_trend'] = float(df_15m['Volume'].iloc[idx] / df_15m['vol_ma20'].iloc[idx]) if 'vol_ma20' in df_15m.columns else 1.0
@@ -574,6 +615,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     # Lower range_width, lower vol_ratio, higher oi_proxy, closer to VWAP = better
     result['range_width'] = range_width
     result['vol_ratio'] = vol_ratio_val
+    result['vol_ma20'] = float(df_15m['vol_ma20'].iloc[idx]) if 'vol_ma20' in df_15m.columns else 0
     result['oi_proxy'] = oi_proxy
     result['vwap_dist'] = vwap_dist
     result['bar_vol_spike'] = bar_vol_spike
@@ -612,91 +654,11 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
                                      compression_history=compression_history,
                                      df_15m=df_15m,
                                      magnets=magnets,
-                                     sr_levels=sr_levels)
+                                     sr_levels=sr_levels,
+                                     liq_levels=_liq_for_squeeze)
     result['squeeze'] = squeeze_result
     if squeeze_result['squeeze_status'] == 'TRIGGERED':
         result['_last_squeeze_bar'] = idx
-
-    # ── Squeeze 4-filter confirmation gate (backtested: 84.6% WR on 4h) ──
-    squeeze_confirmed = False
-    squeeze_filters = {}
-    if squeeze_result['squeeze_type'] != 'NONE' and squeeze_result['direction'] != 'NEUTRAL':
-        sq_dir = squeeze_result['direction']
-
-        # Filter 1: EMA trend — REGIME-ADAPTIVE (2026-05-06)
-        # Backtest 2025-10 to 2026-05 (319 coil+flip events):
-        #   ema_spread < 0 (bear trend): contrarian = 80.6% WR +1.68% avg
-        #   ema_spread >= 0 (bull trend): aligned = 56.2% WR +0.22% avg
-        if cfg.get('SQUEEZE_CONFIRM_EMA', True) and len(df_15m) >= 55:
-            _close = df_15m['Close']
-            _ema21 = float(_close.ewm(span=21, adjust=False).mean().iloc[-1])
-            _ema55 = float(_close.ewm(span=55, adjust=False).mean().iloc[-1])
-            _ema_spread = (_ema21 - _ema55) / _ema55 * 100 if _ema55 > 0 else 0
-            _ema_trend = 'BULL' if _ema21 > _ema55 else 'BEAR'
-            _contrarian = (sq_dir == 'LONG' and _ema_trend == 'BEAR') or \
-                          (sq_dir == 'SHORT' and _ema_trend == 'BULL')
-            _aligned = not _contrarian
-            # Bear trend → contrarian wins; bull trend → aligned wins
-            if _ema_spread < 0:
-                squeeze_filters['ema_regime'] = _contrarian
-            else:
-                squeeze_filters['ema_regime'] = _aligned
-        else:
-            squeeze_filters['ema_regime'] = True
-
-        # Filter 2: CVD divergence agrees
-        if cfg.get('SQUEEZE_CONFIRM_CVD', True):
-            _m4b_div = result.get('m4b', {}).get('divergence', 'NONE')
-            squeeze_filters['cvd_agrees'] = not ((sq_dir == 'LONG' and _m4b_div == 'BEARISH') or
-                                                 (sq_dir == 'SHORT' and _m4b_div == 'BULLISH'))
-        else:
-            squeeze_filters['cvd_agrees'] = True
-
-        # Filter 3: RSI not extreme against direction
-        if cfg.get('SQUEEZE_CONFIRM_RSI', True) and 'rsi' in df_15m.columns:
-            _rsi = float(df_15m['rsi'].iloc[-1]) if not pd.isna(df_15m['rsi'].iloc[-1]) else 50
-            squeeze_filters['rsi_ok'] = (sq_dir == 'LONG' and _rsi < 75) or \
-                                         (sq_dir == 'SHORT' and _rsi > 25)
-        else:
-            squeeze_filters['rsi_ok'] = True
-
-        # Filter 4: Quality score >= 0.5
-        if cfg.get('SQUEEZE_CONFIRM_QUALITY', True):
-            squeeze_filters['quality_high'] = squeeze_result.get('squeeze_score', 0) >= 0.5
-        else:
-            squeeze_filters['quality_high'] = True
-
-        # Filter 5: ATR floor — skip signals when vol is too low for a real move
-        if cfg.get('SQUEEZE_CONFIRM_ATR_FLOOR', True):
-            _atr_now = float(df_15m['atr'].iloc[-1]) if 'atr' in df_15m.columns and not pd.isna(df_15m['atr'].iloc[-1]) else 0
-            _atr_hard_floor = cfg.get('SQUEEZE_MIN_ATR', 5.0)
-            # Rolling percentile floor
-            _atr_lookback = cfg.get('SQUEEZE_ATR_LOOKBACK', 8640)
-            _atr_pctile = cfg.get('SQUEEZE_ATR_FLOOR_PCTILE', 15)
-            _atr_series = df_15m['atr'].dropna()
-            if len(_atr_series) > 100:
-                _atr_window = _atr_series.iloc[-min(len(_atr_series), _atr_lookback):]
-                _atr_threshold = float(np.percentile(_atr_window, _atr_pctile))
-            else:
-                _atr_threshold = _atr_hard_floor
-            # Use the higher of hard floor and percentile floor
-            _atr_effective = max(_atr_hard_floor, _atr_threshold)
-            squeeze_filters['atr_floor'] = _atr_now >= _atr_effective
-            squeeze_filters['_atr_value'] = round(_atr_now, 2)
-            squeeze_filters['_atr_threshold'] = round(_atr_effective, 2)
-        else:
-            squeeze_filters['atr_floor'] = True
-
-        squeeze_confirmed = all(squeeze_filters.values())
-
-    result['squeeze_filters'] = squeeze_filters
-    result['squeeze_confirmed'] = squeeze_confirmed
-
-    # Only apply regime override + ICS boost if squeeze is CONFIRMED
-    if squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed and squeeze_result.get('overrides_regime'):
-        regime_blocked = False
-        result['regime_blocked'] = False
-        result['squeeze_override'] = True
 
     # Exchange Activity (cross-exchange funding, OI, L/S)
     try:
@@ -764,27 +726,17 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         'reason': dir_details.get('reason', '?'),
     }
 
-    # Liquidity levels & conflict — need direction
+    # Conflict check (liq summary already computed above before squeeze)
     _liq_direction = direction if direction != 'NEUTRAL' else None
-    if _liq_direction:
+    if _liq_direction and swing_bias:
         try:
-            oi_usd = result.get('derivatives', {}).get('oi_usd', 0)
-            ls_ratio = result.get('derivatives', {}).get('ls_ratio', 1.0)
-            liq_summary = get_liquidity_summary(
-                df_15m, idx, sr_levels, oi_usd, ls_ratio, _liq_direction)
-            result['liquidity_levels'] = liq_summary
+            conflict = get_conflict_stats(
+                'BULLISH' if _liq_direction == 'LONG' else 'BEARISH',
+                swing_bias)
+            if conflict:
+                result['conflict'] = conflict
         except Exception:
             pass
-
-        if swing_bias:
-            try:
-                conflict = get_conflict_stats(
-                    'BULLISH' if _liq_direction == 'LONG' else 'BEARISH',
-                    swing_bias)
-                if conflict:
-                    result['conflict'] = conflict
-            except Exception:
-                pass
 
     # Re-score M9, M7, M13 with actual direction
     m9_status, m9_score, m9_details = score_vol_regime(vol_regime, m9_raw, direction, trend_dir)
@@ -833,42 +785,91 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, cfg)
     result['m4'] = {'status': m4_status, 'score': round(float(m4_score), 3), 'div': m4_div}
 
-    # M4b: Intrabar CVD (LucF-style delta volume analysis)
-    m4b_status = 'SKIP'
-    m4b_score = 0.5
-    m4b_details = {}
-    m4b_divergence = 'NONE'
-    if cfg.get('M4B_INTRABAR_ENABLED', True):
-        try:
-            _tf_map = {'15m': '15min', '1h': '1h', '5m': '5min', '1m': '1min'}
-            _target_tf = _tf_map.get(cfg.get('_base_timeframe', '15m'), '15min')
-            _hours = cfg.get('M4B_INTRABAR_HOURS', 48)
-            _intrabar_df, _intrabar_result = get_intrabar_cvd_summary(
-                symbol='ETHUSDT', target_tf=_target_tf, hours=_hours)
-            if _intrabar_result and 'error' not in _intrabar_result:
-                m4b_status, m4b_score, m4b_details = score_intrabar_divergence(
-                    _intrabar_result, direction)
-                m4b_divergence = _intrabar_result.get('divergence', 'NONE')
-                result['m4b'] = {
-                    'status': m4b_status,
-                    'score': round(float(m4b_score), 3),
-                    'divergence': m4b_divergence,
-                    'bars_ago': _intrabar_result.get('bars_ago', -1),
-                    'cvd_slope': round(_intrabar_result.get('cvd_slope_12', 0), 2),
-                    'details': m4b_details,
-                }
-                # Blend m4b into m4: if intrabar catches div that taker CVD missed
-                if m4b_divergence != 'NONE':
-                    m4_div_detected = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else 'NONE'
-                    if m4_div_detected == 'NONE':
-                        # M4 missed it, M4b caught it — apply M4b's signal
-                        m4_score = m4b_score
-                        if isinstance(m4_div, dict):
-                            m4_div['intrabar_div'] = m4b_divergence
-                            m4_div['intrabar_source'] = 'lucf_style'
-                        print(f"  📊 Intrabar CVD override: {m4b_divergence} div ({m4b_details.get('bars_ago', '?')} bars ago)")
-        except Exception as e:
-            result['m4b'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+    # M4b blend into M4: if intrabar catches div that taker CVD missed
+    if m4b_divergence != 'NONE':
+        m4_div_detected = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else 'NONE'
+        if m4_div_detected == 'NONE':
+            m4_score = m4b_score
+            if isinstance(m4_div, dict):
+                m4_div['intrabar_div'] = m4b_divergence
+                m4_div['intrabar_source'] = 'lucf_style'
+            print(f"  📊 Intrabar CVD override: {m4b_divergence} div ({m4b_details.get('bars_ago', '?')} bars ago)")
+
+    # ── Squeeze 5-filter confirmation gate (backtested: 84.6% WR on 4h) ──
+    # Runs AFTER M4b so CVD filter reads fresh intrabar data.
+    squeeze_confirmed = False
+    squeeze_filters = {}
+    if squeeze_result['squeeze_type'] != 'NONE' and squeeze_result['direction'] != 'NEUTRAL':
+        sq_dir = squeeze_result['direction']
+
+        # Filter 1: EMA trend — REGIME-ADAPTIVE (2026-05-06)
+        if cfg.get('SQUEEZE_CONFIRM_EMA', True) and len(df_15m) >= 55:
+            _close = df_15m['Close']
+            _ema21 = float(_close.ewm(span=21, adjust=False).mean().iloc[-1])
+            _ema55 = float(_close.ewm(span=55, adjust=False).mean().iloc[-1])
+            _ema_spread = (_ema21 - _ema55) / _ema55 * 100 if _ema55 > 0 else 0
+            _ema_trend = 'BULL' if _ema21 > _ema55 else 'BEAR'
+            _contrarian = (sq_dir == 'LONG' and _ema_trend == 'BEAR') or \
+                          (sq_dir == 'SHORT' and _ema_trend == 'BULL')
+            _aligned = not _contrarian
+            if _ema_spread < 0:
+                squeeze_filters['ema_regime'] = _contrarian
+            else:
+                squeeze_filters['ema_regime'] = _aligned
+        else:
+            squeeze_filters['ema_regime'] = True
+
+        # Filter 2: CVD divergence agrees (now reads fresh M4b data)
+        if cfg.get('SQUEEZE_CONFIRM_CVD', True):
+            _m4b_div = result.get('m4b', {}).get('divergence', 'NONE')
+            squeeze_filters['cvd_agrees'] = not ((sq_dir == 'LONG' and _m4b_div == 'BEARISH') or
+                                                 (sq_dir == 'SHORT' and _m4b_div == 'BULLISH'))
+        else:
+            squeeze_filters['cvd_agrees'] = True
+
+        # Filter 3: RSI not extreme against direction
+        if cfg.get('SQUEEZE_CONFIRM_RSI', True) and 'rsi' in df_15m.columns:
+            _rsi = float(df_15m['rsi'].iloc[-1]) if not pd.isna(df_15m['rsi'].iloc[-1]) else 50
+            squeeze_filters['rsi_ok'] = (sq_dir == 'LONG' and _rsi < 75) or \
+                                         (sq_dir == 'SHORT' and _rsi > 25)
+        else:
+            squeeze_filters['rsi_ok'] = True
+
+        # Filter 4: Quality score >= 0.5
+        if cfg.get('SQUEEZE_CONFIRM_QUALITY', True):
+            squeeze_filters['quality_high'] = squeeze_result.get('squeeze_score', 0) >= 0.5
+        else:
+            squeeze_filters['quality_high'] = True
+
+        # Filter 5: ATR floor — skip signals when vol is too low for a real move
+        if cfg.get('SQUEEZE_CONFIRM_ATR_FLOOR', True):
+            _atr_now = float(df_15m['atr'].iloc[-1]) if 'atr' in df_15m.columns and not pd.isna(df_15m['atr'].iloc[-1]) else 0
+            _atr_hard_floor = cfg.get('SQUEEZE_MIN_ATR', 5.0)
+            _atr_lookback = cfg.get('SQUEEZE_ATR_LOOKBACK', 8640)
+            _atr_pctile = cfg.get('SQUEEZE_ATR_FLOOR_PCTILE', 15)
+            _atr_series = df_15m['atr'].dropna()
+            if len(_atr_series) > 100:
+                _atr_window = _atr_series.iloc[-min(len(_atr_series), _atr_lookback):]
+                _atr_threshold = float(np.percentile(_atr_window, _atr_pctile))
+            else:
+                _atr_threshold = _atr_hard_floor
+            _atr_effective = max(_atr_hard_floor, _atr_threshold)
+            squeeze_filters['atr_floor'] = _atr_now >= _atr_effective
+            squeeze_filters['_atr_value'] = round(_atr_now, 2)
+            squeeze_filters['_atr_threshold'] = round(_atr_effective, 2)
+        else:
+            squeeze_filters['atr_floor'] = True
+
+        squeeze_confirmed = all(squeeze_filters.values())
+
+    result['squeeze_filters'] = squeeze_filters
+    result['squeeze_confirmed'] = squeeze_confirmed
+
+    # Only apply regime override + ICS boost if squeeze is CONFIRMED
+    if squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed and squeeze_result.get('overrides_regime'):
+        regime_blocked = False
+        result['regime_blocked'] = False
+        result['squeeze_override'] = True
 
     # M5
     m5_status, m5_score, m5_details = score_m5(df_15m, idx, direction, cfg,

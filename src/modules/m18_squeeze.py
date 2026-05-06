@@ -41,10 +41,12 @@ SQUEEZE_V5_DEFAULTS = {
     'SQUEEZE_HIST_FLIP_THRESHOLD': 0.0, # histogram crosses zero
 
     # ── Entry filters (v5.1 tuned) ──
+    # EMA/RSI filters disabled here — the confirmation gate in scanner.py
+    # handles these with fresh data after M4b scoring (avoids double-filtering).
     'SQUEEZE_REQUIRE_HIST_FLIP': True,  # only HIST_FLIP trigger (kills TAKER_SPIKE/COIL_DIR)
-    'SQUEEZE_EMA_FILTER': True,          # regime-adaptive: bear→contra, bull→aligned (2026-05-06)
-    'SQUEEZE_MIN_RSI': 20,              # RSI floor (oversold = good for longs)
-    'SQUEEZE_MAX_RSI': 80,              # RSI ceiling (overbought = good for shorts)
+    'SQUEEZE_EMA_FILTER': False,         # handled by confirmation gate
+    'SQUEEZE_MIN_RSI': None,             # handled by confirmation gate
+    'SQUEEZE_MAX_RSI': None,             # handled by confirmation gate
 
     # ── Entry trigger ──
     'SQUEEZE_ENTRY_BUFFER_PCT': 0.001,  # 0.1% buffer above/below coil range
@@ -63,6 +65,11 @@ SQUEEZE_V5_DEFAULTS = {
     'SQUEEZE_OVERRIDE_REGIME': True,
     'SQUEEZE_ICS_BOOST': 0.10,
     'SQUEEZE_SIZE_MULT': 0.80,
+
+    # ── Failed Breakout Detection ──
+    'SQUEEZE_FAILED_BREAKOUT_LOOKBACK': 16,   # check last 16 bars (4h) for failed breakouts
+    'SQUEEZE_FAILED_BREAKOUT_REJECT_PCT': 0.003,  # min penetration as fraction of coil width
+    'SQUEEZE_FAILED_BREAKOUT_PENALTY': 0.5,   # quality multiplier when failed breakout detected
 
     # ── Cooldown ──
     'SQUEEZE_COOLDOWN_BARS': 32,        # 8h on 15m
@@ -267,14 +274,71 @@ def _detect_macd_coil(macd_data, cfg):
 
 
 def _compute_coil_range_15m(df_15m, comp_bars, current_idx):
-    """Compute the 15m compression range (high/low) for Path A."""
+    """Compute the 15m compression range (high/low) for Path A.
+
+    Uses 20th/80th percentile of highs/lows instead of raw min/max.
+    This filters out outlier spike wicks that represent failed breakout
+    attempts, not the actual compression body.
+    """
     if comp_bars <= 0 or current_idx < comp_bars:
         return None, None
 
     start = max(0, current_idx - comp_bars)
-    h = float(df_15m['High'].iloc[start:current_idx+1].max())
-    l = float(df_15m['Low'].iloc[start:current_idx+1].min())
+    highs = df_15m['High'].iloc[start:current_idx+1].values.astype(float)
+    lows = df_15m['Low'].iloc[start:current_idx+1].values.astype(float)
+    h = float(np.percentile(highs, 80))
+    l = float(np.percentile(lows, 20))
     return h, l
+
+
+def _detect_failed_breakout(df_15m, current_idx, coil_high, coil_low, direction,
+                             lookback_bars=16, rejection_pct=0.003):
+    """Check if price already tested the coil boundary and reversed.
+
+    A squeeze that already tried to resolve and failed is fundamentally
+    different from one that hasn't tried yet. Detects:
+    - For LONG squeeze: price spiked above coil_high then closed back inside
+    - For SHORT squeeze: price spiked below coil_low then closed back inside
+
+    Args:
+        df_15m: 15m DataFrame
+        current_idx: current bar index
+        coil_high: upper coil boundary
+        coil_low: lower coil boundary
+        direction: expected breakout direction ('LONG' or 'SHORT')
+        lookback_bars: how many bars back to check for failed breakouts
+        rejection_pct: minimum penetration depth to count as a failed breakout
+
+    Returns:
+        (failed: bool, details: str)
+    """
+    if coil_high <= 0 or coil_low <= 0 or current_idx < lookback_bars:
+        return False, ''
+
+    start = max(0, current_idx - lookback_bars)
+    coil_width = coil_high - coil_low
+    if coil_width <= 0:
+        return False, ''
+
+    for i in range(start, current_idx):
+        bar_high = float(df_15m['High'].iloc[i])
+        bar_low = float(df_15m['Low'].iloc[i])
+        bar_close = float(df_15m['Close'].iloc[i])
+
+        if direction == 'LONG':
+            # Check if price spiked above coil_high then closed back inside
+            penetration = (bar_high - coil_high) / coil_width
+            if penetration >= rejection_pct and bar_close < coil_high:
+                bars_ago = current_idx - i
+                return True, f'failed_breakout_up {bars_ago}bars ago (spike to ${bar_high:.2f}, close ${bar_close:.2f})'
+        elif direction == 'SHORT':
+            # Check if price spiked below coil_low then closed back inside
+            penetration = (coil_low - bar_low) / coil_width
+            if penetration >= rejection_pct and bar_close > coil_low:
+                bars_ago = current_idx - i
+                return True, f'failed_breakout_down {bars_ago}bars ago (spike to ${bar_low:.2f}, close ${bar_close:.2f})'
+
+    return False, ''
 
 
 def _check_entry_trigger(current_close, current_vol, vol_ma20,
@@ -541,13 +605,17 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
             if not aligned:
                 return _empty_result(f'EMA contra in bull trend (need aligned): dir={direction} spread={ema_spread:+.2f}%')
 
-    # Filter 3: RSI bounds
+    # Filter 3: RSI bounds (disabled by default — handled by confirmation gate)
     if cfg.get('SQUEEZE_MIN_RSI') is not None and df_15m is not None and len(df_15m) >= 14:
-        close_series = df_15m['Close'] if 'Close' in df_15m.columns else df_15m.iloc[:, 4]
-        delta = close_series.diff()
-        gain = delta.clip(lower=0).rolling(14).mean()
-        loss = (-delta.clip(upper=0)).rolling(14).mean()
-        rsi = 100 - (100 / (1 + gain.iloc[-1] / loss.iloc[-1])) if loss.iloc[-1] > 0 else 50
+        # Use pre-computed RSI from indicators if available
+        if 'rsi' in df_15m.columns and not pd.isna(df_15m['rsi'].iloc[-1]):
+            rsi = float(df_15m['rsi'].iloc[-1])
+        else:
+            close_series = df_15m['Close'] if 'Close' in df_15m.columns else df_15m.iloc[:, 4]
+            delta = close_series.diff()
+            gain = delta.clip(lower=0).rolling(14).mean()
+            loss = (-delta.clip(upper=0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + gain.iloc[-1] / loss.iloc[-1])) if loss.iloc[-1] > 0 else 50
 
         if direction == 'LONG' and rsi > cfg['SQUEEZE_MAX_RSI']:
             return _empty_result(f'RSI={rsi:.0f} overbought for LONG')
@@ -566,6 +634,23 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
             if (a_high - a_low) < (coil_high - coil_low):
                 coil_high = a_high
                 coil_low = a_low
+
+    # ── Failed Breakout Detection ──
+    # If price already tested the coil boundary and reversed, downgrade the squeeze.
+    failed_breakout = False
+    failed_breakout_detail = ''
+    if df_15m is not None and len(df_15m) > 0:
+        _fb_idx = len(df_15m) - 1
+        _fb_lookback = cfg.get('SQUEEZE_FAILED_BREAKOUT_LOOKBACK', 16)
+        _fb_reject_pct = cfg.get('SQUEEZE_FAILED_BREAKOUT_REJECT_PCT', 0.003)
+        failed_breakout, failed_breakout_detail = _detect_failed_breakout(
+            df_15m, _fb_idx, coil_high, coil_low, direction,
+            lookback_bars=_fb_lookback, rejection_pct=_fb_reject_pct)
+
+    if failed_breakout:
+        quality *= cfg.get('SQUEEZE_FAILED_BREAKOUT_PENALTY', 0.5)
+        is_strong = False  # can't be strong if already failed once
+        factors.append(f'⚠️ FAILED_BREAKOUT: {failed_breakout_detail}')
 
     # ── Entry Trigger ──
     vol_ma20 = result.get('vol_ma20', vol * 20)  # fallback
@@ -668,7 +753,7 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
 
     # ── Measured move floor: coil width as minimum TP ──
     # A squeeze stores energy proportional to its range. The breakout should
-    # travel at least the coil width. Use 0.7x as floor (conservative).
+    # travel at least the coil width. Use 0.3x as floor (conservative).
     coil_high = b_details.get('coil_high', 0)
     coil_low = b_details.get('coil_low', 0)
     if coil_high > 0 and coil_low > 0:
@@ -721,6 +806,9 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
         'tp1_source': tp1_source,
         'tp_duration_mult': round(tp_duration_mult, 3),
         'coil_hours': coil_hours,
+        # Failed breakout
+        'failed_breakout': failed_breakout,
+        'failed_breakout_detail': failed_breakout_detail,
         # Meta
         'gates_all_pass': True,
         'gates_passed': factors,
@@ -763,6 +851,7 @@ def _empty_result(reason):
         'coil_high': 0, 'coil_low': 0,
         'tp': 0, 'sl': 0, 'tp_pct': 0, 'sl_pct': 0,
         'tp1_source': 'ATR', 'tp_duration_mult': 1.0, 'coil_hours': 0,
+        'failed_breakout': False, 'failed_breakout_detail': '',
         'gates_all_pass': False, 'gates_passed': [], 'gates_failed': [reason],
         'short_score': 0, 'long_score': 0,
         'path_a': {'fired': False}, 'path_b': {'fired': False},
@@ -843,6 +932,9 @@ def format_squeeze(sq):
         dur_note = f'  coil={coil_h}h dur_mult={dur_mult:.2f}' if dur_mult > 1.0 else ''
         lines.append(f'\n  TP: ${sq["tp"]:.2f} ({sq["tp_pct"]:.2f}%)  [{tp_src}]{dur_note}  '
                      f'SL: ${sq["sl"]:.2f} ({sq["sl_pct"]:.2f}%)')
+
+    if sq.get('failed_breakout'):
+        lines.append(f'  ⚠️ FAILED BREAKOUT: {sq.get("failed_breakout_detail", "")}')
 
     if sq.get('ics_boost', 0) > 0 and status == 'TRIGGERED':
         lines.append(f'  ICS boost: +{sq["ics_boost"]:.4f}')
