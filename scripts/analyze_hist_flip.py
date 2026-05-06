@@ -19,8 +19,18 @@ from src.modules.m18_squeeze import (
 )
 
 CSV = os.path.join(os.path.dirname(os.path.dirname(__file__)), "eth_15m_merged.csv")
-df_15m = load_data(CSV)
-df_15m = df_15m[df_15m["Open time"] >= "2026-01-01"].reset_index(drop=True)
+df_all = load_data(CSV)
+
+# Date range from args or default
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('--start', default='2026-01-01')
+parser.add_argument('--end', default=None)
+args = parser.parse_args()
+
+df_15m = df_all[df_all["Open time"] >= args.start].reset_index(drop=True)
+if args.end:
+    df_15m = df_15m[df_15m["Open time"] < args.end].reset_index(drop=True)
 
 print(f"Data: {len(df_15m)} bars  ({df_15m['Open time'].iloc[0]} → {df_15m['Open time'].iloc[-1]})")
 

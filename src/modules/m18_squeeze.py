@@ -42,7 +42,7 @@ SQUEEZE_V5_DEFAULTS = {
 
     # ── Entry filters (v5.1 tuned) ──
     'SQUEEZE_REQUIRE_HIST_FLIP': True,  # only HIST_FLIP trigger (kills TAKER_SPIKE/COIL_DIR)
-    'SQUEEZE_EMA_FILTER': True,          # require direction CONTRARIAN to EMA21/55 trend (inverted 2026-05-06)
+    'SQUEEZE_EMA_FILTER': True,          # regime-adaptive: bear→contra, bull→aligned (2026-05-06)
     'SQUEEZE_MIN_RSI': 20,              # RSI floor (oversold = good for longs)
     'SQUEEZE_MAX_RSI': 80,              # RSI ceiling (overbought = good for shorts)
 
@@ -515,20 +515,31 @@ def detect_squeeze_v5(result, config=None, last_signal_bar=-1, current_bar=0,
     if cfg.get('SQUEEZE_REQUIRE_HIST_FLIP', False) and trigger_type != 'HIST_FLIP':
         return _empty_result(f'trigger={trigger_type} (need HIST_FLIP)')
 
-    # Filter 2: EMA trend — CONTRARIAN required (inverted 2026-05-06)
-    # Backtest 2026: coil+contrarian = 70-74% WR (92 events)
-    #               coil+aligned    = 35-43% WR (70 events)
-    # The old filter required alignment — kept the losers, killed the winners.
+    # Filter 2: EMA trend — REGIME-ADAPTIVE (2026-05-06)
+    # Backtest 2025-10 to 2026-05 (319 coil+flip events):
+    #   ema_spread < 0 (bear trend): contrarian = 80.6% WR +1.68% avg
+    #   ema_spread >= 0 (bull trend): aligned = 56.2% WR +0.22% avg
+    # Rule: bear trend → require contrarian, bull trend → require aligned
+    # Combined: 66.9% WR +0.85% avg (142 events)
     if cfg.get('SQUEEZE_EMA_FILTER', False) and df_15m is not None and len(df_15m) >= 55:
         close_series = df_15m['Close'] if 'Close' in df_15m.columns else df_15m.iloc[:, 4]
         ema21 = float(close_series.ewm(span=21, adjust=False).mean().iloc[-1])
         ema55 = float(close_series.ewm(span=55, adjust=False).mean().iloc[-1])
+        ema_spread = (ema21 - ema55) / ema55 * 100 if ema55 > 0 else 0
         ema_trend = 'BULL' if ema21 > ema55 else 'BEAR'
 
         contrarian = (direction == 'LONG' and ema_trend == 'BEAR') or \
                      (direction == 'SHORT' and ema_trend == 'BULL')
-        if not contrarian:
-            return _empty_result(f'EMA aligned (need contra): dir={direction} trend={ema_trend}')
+        aligned = not contrarian
+
+        # Bear trend (spread < 0): contrarian wins (catches reversals)
+        # Bull trend (spread >= 0): aligned wins (rides momentum)
+        if ema_spread < 0:
+            if not contrarian:
+                return _empty_result(f'EMA aligned in bear trend (need contra): dir={direction} spread={ema_spread:+.2f}%')
+        else:
+            if not aligned:
+                return _empty_result(f'EMA contra in bull trend (need aligned): dir={direction} spread={ema_spread:+.2f}%')
 
     # Filter 3: RSI bounds
     if cfg.get('SQUEEZE_MIN_RSI') is not None and df_15m is not None and len(df_15m) >= 14:
