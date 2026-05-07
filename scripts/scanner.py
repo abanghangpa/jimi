@@ -1081,17 +1081,37 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     threshold = cfg['ICS_THRESHOLD_CAUTION'] if phase0_val and phase0_val >= 0.40 else cfg['ICS_THRESHOLD_NORMAL']
     result['threshold'] = round(float(threshold), 4)
 
-    # M3 hard fail
-    if m3_status == 'FAIL':
+    # M3 hard fail — but not when M20 direct signal is active
+    # (failed breakouts naturally have poor VWAP scores)
+    m20_override_active_for_m3 = dir_details.get('m20_override') is not None
+    m20_strong_for_m3 = m20_status == 'PASS' and m20_score >= cfg.get('M20_DIRECT_SIGNAL_THRESHOLD', 0.85)
+    if m3_status == 'FAIL' and not (m20_override_active_for_m3 and m20_strong_for_m3):
         result['status'] = 'NO_SIGNAL'
         result['reason'] = 'M3 VWAP fail'
         return result
 
     # ICS check
     if ics < effective_floor or ics < threshold:
-        result['status'] = 'NO_SIGNAL'
-        result['reason'] = f'ICS {ics:.4f} < threshold {threshold:.2f}'
-        return result
+        # ── M20 Direct Signal Path ──
+        # When normal ICS fails but M20 detected a strong failed breakout
+        # that overrode the direction, allow M20 to generate a signal directly.
+        # Failed breakouts are high-conviction contrarian events that the normal
+        # module pipeline doesn't score well (M3/M4/M13 work against the flip).
+        m20_direct_threshold = cfg.get('M20_DIRECT_SIGNAL_THRESHOLD', 0.85)
+        m20_override_active = dir_details.get('m20_override') is not None
+        if (m20_status == 'PASS' and m20_score >= m20_direct_threshold and
+                m20_result and m20_result.get('status') == 'FAILED' and
+                m20_override_active):
+            # M20 strong failed breakout — bypass ICS gate
+            result['m20_direct_signal'] = True
+            result['m20_direct_score'] = round(float(m20_score), 4)
+            result['ics_bypassed_by_m20'] = True
+            print(f"  💥 M20 DIRECT SIGNAL: failed breakout score={m20_score:.3f} ≥ {m20_direct_threshold} — bypassing ICS gate")
+            # Continue to trade level computation below (don't return NO_SIGNAL)
+        else:
+            result['status'] = 'NO_SIGNAL'
+            result['reason'] = f'ICS {ics:.4f} < threshold {threshold:.2f}'
+            return result
 
     # Gatekeepers
     gatekeeper = run_gatekeepers(
@@ -1182,21 +1202,26 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     }
 
     # ── Entry filters ──
-    passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
-    if not passed:
-        result['status'] = 'FILTERED'
-        result['reason'] = reason
-        return result
+    # Bypass for M20 direct signals (failed breakouts have different dynamics)
+    _m20_direct = result.get('m20_direct_signal', False)
+    if not _m20_direct:
+        passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
+        if not passed:
+            result['status'] = 'FILTERED'
+            result['reason'] = reason
+            return result
 
     # ── M14 Sweep Gate ──
-    sweep_passed, sweep_reason = check_sweep_gate(m14_status, m14_score, cfg)
-    if not sweep_passed:
-        result['status'] = 'NO_SIGNAL'
-        result['reason'] = sweep_reason
-        return result
+    if not _m20_direct:
+        sweep_passed, sweep_reason = check_sweep_gate(m14_status, m14_score, cfg)
+        if not sweep_passed:
+            result['status'] = 'NO_SIGNAL'
+            result['reason'] = sweep_reason
+            return result
 
     # ── Regime block override (all modules scored, but regime kills the signal) ──
-    if result.get('regime_blocked'):
+    # M20 direct signals can override regime block (failed breakout = strong event)
+    if result.get('regime_blocked') and not _m20_direct:
         result['status'] = 'NO_SIGNAL'
         result['reason'] = f'M9 regime={vol_regime} (blocked)'
         return result
