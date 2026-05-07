@@ -53,6 +53,7 @@ from src.modules.conflict_resolver import detect_conflict, format_conflict, conf
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
 from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, format_squeeze
 from src.modules.m19_breakout_confirm import check_breakout_filters, format_breakout_confirm
+from src.modules.m20_failed_breakout import score_m20, format_failed_breakout
 
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
@@ -969,6 +970,23 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
             m17_status = 'PASS'
             result['m17'] = {**m17_result, 'status': m17_status, 'score': round(float(m17_score), 4)}
 
+    # ── M20: Failed Breakout Detector ──
+    m20_score = 0.5
+    m20_status = 'SKIP'
+    m20_result = None
+    if cfg.get('M20_ENABLED', True):
+        try:
+            _sr_for_m20 = sr_levels if sr_levels else None
+            _mag_for_m20 = magnets if magnets else None
+            m20_status, m20_score, m20_result = score_m20(
+                df_15m, idx, direction,
+                sr_levels=_sr_for_m20, magnets=_mag_for_m20,
+                config=cfg, atr_1h=atr_1h)
+            if m20_result:
+                result['m20'] = {**m20_result, 'status': m20_status, 'score': round(float(m20_score), 4)}
+        except Exception as e:
+            result['m20'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
     # ── ICS ──
     ics, effective_floor = calc_ics(
         m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
@@ -982,6 +1000,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         m13_score=m13_score, use_m13=cfg.get('M13_ENABLED', False),
         m14_score=m14_score, use_m14=m14_status == 'PASS',
         m17_score=m17_score, use_m17=m17_status == 'PASS',
+        m20_score=m20_score, use_m20=m20_status == 'PASS',
         config=cfg,
     )
     result['ics'] = round(float(ics), 4)
@@ -1294,6 +1313,18 @@ def print_signal(result):
         m17_dfn = m17.get('defender', {}).get('status', '?')
         print(f"    M17 (ResQual): {m17['status']:>8}  score={m17['score']:.3f}  "
               f"zone={m17_zv}x  reject={m17_rej}  defender={m17_dfn}  → {m17['verdict']}")
+    if 'm20' in result:
+        m20 = result['m20']
+        m20_st = m20.get('status', '—')
+        m20_sc = m20.get('score', 0.5)
+        m20_bd = m20.get('breakout_direction', '')
+        m20_ct = m20.get('contrarian_direction', '')
+        m20_lv = m20.get('level', 0)
+        m20_q = m20.get('breakout_quality', 0)
+        m20_fs = m20.get('failure', {}).get('status', '')
+        if m20_st not in ('SKIP', 'NO_LEVELS', 'NO_ACTIONABLE', 'DISABLED', 'INSUFFICIENT_DATA'):
+            print(f"    M20 (FailBO):  {m20_st:>8}  score={m20_sc:.3f}  "
+                  f"{m20_bd} @ ${m20_lv:.0f}  quality={m20_q:.2f}  fail={m20_fs}  → {m20_ct}")
     if 'cascade' in result and result['cascade'].get('cascade'):
         c = result['cascade']
         print(f"    ⚡ CASCADE:    momentum={c['momentum']}% vol_spike={c['vol_spike']}x range={c['range_expansion']}x")
@@ -1335,6 +1366,12 @@ def print_signal(result):
     # M17 Resistance Quality
     if 'm17' in result and result['m17'].get('status') != 'SKIP':
         print(format_resistance_quality(result['m17']))
+
+    # M20 Failed Breakout
+    if 'm20' in result:
+        m20_fmt = format_failed_breakout(result['m20'])
+        if m20_fmt:
+            print(m20_fmt)
 
     # Derivatives
     deriv = result.get('derivatives', {})
@@ -1644,6 +1681,13 @@ def print_summary(result):
     m17_sc = result.get('m17', {}).get('score', 0) if 'm17' in result else 0
     m17_vd = result.get('m17', {}).get('verdict', '') if 'm17' in result else ''
     print(f"  {'M17 Resist Qual':<22} {m17_st:>10}  {m17_sc:>6.3f}  {m17_vd}")
+    m20_st = result.get('m20', {}).get('status', '—') if 'm20' in result else '—'
+    m20_sc = result.get('m20', {}).get('score', 0) if 'm20' in result else 0
+    m20_bd = result.get('m20', {}).get('breakout_direction', '') if 'm20' in result else ''
+    m20_ct = result.get('m20', {}).get('contrarian_direction', '') if 'm20' in result else ''
+    m20_fs = result.get('m20', {}).get('failure', {}).get('status', '') if 'm20' in result else ''
+    if m20_st not in ('SKIP', '—'):
+        print(f"  {'M20 Failed Breakout':<22} {m20_st:>10}  {m20_sc:>6.3f}  {m20_bd}→{m20_ct} ({m20_fs})")
     m12_st = result.get('m12', {}).get('status', '—') if 'm12' in result else '—'
     m12_sc = result.get('m12', {}).get('score', 0) if 'm12' in result else 0
     print(f"  {'M12 Order Book':<22} {m12_st:>10}  {m12_sc:>6.2f}")

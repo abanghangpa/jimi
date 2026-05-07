@@ -175,6 +175,7 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
              m11_score=0.5, use_m11=False, m12_score=0.5, use_m12=False,
              m13_score=0.5, use_m13=False, m14_score=0.5, use_m14=False,
              m17_score=0.5, use_m17=False,
+             m20_score=0.5, use_m20=False,
              config=None):
     cfg = config or CONFIG
     m4_contrib = m4_score if m4_status == 'PASS' else 0.5
@@ -200,6 +201,8 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
         extra_modules.append(('M14', m14_score, cfg.get('M14_WEIGHT', 0.08)))
     if use_m17 and cfg.get('M17_ENABLED', False):
         extra_modules.append(('M17', m17_score, cfg.get('M17_WEIGHT', 0.05)))
+    if use_m20 and cfg.get('M20_ENABLED', False):
+        extra_modules.append(('M20', m20_score, cfg.get('M20_WEIGHT', 0.10)))
 
     base_sum = (cfg['M1_WEIGHT'] + cfg['M2_WEIGHT'] +
                 cfg['M3_WEIGHT'] + cfg['M4_WEIGHT'] + cfg['M5_WEIGHT'])
