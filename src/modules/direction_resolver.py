@@ -174,7 +174,8 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
                       config=None,
                       long_target_score=None, short_target_score=None,
                       long_target_details=None, short_target_details=None,
-                      nearest_liq_direction=None):
+                      nearest_liq_direction=None,
+                      m20_score=None, m20_direction=None):
     """
     Resolve unified direction and sizing from regime + structure + macro.
 
@@ -382,6 +383,33 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
         size_mult = 0.0
         details['action'] = 'BLOCKED'
         details['reason'] = 'CHOP_HARD — no edge'
+
+    # ── Phase 2f: Failed Breakout Override (M20) ──
+    # When M20 detects a strong failed breakout, it can override the direction.
+    # A failed breakout is a high-conviction contrarian signal — the market
+    # tried to break out and failed, trapping participants on the wrong side.
+    if m20_score is not None and m20_direction is not None and m20_direction in ('LONG', 'SHORT'):
+        m20_threshold = cfg.get('M20_DIRECTION_OVERRIDE_THRESHOLD', 0.80)
+        if m20_score >= m20_threshold:
+            if direction != m20_direction and direction != 'NEUTRAL':
+                # Strong failed breakout disagrees with structure — flip direction
+                details['m20_override'] = f'Failed breakout {m20_score:.3f} flips {direction} → {m20_direction}'
+                direction = m20_direction
+                size_mult *= 0.85  # reduced size since we're going against structure
+                details['m20_override_penalty'] = 0.85
+            elif direction == 'NEUTRAL':
+                # No structural bias — M20 provides direction
+                direction = m20_direction
+                details['m20_direction'] = f'Failed breakout provides direction → {m20_direction}'
+                size_mult *= 0.70  # lower size when M20 is sole directional input
+                details['m20_solo_penalty'] = 0.70
+            elif direction == m20_direction:
+                # M20 confirms existing direction — boost
+                size_mult = min(size_mult * 1.15, 1.0)
+                details['m20_agree_bonus'] = 1.15
+
+            details['m20_score'] = round(m20_score, 3)
+            details['m20_direction'] = m20_direction
 
     # ── Final: Clamp ──
     size_mult = max(0.0, min(1.0, size_mult))

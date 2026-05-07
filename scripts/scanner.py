@@ -506,6 +506,27 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
             elif below_dist < above_dist * 0.7:
                 nearest_liq_dir = 'SHORT'  # closer liquidity below → go short to grab it
 
+    # ── Phase 2e: M20 Pre-compute (before direction resolver) ──
+    # M20 detects failed breakouts independently. We run it early so its
+    # contrarian direction can feed into the direction resolver as an override
+    # when a strong failed breakout is detected.
+    _m20_pre_score = None
+    _m20_pre_dir = None
+    if cfg.get('M20_ENABLED', True):
+        try:
+            _sr_for_m20 = sr_levels if sr_levels else None
+            _mag_for_m20 = magnets if magnets else None
+            _m20_pre_status, _m20_pre_score, _m20_pre_result = score_m20(
+                df_15m, idx, 'NEUTRAL',
+                sr_levels=_sr_for_m20, magnets=_mag_for_m20,
+                config=cfg, atr_1h=atr_1h)
+            if _m20_pre_result and _m20_pre_result.get('status') == 'FAILED':
+                _m20_pre_dir = _m20_pre_result.get('contrarian_direction')
+                if _m20_pre_dir:
+                    print(f"  💥 M20 pre-compute: failed breakout → {_m20_pre_dir} (score={_m20_pre_score:.3f})")
+        except Exception:
+            pass
+
     direction, dir_size_mult, dir_details = resolve_direction(
         vol_regime, m9_raw if m9_raw else 0.5,
         m13_bias, m13_score_raw, m13_details,
@@ -514,6 +535,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         long_target_score=long_tgt_score, short_target_score=short_tgt_score,
         long_target_details=long_tgt_details, short_target_details=short_tgt_details,
         nearest_liq_direction=nearest_liq_dir,
+        m20_score=_m20_pre_score, m20_direction=_m20_pre_dir,
     )
     # ── Gather market data (always, regardless of signal status) ──
     swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5])
