@@ -429,7 +429,7 @@ CROSS_ASSET_ENABLED: true
 CROSS_ASSET_BTC_WEIGHT: 0.08
 CROSS_ASSET_LOOKBACK: 48
 
-# ─── M18 SQUEEZE DETECTOR v5 (backtested 2026-01→05) ────────
+# ─── M18 SQUEEZE DETECTOR v6 (box typology + quality entry) ──
 M18_ENABLED: true
 M18_WEIGHT: 0.08
 
@@ -450,7 +450,27 @@ SQUEEZE_BREAKOUT_VOL_MULT: 1.0       # volume confirmation on breakout bar
 SQUEEZE_ENTRY_MODE: TWO_BAR          # TWO_BAR (2 consecutive closes) or BASELINE (single close)
 SQUEEZE_COIL_HOURS_MIN: 12           # skip squeezes with coil < 12h
 
-# 4-filter confirmation gate (backtested: 84.6% WR on 4h, 13 signals)
+# ── v6: Box typology ──
+SQUEEZE_SWING_PERIOD: 3              # bars each side for fractal detection
+SQUEEZE_SLOPE_THRESHOLD: 0.0008      # min slope (fraction of price) to count as trending
+SQUEEZE_CONVERGENCE_MIN: 0.3         # min convergence ratio
+SQUEEZE_MATURITY_WINDOW: 8           # bars to measure compression maturity
+SQUEEZE_MATURITY_THRESHOLD: 1.15     # range_current / range_min below this = mature
+
+# ── v6: Breakout bar quality ──
+SQUEEZE_BREAKOUT_CLOSE_PCT: 0.75     # close must be in top/bottom 25% of bar range
+SQUEEZE_BREAKOUT_BODY_MIN: 0.50      # body must be > 50% of bar range
+SQUEEZE_BREAKOUT_WICK_MAX: 0.30      # rejection wick must be < 30% of bar range
+SQUEEZE_VOL_EXPANSION_MIN: 1.3       # breakout bar vol / prev bar vol
+SQUEEZE_TAKER_ALIGN: true            # require taker ratio to align with direction
+
+# ── v6: Retest entry ──
+SQUEEZE_RETEST_ENABLED: true
+SQUEEZE_RETEST_BARS: 8               # max bars to wait for retest after breakout
+SQUEEZE_RETEST_TOLERANCE: 0.002      # how close price must come to broken level (0.2%)
+SQUEEZE_RETEST_HOLD_BARS: 2          # bars price must hold above/below level after retest
+
+# 5-filter confirmation gate (backtested: 84.6% WR on 4h, 13 signals)
 # ALL must pass for squeeze to be considered "confirmed"
 SQUEEZE_CONFIRM_EMA: true            # require EMA21/55 trend alignment
 SQUEEZE_CONFIRM_CVD: true            # require no CVD divergence against direction
@@ -459,10 +479,9 @@ SQUEEZE_CONFIRM_QUALITY: true        # require quality score >= 0.5
 SQUEEZE_CONFIRM_ATR_FLOOR: true      # require ATR above rolling percentile floor
 
 # ATR floor filter (backtest: ATR is #1 predictor of $25+ moves)
-# Skip squeeze signals when ATR is too low — low-vol squeezes can't produce big moves
 SQUEEZE_MIN_ATR: 5.0                 # hard floor: skip if ATR(14) < $5
-SQUEEZE_ATR_FLOOR_PCTILE: 15         # rolling percentile floor: ATR must be >15th pctile of last N bars
-SQUEEZE_ATR_LOOKBACK: 8640           # lookback for percentile (8640 x 15m = 90 days)
+SQUEEZE_ATR_FLOOR_PCTILE: 15         # rolling percentile floor
+SQUEEZE_ATR_LOOKBACK: 8640           # lookback for percentile (90 days)
 
 # Exit levels
 SQUEEZE_TP_ATR_MULT: 2.5
@@ -474,7 +493,7 @@ SQUEEZE_TP_MAX_PCT: 2.0
 SQUEEZE_OVERRIDE_REGIME: true
 SQUEEZE_ICS_BOOST: 0.10
 SQUEEZE_SIZE_MULT: 0.80
-SQUEEZE_COOLDOWN_BARS: 32            # 8h cooldown (was 16)
+SQUEEZE_COOLDOWN_BARS: 32            # 8h cooldown
 
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"

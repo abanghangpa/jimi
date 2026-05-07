@@ -38,7 +38,7 @@ from src.modules.coherence_liquidity import check_coherence, compute_liquidity_a
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.m14_sweep import score_m14
 from src.modules.entry_optimizer import detect_wick_reclaim
-from src.modules.m18_squeeze import detect_squeeze_v5 as detect_squeeze, SQUEEZE_V5_DEFAULTS
+from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, SQUEEZE_V6_DEFAULTS as SQUEEZE_V5_DEFAULTS
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -59,7 +59,8 @@ class Trade:
                  gatekeeper_passed=True, m7_details=None,
                  tp1_close_frac=None, tp2_close_frac=None,
                  squeeze_type='NONE', squeeze_score=0.0, squeeze_strong=False,
-                 squeeze_trigger_type='NONE', squeeze_failed_breakout=False):
+                 squeeze_trigger_type='NONE', squeeze_failed_breakout=False,
+                 squeeze_box_type='UNKNOWN', squeeze_lifecycle='NONE'):
         self.entry_time = entry_time
         self.direction = direction
         self.entry_price = entry_price
@@ -111,6 +112,8 @@ class Trade:
         self.squeeze_strong = squeeze_strong
         self.squeeze_trigger_type = squeeze_trigger_type
         self.squeeze_failed_breakout = squeeze_failed_breakout
+        self.squeeze_box_type = squeeze_box_type
+        self.squeeze_lifecycle = squeeze_lifecycle
         # Lifecycle
         self.remaining = 1.0
         self.tp1_hit = False
@@ -1463,7 +1466,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                       squeeze_score=squeeze_result.get('squeeze_score', 0.0),
                       squeeze_strong=squeeze_result.get('squeeze_strong', False),
                       squeeze_trigger_type=squeeze_result.get('trigger_type', 'NONE'),
-                      squeeze_failed_breakout=squeeze_result.get('failed_breakout', False))
+                      squeeze_failed_breakout=squeeze_result.get('failed_breakout', False),
+                      squeeze_box_type=squeeze_result.get('box_type', 'UNKNOWN'),
+                      squeeze_lifecycle=squeeze_result.get('lifecycle_stage', 'NONE'))
         trade.dir_size_mult = dir_size_mult
         open_trades.append(trade); trades.append(trade)
         daily_trades[today] += 1; stats['entries'] += 1

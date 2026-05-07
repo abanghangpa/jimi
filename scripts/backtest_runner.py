@@ -111,6 +111,38 @@ def print_report(trades, stats):
         print(f"    Win rate: {sq_wr:.1f}%  |  Avg PnL: {sq_avg_pnl*100:.3f}%")
         print(f"    LONG: {len(sq_long)}  |  SHORT: {len(sq_short)}")
         print(f"    Failed breakout signals: {len(sq_fb)}")
+        # Box type breakdown (v6)
+        box_types = {}
+        for t in squeeze_trades:
+            bt = t.squeeze_box_type
+            if bt not in box_types:
+                box_types[bt] = {'count': 0, 'wins': 0, 'pnl': []}
+            box_types[bt]['count'] += 1
+            box_types[bt]['pnl'].append(t.pnl_pct)
+            if t.pnl_pct > 0:
+                box_types[bt]['wins'] += 1
+        if len(box_types) > 1 or 'UNKNOWN' not in box_types:
+            print(f"\n    Box Type Breakdown:")
+            for bt, data in sorted(box_types.items(), key=lambda x: -x[1]['count']):
+                bt_wr = data['wins'] / data['count'] * 100 if data['count'] > 0 else 0
+                bt_pnl = np.mean(data['pnl']) * 100 if data['pnl'] else 0
+                print(f"      {bt:<24} {data['count']:>4} trades  WR={bt_wr:.1f}%  AvgPnL={bt_pnl:+.3f}%")
+        # Lifecycle breakdown (v6)
+        lifecycles = {}
+        for t in squeeze_trades:
+            lc = t.squeeze_lifecycle
+            if lc not in lifecycles:
+                lifecycles[lc] = {'count': 0, 'wins': 0, 'pnl': []}
+            lifecycles[lc]['count'] += 1
+            lifecycles[lc]['pnl'].append(t.pnl_pct)
+            if t.pnl_pct > 0:
+                lifecycles[lc]['wins'] += 1
+        if len(lifecycles) > 1 or 'NONE' not in lifecycles:
+            print(f"\n    Lifecycle Breakdown:")
+            for lc, data in sorted(lifecycles.items(), key=lambda x: -x[1]['count']):
+                lc_wr = data['wins'] / data['count'] * 100 if data['count'] > 0 else 0
+                lc_pnl = np.mean(data['pnl']) * 100 if data['pnl'] else 0
+                print(f"      {lc:<12} {data['count']:>4} trades  WR={lc_wr:.1f}%  AvgPnL={lc_pnl:+.3f}%")
         if non_squeeze_trades:
             ns_wr = len([t for t in non_squeeze_trades if t.pnl_pct > 0]) / len(non_squeeze_trades) * 100
             ns_avg_pnl = np.mean([t.pnl_pct for t in non_squeeze_trades])
@@ -213,6 +245,7 @@ def export_forensic(trades, filepath):
             'squeeze_type': t.squeeze_type, 'squeeze_score': round(t.squeeze_score, 4),
             'squeeze_strong': t.squeeze_strong, 'squeeze_trigger': t.squeeze_trigger_type,
             'squeeze_failed_breakout': t.squeeze_failed_breakout,
+            'squeeze_box_type': t.squeeze_box_type, 'squeeze_lifecycle': t.squeeze_lifecycle,
         })
     df = pd.DataFrame(rows)
     df.to_csv(filepath, index=False)

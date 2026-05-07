@@ -51,7 +51,7 @@ from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_ex
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
-from src.modules.m18_squeeze import detect_squeeze_v5 as detect_squeeze, format_squeeze
+from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, format_squeeze
 from src.modules.m19_breakout_confirm import check_breakout_filters, format_breakout_confirm
 
 
@@ -1518,7 +1518,7 @@ def print_signal(result):
         sq_output = format_squeeze(sq)
         if sq_output:
             print(sq_output)
-        # Show 4-filter confirmation status
+        # Show 5-filter confirmation status
         sq_filters = result.get('squeeze_filters', {})
         sq_confirmed = result.get('squeeze_confirmed', False)
         if sq_filters:
@@ -1663,8 +1663,30 @@ def print_summary(result):
         sq_sc = sq.get('squeeze_score', 0)
         sq_dir = sq.get('direction', '?')
         print(f"  {'M18 Squeeze':<22} {sq_st:>10}  {sq_sc:>6.3f}  → {sq_dir}")
+        # Box type (Phase 1)
+        box_type = sq.get('box_type', 'UNKNOWN')
+        if box_type != 'UNKNOWN':
+            box_bias = sq.get('box_bias', 'NEUTRAL')
+            bias_str = f'  bias={box_bias}' if box_bias != 'NEUTRAL' else ''
+            print(f"  {'  Box':<22} {box_type:>10}{bias_str}")
+        # Lifecycle (Phase 3)
+        lc = sq.get('lifecycle_stage', '')
+        if lc:
+            print(f"  {'  Lifecycle':<22} {lc:>10}")
+        # Maturity
+        mat = sq.get('compression_maturity', 0)
+        if mat > 0:
+            print(f"  {'  Maturity':<22} {mat:>9.0%}")
         if sq.get('entry_condition'):
             print(f"  {'  Entry':<22} {sq['entry_condition']}")
+        # Breakout quality (Phase 2)
+        bq = sq.get('breakout_quality_score')
+        if bq is not None:
+            bq_icon = '✅' if sq.get('breakout_quality_passed') else '⚠️'
+            print(f"  {'  Breakout Quality':<22} {bq_icon} {bq:.2f}")
+        # Retest
+        if sq.get('retest_detected'):
+            print(f"  {'  Retest':<22} ✅ {sq.get('retest_quality', 0):.2f}")
         sq_confirmed = result.get('squeeze_confirmed', False)
         sq_filters = result.get('squeeze_filters', {})
         if sq_filters:
