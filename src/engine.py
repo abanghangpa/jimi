@@ -42,6 +42,7 @@ from src.modules.entry_optimizer import detect_wick_reclaim
 from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, SQUEEZE_V6_DEFAULTS as SQUEEZE_V5_DEFAULTS
 from src.modules.m19_breakout_confirm import check_breakout_filters
 from src.modules.m20_failed_breakout import score_m20
+from src.modules.m21_wyckoff import score_m21, detect_trading_range, get_range_targets, get_range_sl
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1331,6 +1332,21 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             except Exception:
                 stats['m20_skip'] += 1
 
+        # M21: Wyckoff Phase + Premium/Discount + Kill Zone
+        m21_status = 'SKIP'; m21_score = 0.5; m21_details = {}; range_info_m21 = None
+        if cfg.get('M21_ENABLED', True):
+            try:
+                m21_status, m21_score, m21_details = score_m21(
+                    df_15m, df_1h, df_4h, df_1d, idx, direction, config=cfg)
+                range_info_m21 = m21_details.get('range_info')
+                if m21_status == 'BLOCKED':
+                    stats['m21_block'] = stats.get('m21_block', 0) + 1
+                    continue
+                if m21_status == 'PASS':
+                    stats['m21_pass'] = stats.get('m21_pass', 0) + 1
+            except Exception:
+                stats['m21_skip'] = stats.get('m21_skip', 0) + 1
+
         # ICS
         use_m13 = cfg.get('M13_ENABLED', False)
         ics, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
@@ -1774,6 +1790,28 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             liq_levels=None,  # M15 liq levels not cached in engine yet
             cfg=_seasonal_cfg,
         )
+
+        # ── Range-Aware TP/SL Override (M21) ──
+        if cfg.get('RANGE_TP_ENABLED', True) and range_info_m21:
+            range_width_pct = range_info_m21.get('width_pct', 0)
+            min_range = cfg.get('STRUCTURE_TP_MIN_RANGE_PCT', 1.5)
+            max_range = cfg.get('STRUCTURE_TP_MAX_RANGE_PCT', 6.0)
+            if min_range <= range_width_pct <= max_range:
+                range_targets = get_range_targets(entry_price, direction, range_info_m21, _magnets_for_levels)
+                if range_targets:
+                    trade_levels['tp1'] = range_targets['tp1']
+                    trade_levels['tp2'] = range_targets['tp2']
+                    trade_levels['tp3'] = range_targets['tp3']
+                    trade_levels['tp1_source'] = range_targets['tp1_source']
+                    trade_levels['tp2_source'] = range_targets['tp2_source']
+                    trade_levels['tp3_source'] = range_targets['tp3_source']
+                    trade_levels['tp1_pct'] = range_targets['tp1_pct']
+        if cfg.get('RANGE_SL_ENABLED', True) and range_info_m21:
+            range_sl = get_range_sl(entry_price, direction, range_info_m21, atr_for_sl)
+            if range_sl:
+                trade_levels['sl'] = range_sl['sl']
+                trade_levels['sl_pct'] = range_sl['sl_pct']
+                trade_levels['sl_source'] = range_sl['sl_source']
 
         sl = trade_levels['sl']
         tp1 = trade_levels['tp1']

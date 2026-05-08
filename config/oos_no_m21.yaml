@@ -1,0 +1,5 @@
+# OOS test config: M21 disabled
+M21_ENABLED: false
+KILL_ZONE_FILTER_ENABLED: false
+RANGE_TP_ENABLED: false
+RANGE_SL_ENABLED: false

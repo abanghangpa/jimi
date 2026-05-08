@@ -528,6 +528,38 @@ M20_NO_BREAKOUT_SCORE: 0.50
 M20_DIRECTION_OVERRIDE_THRESHOLD: 0.65  # lowered: was 0.80, let M20 override direction more easily
 M20_DIRECT_SIGNAL_THRESHOLD: 0.85
 
+# ─── M21: WYCKOFF PHASE + PREMIUM/DISCOUNT ──────────────────
+M21_ENABLED: true
+M21_WEIGHT: 0.00              # Not in ICS — used as gate/filter
+M21_RANGE_LOOKBACK: 48        # 4H bars to detect range (48 = 8 days)
+M21_SPRING_LOOKBACK: 12       # 15m bars to check for spring/upthrust
+M21_DISTRIBUTION_LONG_BLOCK: true   # Block LONG in distribution + premium
+M21_ACCUMULATION_SHORT_BLOCK: true  # Block SHORT in accumulation + discount
+
+# ─── KILL ZONE FILTER ────────────────────────────────────────
+KILL_ZONE_FILTER_ENABLED: true
+KILL_ZONE_LONDON_OPEN_START: 7
+KILL_ZONE_LONDON_OPEN_END: 10
+KILL_ZONE_NY_OPEN_START: 12.5
+KILL_ZONE_NY_OPEN_END: 15.5
+KILL_ZONE_LONDON_CLOSE_START: 15
+KILL_ZONE_LONDON_CLOSE_END: 17
+KILL_ZONE_ASIAN_MULT: 0.6
+KILL_ZONE_OFF_MULT: 0.7
+
+# ─── RANGE-AWARE TP/SL ──────────────────────────────────────
+RANGE_TP_ENABLED: true
+RANGE_SL_ENABLED: true
+RANGE_SL_BUFFER_PCT: 0.05     # 5% of range width as SL buffer
+RANGE_TP3_EXTENSION: 0.25     # 25% extension beyond range for TP3
+RANGE_SL_HARD_MAX_PCT: 0.025  # Hard max SL at 2.5%
+
+# ─── STRUCTURE-AWARE TP ─────────────────────────────────────
+# When in a range, target the opposite side instead of nearest pool
+STRUCTURE_TP_ENABLED: true
+STRUCTURE_TP_MIN_RANGE_PCT: 1.5   # Min range width to use structure TPs
+STRUCTURE_TP_MAX_RANGE_PCT: 6.0   # Max range width
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

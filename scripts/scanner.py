@@ -48,6 +48,7 @@ from src.modules.m12_orderbook import score_m12_orderbook
 from src.modules.m14_sweep import score_m14
 from src.modules.m17_resistance_quality import score_resistance_quality, format_resistance_quality
 from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_exchange_data, compute_exchange_signals, score_exchange_activity, score_spot_signals
+from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
@@ -781,6 +782,33 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     result['m7']['score'] = round(float(m7_score), 3)
     result['m13']['score'] = round(float(m13_score), 3)
 
+    # ── M21: Wyckoff Phase + Premium/Discount + Kill Zone ──
+    m21_status = 'SKIP'
+    m21_score = 0.5
+    m21_details = {}
+    range_info_m21 = None
+    if cfg.get('M21_ENABLED', True):
+        try:
+            m21_status, m21_score, m21_details = score_m21(
+                df_15m, df_1h, df_4h, df_1d, idx, direction, config=cfg)
+            range_info_m21 = m21_details.get('range_info')
+            result['m21'] = {
+                'status': m21_status,
+                'score': round(float(m21_score), 3),
+                'phase': m21_details.get('phase', 'RANGE'),
+                'zone': m21_details.get('premium_discount', {}).get('zone', 'UNKNOWN'),
+                'kill_zone': m21_details.get('kill_zone', {}).get('session', 'ANY'),
+                'spring_upthrust': m21_details.get('spring_upthrust', {}).get('type', 'NONE'),
+                'details': m21_details,
+            }
+            # Block entry if M21 says phase+zone is wrong
+            if m21_status == 'BLOCKED':
+                result['status'] = 'NO_SIGNAL'
+                result['reason'] = f'M21 block: {", ".join(m21_details.get("reasons", []))}'
+                return result
+        except Exception as e:
+            result['m21'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
     # ── Phase 4: Score all modules ──
     # M1 (now an ICS contributor, not the gate)
     m1_dir, m1_score, _m1_details = score_m1(df_1h, idx_1h, cfg, df_15m=df_15m, idx_15m=idx)
@@ -1174,6 +1202,32 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         cfg=cfg,
     )
 
+    # ── Range-Aware TP/SL Override ──
+    # When M21 detects a trading range, override TP/SL with structure-based levels
+    if cfg.get('RANGE_TP_ENABLED', True) and range_info_m21:
+        range_width_pct = range_info_m21.get('width_pct', 0)
+        min_range = cfg.get('STRUCTURE_TP_MIN_RANGE_PCT', 1.5)
+        max_range = cfg.get('STRUCTURE_TP_MAX_RANGE_PCT', 6.0)
+        if min_range <= range_width_pct <= max_range:
+            range_targets = get_range_targets(effective_entry, direction, range_info_m21, magnets)
+            if range_targets:
+                levels['tp1'] = range_targets['tp1']
+                levels['tp2'] = range_targets['tp2']
+                levels['tp3'] = range_targets['tp3']
+                levels['tp1_source'] = range_targets['tp1_source']
+                levels['tp2_source'] = range_targets['tp2_source']
+                levels['tp3_source'] = range_targets['tp3_source']
+                levels['tp1_pct'] = range_targets['tp1_pct']
+                result['range_tp_override'] = True
+
+    if cfg.get('RANGE_SL_ENABLED', True) and range_info_m21:
+        range_sl = get_range_sl(effective_entry, direction, range_info_m21, atr_for_sl)
+        if range_sl:
+            levels['sl'] = range_sl['sl']
+            levels['sl_pct'] = range_sl['sl_pct']
+            levels['sl_source'] = range_sl['sl_source']
+            result['range_sl_override'] = True
+
     # ── Build invalidation conditions ──
     invalidation = []
 
@@ -1337,6 +1391,20 @@ def print_signal(result):
     if dr.get('target_tiebreaker'):
         print(f"    🎯 Tiebreaker: {dr.get('target_tiebreaker')}")
     print(f"    Reason:        {dr.get('reason', '?')}")
+
+    # M21: Wyckoff Phase + Premium/Discount
+    if 'm21' in result and result['m21'].get('status') != 'SKIP':
+        m21 = result['m21']
+        m21_details = m21.get('details', {})
+        if m21_details:
+            print(format_m21(m21_details))
+        else:
+            phase_icon = {'ACCUMULATION': '🟢', 'MARKUP': '📈', 'DISTRIBUTION': '🔴',
+                         'MARKDOWN': '📉', 'RANGE': '↔️'}.get(m21.get('phase'), '❓')
+            print(f"    {phase_icon} Wyckoff: {m21.get('phase', '?')}  "
+                  f"Zone: {m21.get('zone', '?')}  "
+                  f"KillZone: {m21.get('kill_zone', '?')}  "
+                  f"score={m21.get('score', 0):.3f}")
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -1696,8 +1764,14 @@ def print_signal(result):
             print(f"           {le.get('reason', '')}")
         else:
             print(f"    Entry: ${result['entry']:.2f}")
-        print(f"    SL:    ${result['sl']:.2f}  ({result['sl_pct']:.2f}%)  [{sl_src}]")
-        print(f"    TP1:   ${result['tp1']:.2f}  ({result['tp1_pct']:.2f}%)  [{tp1_src}]")
+        if result.get('range_sl_override'):
+            print(f"    SL:    ${result['sl']:.2f}  ({result['sl_pct']:.2f}%)  [{sl_src}]  🔧 RANGE OVERRIDE")
+        else:
+            print(f"    SL:    ${result['sl']:.2f}  ({result['sl_pct']:.2f}%)  [{sl_src}]")
+        if result.get('range_tp_override'):
+            print(f"    TP1:   ${result['tp1']:.2f}  ({result['tp1_pct']:.2f}%)  [{tp1_src}]  🔧 RANGE OVERRIDE")
+        else:
+            print(f"    TP1:   ${result['tp1']:.2f}  ({result['tp1_pct']:.2f}%)  [{tp1_src}]")
         print(f"    TP2:   ${result['tp2']:.2f}  [{tp2_src}]")
         print(f"    TP3:   ${result['tp3']:.2f}  [{tp3_src}]")
     else:
@@ -1843,6 +1917,25 @@ def print_summary(result):
         sq_gates = sq.get('gates_failed', []) if sq else []
         sq_reason = sq_gates[0] if sq_gates else 'no detection'
         print(f"  {'M18 Squeeze':<22} {'NONE':>10}  —  ({sq_reason})")
+
+    # M21 Wyckoff Phase summary
+    if 'm21' in result and result['m21'].get('status') != 'SKIP':
+        m21 = result['m21']
+        phase = m21.get('phase', '?')
+        zone = m21.get('zone', '?')
+        kz = m21.get('kill_zone', '?')
+        spring = m21.get('spring_upthrust', 'NONE')
+        phase_icons = {'ACCUMULATION': '🟢', 'MARKUP': '📈', 'DISTRIBUTION': '🔴',
+                       'MARKDOWN': '📉', 'RANGE': '↔️'}
+        p_icon = phase_icons.get(phase, '❓')
+        zone_icons = {'PREMIUM': '🔴', 'DISCOUNT': '🟢', 'EQUILIBRIUM': '⚪'}
+        z_icon = zone_icons.get(zone, '?')
+        kz_icon = '✅' if kz in ('LONDON_OPEN', 'NY_OPEN', 'LONDON_CLOSE') else '⚠️'
+        spring_str = f' ⚡{spring}' if spring != 'NONE' else ''
+        print(f"  {'M21 Wyckoff':<22} {p_icon} {phase:>12}  {z_icon} {zone}{spring_str}")
+        print(f"  {'  Kill Zone':<22} {kz_icon} {kz:>12}")
+        if result.get('range_tp_override') or result.get('range_sl_override'):
+            print(f"  {'  Range Override':<22} {'✅':>12}  TP/SL adjusted to range structure")
 
     # Breakout Confirmation summary
     bc = result.get('breakout_confirm')
