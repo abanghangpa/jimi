@@ -454,7 +454,9 @@ SQUEEZE_EMA_FILTER: false            # don't pre-filter on EMA (we filter post-e
 SQUEEZE_ENTRY_BUFFER_PCT: 0.001      # 0.1% buffer above/below coil range
 SQUEEZE_ENTRY_EXPIRY_BARS: 32        # entry expires after 8h
 SQUEEZE_BREAKOUT_VOL_MULT: 1.0       # volume confirmation on breakout bar
-SQUEEZE_ENTRY_MODE: TWO_BAR          # TWO_BAR (2 consecutive closes) or BASELINE (single close)
+SQUEEZE_ENTRY_MODE: BASELINE          # BASELINE (single close) — was TWO_BAR, faster entry on breakout
+SQUEEZE_TAKER_LONG: 0.54              # lowered from 0.58 — Apr 26 05:00 taker was 0.564
+SQUEEZE_TAKER_SHORT: 0.46             # raised from 0.42 — symmetric
 SQUEEZE_COIL_HOURS_MIN: 12           # skip squeezes with coil < 12h
 
 # ── v6: Box typology ──
@@ -479,14 +481,14 @@ SQUEEZE_RETEST_HOLD_BARS: 2          # bars price must hold above/below level af
 
 # 5-filter confirmation gate (backtested: 84.6% WR on 4h, 13 signals)
 # ALL must pass for squeeze to be considered "confirmed"
-SQUEEZE_CONFIRM_EMA: true            # require EMA21/55 trend alignment
+SQUEEZE_CONFIRM_EMA: false            # disabled: EMA is lagging during squeeze breakout
 SQUEEZE_CONFIRM_CVD: true            # require no CVD divergence against direction
 SQUEEZE_CONFIRM_RSI: true            # require RSI not extreme against direction
-SQUEEZE_CONFIRM_QUALITY: true        # require quality score >= 0.5
-SQUEEZE_CONFIRM_ATR_FLOOR: true      # require ATR above rolling percentile floor
+SQUEEZE_CONFIRM_QUALITY: false        # disabled: quality is low during tight compression (that's the signal)
+SQUEEZE_CONFIRM_ATR_FLOOR: false     # disabled: ATR is low DURING compression (that's the signal)
 
 # ATR floor filter (backtest: ATR is #1 predictor of $25+ moves)
-SQUEEZE_MIN_ATR: 5.0                 # hard floor: skip if ATR(14) < $5
+SQUEEZE_MIN_ATR: 2.0                 # lowered: was 5.0, Apr 25 ATR was $3.09 during compression
 SQUEEZE_ATR_FLOOR_PCTILE: 15         # rolling percentile floor
 SQUEEZE_ATR_LOOKBACK: 8640           # lookback for percentile (90 days)
 
@@ -523,7 +525,7 @@ M20_MODERATE_SCORE: 0.65
 M20_WEAK_BREAKOUT_SCORE: 0.35
 M20_HOLDING_SCORE: 0.50
 M20_NO_BREAKOUT_SCORE: 0.50
-M20_DIRECTION_OVERRIDE_THRESHOLD: 0.80
+M20_DIRECTION_OVERRIDE_THRESHOLD: 0.65  # lowered: was 0.80, let M20 override direction more easily
 M20_DIRECT_SIGNAL_THRESHOLD: 0.85
 
 # ─── DATA ────────────────────────────────────────────────────

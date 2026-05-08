@@ -591,6 +591,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'squeeze_failed_breakout', 'squeeze_entries', 'squeeze_wins',
         'squeeze_long', 'squeeze_short', 'squeeze_direction_block',
         'squeeze_confirmed', 'squeeze_not_confirmed',
+        'squeeze_pre_bypass',
         'breakout_confirmed', 'breakout_weak', 'breakout_rejected',
         'm17_pass', 'm17_skip',
         'm20_pass', 'm20_fail', 'm20_skip', 'm20_direct_signal',
@@ -1058,6 +1059,28 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 m10_status, m10_score, m10_details = score_m10_macro(macro_row, direction, trend_dir)
                 use_m10 = True
 
+        # ── Squeeze pre-check: detect compression BEFORE ICS gate ──
+        # Squeeze-triggered entries bypass the ICS pre-check (like M20 direct signals).
+        # Without this, the ICS pre-check kills bars during compression when M1-M4
+        # scores are weak — but that's exactly when squeezes form.
+        _squeeze_pre_fired = False
+        if squeeze_enabled and idx >= 47:
+            from src.modules.m18_squeeze import _check_compression, _check_cvd_trigger, SQUEEZE_V6_DEFAULTS
+            _sq_cfg = {**SQUEEZE_V6_DEFAULTS, **cfg}
+            _r48 = squeeze_compression_history[-1][0] if squeeze_compression_history else 5.0
+            _a_comp, _a_bars, _a_dry, _a_doji = _check_compression(
+                _r48, squeeze_compression_history or [], _sq_cfg)
+            if _a_comp:
+                _taker_now = float(row['taker_ratio'])
+                _pre_takers = [tr for _, _, _, tr in squeeze_compression_history[-12:]] if squeeze_compression_history else []
+                _pre_avg = np.mean(_pre_takers) if _pre_takers else None
+                _cvd_fired, _cvd_dir, _cvd_type = _check_cvd_trigger(_taker_now, _pre_avg, _sq_cfg)
+                if _cvd_fired:
+                    # Cooldown: only bypass once per squeeze event (not every bar)
+                    _sq_cooldown = cfg.get('SQUEEZE_COOLDOWN_BARS', 32)
+                    if idx - squeeze_last_squeeze_bar >= _sq_cooldown:
+                        _squeeze_pre_fired = True
+
         # ICS pre-check: M1-M4 + M10 (if available), before M5/M7/M8/M11-M14
         ics_pre, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, 0.5,
                                             m10_score=m10_score, use_m10=use_m10, config=cfg)
@@ -1073,8 +1096,13 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             threshold += cfg.get('SHOULDER_ICS_BOOST', 0)
         threshold += veto_soft_penalty
         if ics_pre < precheck_floor or ics_pre < threshold:
-            stats['ics_blocked'] += 1
-            continue
+            if _squeeze_pre_fired:
+                stats['squeeze_pre_bypass'] = stats.get('squeeze_pre_bypass', 0) + 1
+                if verbose:
+                    print(f"  ⚡ SQUEEZE PRE-CHECK BYPASS @ {ts} ICS={ics_pre:.4f} (threshold={threshold:.2f})")
+            else:
+                stats['ics_blocked'] += 1
+                continue
 
         # M5 (lazy, cached every 4 bars)
         m5_cache_key = idx // 4
@@ -1428,7 +1456,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             stats['ics_ceiling_skip'] += 1
             continue
 
-        if m4_status == 'FAIL' and not _m20_direct:
+        if m4_status == 'FAIL' and not _m20_direct and not _squeeze_pre_fired:
             stats['m4_required_skip'] += 1
             continue
 
@@ -1440,7 +1468,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 continue
 
         passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
-        if not passed and not _m20_direct:
+        if not passed and not _m20_direct and not _squeeze_pre_fired:
             stats['filter_blocked'] += 1
             continue
 
@@ -1688,7 +1716,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         # M14 Sweep Gate (bypass for M20 direct signals)
         sweep_passed, sweep_reason = check_sweep_gate(m14_status, m14_score, cfg)
-        if not sweep_passed and not _m20_direct:
+        if not sweep_passed and not _m20_direct and not _squeeze_pre_fired:
             stats['filter_blocked'] += 1
             continue
 
