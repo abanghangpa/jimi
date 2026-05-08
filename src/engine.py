@@ -39,6 +39,7 @@ from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.m14_sweep import score_m14
 from src.modules.entry_optimizer import detect_wick_reclaim
 from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, SQUEEZE_V6_DEFAULTS as SQUEEZE_V5_DEFAULTS
+from src.modules.m20_failed_breakout import score_m20
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -585,6 +586,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'squeeze_detected', 'squeeze_triggered', 'squeeze_pending',
         'squeeze_failed_breakout', 'squeeze_entries', 'squeeze_wins',
         'squeeze_long', 'squeeze_short', 'squeeze_direction_block',
+        'm20_pass', 'm20_fail', 'm20_skip', 'm20_direct_signal',
+        'm20_override', 'm20_ics_bypass',
     ]}
 
     adaptive_tracker = None
@@ -863,13 +866,37 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         _long_tgt, _long_det = score_targets(_price, _magnets, _gaps, _sr, 'LONG', atr_1h=_atr_1h)
         _short_tgt, _short_det = score_targets(_price, _magnets, _gaps, _sr, 'SHORT', atr_1h=_atr_1h)
 
+        # ── M20 Pre-compute (before direction resolver) ──
+        # M20 detects failed breakouts independently. Run it early so its
+        # contrarian direction can feed into the direction resolver as an
+        # override when a strong failed breakout is detected.
+        _m20_pre_score = None
+        _m20_pre_dir = None
+        if cfg.get('M20_ENABLED', True):
+            try:
+                _sr_for_m20 = _sr if _sr else None
+                _mag_for_m20 = _magnets if _magnets else None
+                _m20_pre_status, _m20_pre_score, _m20_pre_result = score_m20(
+                    df_15m, idx, 'NEUTRAL',
+                    sr_levels=_sr_for_m20, magnets=_mag_for_m20,
+                    config=cfg, atr_1h=_atr_1h)
+                if _m20_pre_result and _m20_pre_result.get('status') == 'FAILED':
+                    _m20_pre_dir = _m20_pre_result.get('contrarian_direction')
+            except Exception:
+                pass
+
         direction, dir_size_mult, dir_details = resolve_direction(
             vol_regime, m9_score, m13_bias, m13_score, m13_details,
             m7_score=m7_score, m7_status=m7_status,
             swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
             long_target_score=_long_tgt, short_target_score=_short_tgt,
             long_target_details=_long_det, short_target_details=_short_det,
+            m20_score=_m20_pre_score, m20_direction=_m20_pre_dir,
         )
+
+        # Track M20 direction override
+        if dir_details.get('m20_override'):
+            stats['m20_override'] += 1
 
         if direction == 'NEUTRAL':
             stats['bias_gate_skip'] += 1
@@ -1156,6 +1183,26 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             stats['gate_block'] += 1
             continue
 
+        # M20: Failed Breakout Detector (scored for ICS)
+        m20_score = 0.5; m20_status = 'SKIP'; m20_result = None; use_m20 = False
+        if cfg.get('M20_ENABLED', True):
+            try:
+                _sr_for_m20 = _sr if _sr else None
+                _mag_for_m20 = _magnets if _magnets else None
+                m20_status, m20_score, m20_result = score_m20(
+                    df_15m, idx, direction,
+                    sr_levels=_sr_for_m20, magnets=_mag_for_m20,
+                    config=cfg, atr_1h=_atr_1h)
+                if m20_status == 'PASS':
+                    stats['m20_pass'] += 1
+                    use_m20 = True
+                elif m20_status == 'FAIL':
+                    stats['m20_fail'] += 1
+                else:
+                    stats['m20_skip'] += 1
+            except Exception:
+                stats['m20_skip'] += 1
+
         # ICS
         use_m13 = cfg.get('M13_ENABLED', False)
         ics, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
@@ -1165,6 +1212,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                                         m9_score=m9_score, use_m9=use_m9, m10_score=m10_score, use_m10=use_m10,
                                         m11_score=m11_score, use_m11=use_m11, m12_score=m12_score, use_m12=use_m12,
                                         m13_score=m13_score, use_m13=use_m13, m14_score=m14_score, use_m14=use_m14,
+                                        m20_score=m20_score, use_m20=use_m20,
                                         config=cfg)
         ics += gatekeeper.ics_boost
 
@@ -1240,14 +1288,32 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 continue
 
         if ics < effective_floor or ics < threshold:
-            stats['ics_blocked'] += 1
-            continue
+            # ── M20 Direct Signal Path ──
+            # When normal ICS fails but M20 detected a strong failed breakout
+            # that overrode the direction, allow M20 to generate a signal directly.
+            # Failed breakouts are high-conviction contrarian events that the normal
+            # module pipeline doesn't score well (M3/M4/M13 work against the flip).
+            m20_direct_threshold = cfg.get('M20_DIRECT_SIGNAL_THRESHOLD', 0.85)
+            m20_override_active = dir_details.get('m20_override') is not None
+            _m20_direct = (m20_status == 'PASS' and m20_score >= m20_direct_threshold and
+                           m20_result and m20_result.get('status') == 'FAILED' and
+                           m20_override_active)
+            if _m20_direct:
+                # M20 strong failed breakout — bypass ICS gate
+                stats['m20_direct_signal'] += 1
+                stats['m20_ics_bypass'] += 1
+                # Continue to trade level computation below (don't skip)
+            else:
+                stats['ics_blocked'] += 1
+                continue
+        else:
+            _m20_direct = False
 
         if ics > cfg.get('ICS_CEILING', 1.0):
             stats['ics_ceiling_skip'] += 1
             continue
 
-        if m4_status == 'FAIL':
+        if m4_status == 'FAIL' and not _m20_direct:
             stats['m4_required_skip'] += 1
             continue
 
@@ -1259,7 +1325,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 continue
 
         passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
-        if not passed:
+        if not passed and not _m20_direct:
             stats['filter_blocked'] += 1
             continue
 
@@ -1341,9 +1407,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             else:
                 stats['m14_skip'] += 1
 
-        # M14 Sweep Gate
+        # M14 Sweep Gate (bypass for M20 direct signals)
         sweep_passed, sweep_reason = check_sweep_gate(m14_status, m14_score, cfg)
-        if not sweep_passed:
+        if not sweep_passed and not _m20_direct:
             stats['filter_blocked'] += 1
             continue
 
