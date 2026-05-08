@@ -1207,9 +1207,25 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     if not _m20_direct:
         passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
         if not passed:
-            result['status'] = 'FILTERED'
-            result['reason'] = reason
-            return result
+            # ── M20 Phase0 Death Zone Bypass ──
+            # When Phase0 blocks but M20 detected a strong failed breakout,
+            # allow the signal through. Failed breakouts are micro-structure
+            # events that don't need macro confirmation.
+            if reason == 'phase0_death_zone' and m20_status == 'PASS' and m20_score >= cfg.get('M20_DIRECT_SIGNAL_THRESHOLD', 0.85):
+                if m20_result and m20_result.get('status') == 'FAILED':
+                    result['m20_direct_signal'] = True
+                    result['m20_direct_score'] = round(float(m20_score), 4)
+                    result['m20_phase0_bypass'] = True
+                    _m20_direct = True
+                    print(f"  💥 M20 PHASE0 BYPASS: failed breakout score={m20_score:.3f} overriding death zone (Phase0={phase0_val:.3f})")
+                else:
+                    result['status'] = 'FILTERED'
+                    result['reason'] = reason
+                    return result
+            else:
+                result['status'] = 'FILTERED'
+                result['reason'] = reason
+                return result
 
     # ── M14 Sweep Gate ──
     if not _m20_direct:

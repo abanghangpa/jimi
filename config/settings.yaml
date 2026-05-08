@@ -183,7 +183,7 @@ LONG_MIN_ICS: 0.50
 # ─── PHASE0 MIN BLOCK (forensic P1) ────────────────────────
 # Phase0 < 0.2 is the "death zone" — 33% WR in 2024, 49% in 2023.
 # Block entries when Phase0 is too low (market is directionless).
-PHASE0_MIN_BLOCK: 0.20        # raised from 0.10 — death zone <0.15 has 50% WR
+PHASE0_MIN_BLOCK: 0.10        # lowered from 0.20 — was too aggressive, blocked $110+ moves in quiet macro
 
 # ─── M5 REGIME GATE (forensic P1) ──────────────────────────
 # M5 (Liquidation Magnet) is inverted in bull markets, predictive in bear.
