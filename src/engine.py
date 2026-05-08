@@ -37,8 +37,10 @@ from src.modules.session import get_session
 from src.modules.coherence_liquidity import check_coherence, compute_liquidity_aware_tp, compute_stop_risk
 from src.sl_tp import calc_trade_levels, check_sweep_gate
 from src.modules.m14_sweep import score_m14
+from src.modules.m17_resistance_quality import score_resistance_quality
 from src.modules.entry_optimizer import detect_wick_reclaim
 from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, SQUEEZE_V6_DEFAULTS as SQUEEZE_V5_DEFAULTS
+from src.modules.m19_breakout_confirm import check_breakout_filters
 from src.modules.m20_failed_breakout import score_m20
 
 
@@ -586,6 +588,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'squeeze_detected', 'squeeze_triggered', 'squeeze_pending',
         'squeeze_failed_breakout', 'squeeze_entries', 'squeeze_wins',
         'squeeze_long', 'squeeze_short', 'squeeze_direction_block',
+        'squeeze_confirmed', 'squeeze_not_confirmed',
+        'breakout_confirmed', 'breakout_weak', 'breakout_rejected',
+        'm17_pass', 'm17_skip',
         'm20_pass', 'm20_fail', 'm20_skip', 'm20_direct_signal',
         'm20_override', 'm20_ics_bypass',
     ]}
@@ -926,16 +931,6 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             m1_score = 1.0 - m1_score
         m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
 
-        # M2 Veto (still applies)
-        if cfg.get('M2_VETO_ENABLED', False):
-            m2_veto_thresh = cfg.get('M2_VETO_THRESHOLD', 0.40)
-            if direction == 'LONG' and m2_status == 'BEARISH' and m2_score < m2_veto_thresh:
-                stats['m2_veto_block'] += 1
-                continue
-            if direction == 'SHORT' and m2_status == 'BULLISH' and m2_score < m2_veto_thresh:
-                stats['m2_veto_block'] += 1
-                continue
-
         # Adaptive Direction Bias
         if cfg.get('ADAPTIVE_DIR_ENABLED', False):
             ema_1h_f = df_1h['ema_fast'].iloc[idx_1h] if idx_1h >= 0 else None
@@ -987,24 +982,27 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, cfg)
 
-        # M4b: Intrabar CVD check (LucF-style)
+        # M4b: Intrabar CVD check (LucF-style) — aligned with scanner
         m4b_divergence = 'NONE'
         m4b_score = 0.5
+        m4b_details = {}
         if cfg.get('M4B_INTRABAR_ENABLED', True):
+            _m4b_found_bar = None
             for ci in range(max(0, idx - 24), idx + 1):
                 d = df_15m['cvd_intrabar_div'].iloc[ci]
                 if d != 'NONE':
                     m4b_divergence = d
+                    _m4b_found_bar = ci
                     break
             if m4b_divergence != 'NONE':
-                is_opposing = (direction == 'LONG' and m4b_divergence == 'BEARISH') or \
-                              (direction == 'SHORT' and m4b_divergence == 'BULLISH')
-                is_confirming = (direction == 'LONG' and m4b_divergence == 'BULLISH') or \
-                                (direction == 'SHORT' and m4b_divergence == 'BEARISH')
-                if is_opposing:
-                    m4b_score = 0.30
-                elif is_confirming:
-                    m4b_score = 0.70
+                # Use score_intrabar_divergence for consistent scoring with scanner
+                _intrabar_result = {
+                    'divergence': m4b_divergence,
+                    'bars_ago': idx - _m4b_found_bar if _m4b_found_bar is not None else 0,
+                    'cvd_slope_12': 0.0,  # not available in backtest proxy
+                }
+                _m4b_status, m4b_score, m4b_details = score_intrabar_divergence(
+                    _intrabar_result, direction)
 
         # Blend M4b into M4 if intrabar catches div that taker CVD missed
         # When M4 has no divergence but M4b does → use M4b's score (matches scanner behavior)
@@ -1109,8 +1107,73 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     continue
                 # SKIP (no sweep detected) → invisible, don't affect ICS
 
+        # M17: Resistance Quality — validate nearest S/R level (aligned with scanner)
+        m17_score = 0.5; m17_status = 'SKIP'; use_m17 = False
+        if cfg.get('M17_ENABLED', True) and _sr:
+            _current_price = float(row['Close'])
+            _deriv_for_m17 = {}
+            # Fetch derivatives summary for M17 defender analysis
+            try:
+                _deriv_for_m17 = get_derivatives_summary() if cfg.get('DERIV_ENABLED', False) else {}
+                if 'error' in _deriv_for_m17:
+                    _deriv_for_m17 = {}
+            except Exception:
+                _deriv_for_m17 = {}
+
+            # Reuse volume profile from M5 cache (already computed)
+            _m17_bc, _m17_vp = None, None
+            if hasattr(run_backtest, '_vp_cache'):
+                _m17_bc, _m17_vp = run_backtest._vp_cache
+
+            if direction == 'LONG':
+                _resistances = [sr for sr in _sr if sr[4] == 'RESISTANCE']
+                if _resistances:
+                    _nearest_res = min(_resistances, key=lambda x: abs(x[0] - _current_price))
+                    _m17_result = score_resistance_quality(
+                        _nearest_res[0], df_15m, idx, _m17_bc, _m17_vp,
+                        _deriv_for_m17, 'LONG', config=cfg)
+                    if _m17_result:
+                        m17_score = _m17_result['composite']
+                        m17_status = 'PASS'
+                        use_m17 = True
+                        stats['m17_pass'] += 1
+                    else:
+                        stats['m17_skip'] += 1
+                else:
+                    stats['m17_skip'] += 1
+            elif direction == 'SHORT':
+                _supports = [sr for sr in _sr if sr[4] == 'SUPPORT']
+                if _supports:
+                    _nearest_sup = min(_supports, key=lambda x: abs(x[0] - _current_price))
+                    _m17_result = score_resistance_quality(
+                        _nearest_sup[0], df_15m, idx, _m17_bc, _m17_vp,
+                        _deriv_for_m17, 'SHORT', config=cfg)
+                    if _m17_result:
+                        m17_score = _m17_result['composite']
+                        m17_status = 'PASS'
+                        use_m17 = True
+                        stats['m17_pass'] += 1
+                    else:
+                        stats['m17_skip'] += 1
+                else:
+                    stats['m17_skip'] += 1
+            else:
+                stats['m17_skip'] += 1
+        else:
+            stats['m17_skip'] += 1
+
         # Extract M4 divergence string early — needed by both veto and coherence
         m4_div_str_veto = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else ('NONE' if m4_div is None else str(m4_div))
+
+        # M2 Veto — aligned with scanner (after module scoring, before veto system)
+        if cfg.get('M2_VETO_ENABLED', False):
+            m2_veto_thresh = cfg.get('M2_VETO_THRESHOLD', 0.40)
+            if direction == 'LONG' and m2_status == 'BEARISH' and m2_score < m2_veto_thresh:
+                stats['m2_veto_block'] += 1
+                continue
+            if direction == 'SHORT' and m2_status == 'BULLISH' and m2_score < m2_veto_thresh:
+                stats['m2_veto_block'] += 1
+                continue
 
         # Veto System
         if cfg.get('VETO_ENABLED', False):
@@ -1212,6 +1275,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                                         m9_score=m9_score, use_m9=use_m9, m10_score=m10_score, use_m10=use_m10,
                                         m11_score=m11_score, use_m11=use_m11, m12_score=m12_score, use_m12=use_m12,
                                         m13_score=m13_score, use_m13=use_m13, m14_score=m14_score, use_m14=use_m14,
+                                        m17_score=m17_score, use_m17=use_m17,
                                         m20_score=m20_score, use_m20=use_m20,
                                         config=cfg)
         ics += gatekeeper.ics_boost
@@ -1222,6 +1286,20 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         m5_spot_high = cfg.get('M5_SWEET_SPOT_HIGH', 0.50)
         if m5_spot_low <= m5_score <= m5_spot_high:
             ics += cfg.get('M5_SWEET_SPOT_BOOST', 0.04)
+
+        # ── Squeeze ICS boost (only when TRIGGERED + CONFIRMED, aligned with scanner) ──
+        if squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed and \
+                squeeze_result.get('ics_boost', 0) > 0:
+            ics += squeeze_result['ics_boost']
+
+        # ── Squeeze regime override (aligned with scanner) ──
+        # When squeeze is TRIGGERED + confirmed + overrides_regime, lift regime block
+        # Note: In engine, M9 block happens early (line ~770). This override only helps
+        # when regime is NOT in M9_BLOCK_REGIMES but is still unfavorable.
+        _squeeze_overrode_regime = False
+        if squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed and \
+                squeeze_result.get('overrides_regime', False):
+            _squeeze_overrode_regime = True
 
         # ═══════════════════════════════════════════════════════════
         # COHERENCE CHECK — do module states tell a consistent story?
@@ -1333,6 +1411,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         # SQUEEZE DETECTION (M18) — Run per bar, track signals
         # ═══════════════════════════════════════════════════════════
         squeeze_result = {'squeeze_type': 'NONE', 'squeeze_status': 'NONE'}
+        squeeze_confirmed = False
+        squeeze_filters = {}
+        breakout_result = None
         if squeeze_enabled and idx >= 47:
             sq_result = {
                 'price': float(row['Close']),
@@ -1343,12 +1424,16 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 'vol_ratio': float(row.get('vol_ratio', 1.0)),
                 'vol_ma20': float(row['vol_ma20']) if row['vol_ma20'] > 0 else 0,
             }
+            # Pass magnets + sr_levels for consistent TP/SL with scanner
             squeeze_result = detect_squeeze(
                 sq_result, config=cfg,
                 last_signal_bar=squeeze_last_squeeze_bar,
                 current_bar=idx,
                 compression_history=squeeze_compression_history,
                 df_15m=df_15m.iloc[:idx+1],
+                magnets=_magnets if _magnets else None,
+                sr_levels=_sr if _sr else None,
+                liq_levels=None,  # live order book not available in backtest
             )
             if squeeze_result['squeeze_type'] != 'NONE':
                 stats['squeeze_detected'] += 1
@@ -1359,6 +1444,107 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     squeeze_last_squeeze_bar = idx
                 elif squeeze_result['squeeze_status'] == 'PENDING':
                     stats['squeeze_pending'] += 1
+
+            # ── Squeeze 5-filter confirmation gate (aligned with scanner) ──
+            sq_type = squeeze_result.get('squeeze_type', 'NONE')
+            sq_dir = squeeze_result.get('direction', 'NEUTRAL')
+            if sq_type != 'NONE' and sq_dir != 'NEUTRAL':
+                # Filter 1: EMA trend — regime-adaptive
+                if cfg.get('SQUEEZE_CONFIRM_EMA', True) and len(df_15m) >= 55:
+                    _close = df_15m['Close'].iloc[:idx+1]
+                    _ema21 = float(_close.ewm(span=21, adjust=False).mean().iloc[-1])
+                    _ema55 = float(_close.ewm(span=55, adjust=False).mean().iloc[-1])
+                    _ema_spread = (_ema21 - _ema55) / _ema55 * 100 if _ema55 > 0 else 0
+                    _ema_trend = 'BULL' if _ema21 > _ema55 else 'BEAR'
+                    _contrarian = (sq_dir == 'LONG' and _ema_trend == 'BEAR') or \
+                                  (sq_dir == 'SHORT' and _ema_trend == 'BULL')
+                    _aligned = not _contrarian
+                    if _ema_spread < 0:
+                        squeeze_filters['ema_regime'] = _contrarian
+                    else:
+                        squeeze_filters['ema_regime'] = _aligned
+                else:
+                    squeeze_filters['ema_regime'] = True
+
+                # Filter 2: CVD divergence agrees
+                if cfg.get('SQUEEZE_CONFIRM_CVD', True):
+                    _m4b_div = m4b_divergence
+                    squeeze_filters['cvd_agrees'] = not ((sq_dir == 'LONG' and _m4b_div == 'BEARISH') or
+                                                         (sq_dir == 'SHORT' and _m4b_div == 'BULLISH'))
+                else:
+                    squeeze_filters['cvd_agrees'] = True
+
+                # Filter 3: RSI not extreme against direction
+                if cfg.get('SQUEEZE_CONFIRM_RSI', True) and 'rsi' in df_15m.columns:
+                    _rsi = float(df_15m['rsi'].iloc[idx]) if not pd.isna(df_15m['rsi'].iloc[idx]) else 50
+                    squeeze_filters['rsi_ok'] = (sq_dir == 'LONG' and _rsi < 75) or \
+                                                 (sq_dir == 'SHORT' and _rsi > 25)
+                else:
+                    squeeze_filters['rsi_ok'] = True
+
+                # Filter 4: Quality score >= 0.5
+                if cfg.get('SQUEEZE_CONFIRM_QUALITY', True):
+                    squeeze_filters['quality_high'] = squeeze_result.get('squeeze_score', 0) >= 0.5
+                else:
+                    squeeze_filters['quality_high'] = True
+
+                # Filter 5: ATR floor
+                if cfg.get('SQUEEZE_CONFIRM_ATR_FLOOR', True):
+                    _atr_now = float(df_15m['atr'].iloc[idx]) if not pd.isna(df_15m['atr'].iloc[idx]) else 0
+                    _atr_hard_floor = cfg.get('SQUEEZE_MIN_ATR', 5.0)
+                    _atr_lookback = cfg.get('SQUEEZE_ATR_LOOKBACK', 8640)
+                    _atr_pctile = cfg.get('SQUEEZE_ATR_FLOOR_PCTILE', 15)
+                    _atr_series = df_15m['atr'].iloc[:idx+1].dropna()
+                    if len(_atr_series) > 100:
+                        _atr_window = _atr_series.iloc[-min(len(_atr_series), _atr_lookback):]
+                        _atr_threshold = float(np.percentile(_atr_window, _atr_pctile))
+                    else:
+                        _atr_threshold = _atr_hard_floor
+                    _atr_effective = max(_atr_hard_floor, _atr_threshold)
+                    squeeze_filters['atr_floor'] = _atr_now >= _atr_effective
+                else:
+                    squeeze_filters['atr_floor'] = True
+
+                squeeze_confirmed = all(squeeze_filters.values())
+                if squeeze_confirmed:
+                    stats['squeeze_confirmed'] += 1
+                else:
+                    stats['squeeze_not_confirmed'] += 1
+
+            # ── M19: Breakout Confirmation (aligned with scanner) ──
+            if sq_type != 'NONE' and sq_dir != 'NEUTRAL':
+                # Build a minimal result dict for check_breakout_filters
+                # (same structure scanner passes)
+                _bc_result = {
+                    'squeeze': squeeze_result,
+                    'm4': {'div': m4_div},
+                    'm4b': {'divergence': m4b_divergence},
+                    'm10': {'details': m10_details} if m10_details else {},
+                    'vol_trend': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
+                    'bar_vol_spike': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
+                    'derivatives': _deriv_for_m17 if '_deriv_for_m17' in locals() else {},
+                    'magnets': [(p, s, swept, swept_at) for p, s, swept, swept_at, *_ in _magnets] if _magnets else [],
+                    'price': float(row['Close']),
+                    'raw_taker_ratio': float(row['taker_ratio']),
+                    'exchange_activity': {},  # not available in backtest
+                }
+                # Add OI roc from derivatives if available
+                if _bc_result['derivatives']:
+                    _bc_result['derivatives']['oi_roc_1h'] = _bc_result['derivatives'].get('oi_roc_1h', 0)
+                    _bc_result['derivatives']['funding_rate'] = _bc_result['derivatives'].get('funding_rate', 0)
+
+                breakout_result = check_breakout_filters(
+                    _bc_result, df_15m=df_15m.iloc[:idx+1], config=cfg)
+
+                if breakout_result['status'] == 'CONFIRMED':
+                    stats['breakout_confirmed'] += 1
+                elif breakout_result['status'] == 'WEAK':
+                    stats['breakout_weak'] += 1
+                elif breakout_result['status'] == 'REJECTED':
+                    stats['breakout_rejected'] += 1
+                    # If squeeze was TRIGGERED but breakout REJECTED, suppress
+                    if squeeze_result['squeeze_status'] == 'TRIGGERED':
+                        squeeze_confirmed = False
 
         # Entry Dedup
         min_dist = cfg.get('MIN_ENTRY_DIST_PCT', 0)
