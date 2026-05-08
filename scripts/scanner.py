@@ -1065,10 +1065,16 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         result['veto'] = veto.summary() if veto.soft_vetoes else 'CLEAR'
 
     # Coherence check
+    # In chop regimes, suppress M13 bias for coherence (M13 is anti-predictive
+    # when it agrees with M9 during chop) — aligned with engine behavior
+    _chop_regimes = ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD')
+    _in_chop = cfg.get('M13_DEFER_IN_CHOP', True) and vol_regime in _chop_regimes
+    _coherence_m13_bias = 'NEUTRAL' if _in_chop else m13_bias
+
     if cfg.get('COHERENCE_CHECK_ENABLED', True):
         is_coherent, conflicts, coherence_penalty = check_coherence(
             direction, m4_div_str, m5_details if isinstance(m5_details, dict) else {},
-            m13_bias, vol_regime, m7_score=m7_score, m2_status=m2_status, config=cfg,
+            _coherence_m13_bias, vol_regime, m7_score=m7_score, m2_status=m2_status, config=cfg,
         )
         if not is_coherent:
             result['status'] = 'NO_SIGNAL'

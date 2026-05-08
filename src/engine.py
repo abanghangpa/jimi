@@ -543,7 +543,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
     print("[5/6] Running backtest...")
 
-    # Cache funding rate
+    # Funding rate — cached once at start (API returns current rate, not historical)
+    # TODO: fetch historical funding rates from Binance for accurate backtest
     cached_funding_rate = None
     if cfg.get('M8_ENABLED', False):
         try:
@@ -1087,7 +1088,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         # M7 already computed above (Phase 2)
 
-        # M10
+        # M8
         if cfg.get('M8_ENABLED', False) and cached_funding_rate is not None:
             m8_status, m8_score, m8_details = score_m8_funding(cached_funding_rate, direction, cfg)
             use_m8 = True
@@ -1432,14 +1433,56 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         squeeze_filters = {}
         breakout_result = None
         if squeeze_enabled and idx >= 47:
+            _close_val_sq = float(row['Close'])
+            _vol_ma20_sq = float(row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0
+            _vol_ratio_sq = float(row['Volume'] / _vol_ma20_sq)
+            _taker_sq = float(row['taker_ratio'])
+            _bar_range_sq = (float(row['High']) - float(row['Low'])) / _close_val_sq * 100 if _close_val_sq > 0 else 0.5
+
+            # Bar-level ignition (matches scanner computation)
+            if idx >= 19:
+                _bar_range_ma_sq = float(df_15m['High'].iloc[idx-19:idx+1].sub(
+                    df_15m['Low'].iloc[idx-19:idx+1]).div(
+                    df_15m['Close'].iloc[idx-19:idx+1]).mean() * 100)
+            else:
+                _bar_range_ma_sq = _bar_range_sq
+            _bar_range_expansion = _bar_range_sq / _bar_range_ma_sq if _bar_range_ma_sq > 0 else 1.0
+
+            # OI proxy: volume accumulation relative to average
+            if idx > 67:
+                _vol_cumsum_48 = float(df_15m['Volume'].iloc[idx-47:idx+1].sum())
+                _vol_cumsum_ma = float(df_15m['Volume'].iloc[idx-67:idx+1].rolling(20).mean().iloc[-1])
+                _oi_proxy = _vol_cumsum_48 / _vol_cumsum_ma if _vol_cumsum_ma > 0 else 1.0
+            else:
+                _oi_proxy = 1.0
+
+            # VWAP distance
+            _vwap_sq = float(df_15m['vwap'].iloc[idx]) if 'vwap' in df_15m.columns else _close_val_sq
+            _vwap_dist_sq = (_close_val_sq - _vwap_sq) / _vwap_sq * 100 if _vwap_sq > 0 else 0
+
+            # Squeeze quality (matches scanner formula)
+            _rw_score = max(0, min(1, 1 - (squeeze_compression_history[-1][0] - 1.5) / 4.0)) if squeeze_compression_history else 0.5
+            _vr_score = max(0, min(1, 1 - (_vol_ratio_sq - 0.05) / 0.20))
+            _oip_score = max(0, min(1, (_oi_proxy - 0.7) / 0.5))
+            _vd_score = max(0, min(1, 1 - abs(_vwap_dist_sq) / 1.0))
+            _squeeze_quality = _rw_score * 0.30 + _vr_score * 0.25 + _oip_score * 0.25 + _vd_score * 0.20
+
             sq_result = {
-                'price': float(row['Close']),
+                'price': _close_val_sq,
                 'atr': float(row['atr']),
                 'range_width': squeeze_compression_history[-1][0] if squeeze_compression_history else 5.0,
-                'raw_taker_ratio': float(row['taker_ratio']),
-                'vol_trend': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
+                'raw_taker_ratio': _taker_sq,
+                'raw_bar_range_pct': _bar_range_sq,
+                'vol_trend': _vol_ratio_sq,
                 'vol_ratio': float(row.get('vol_ratio', 1.0)),
-                'vol_ma20': float(row['vol_ma20']) if row['vol_ma20'] > 0 else 0,
+                'vol_ma20': _vol_ma20_sq,
+                'bar_vol_spike': _vol_ratio_sq,
+                'bar_range_expansion': _bar_range_expansion,
+                'bar_taker_extreme': _taker_sq > 0.65 or _taker_sq < 0.35,
+                'oi_proxy': _oi_proxy,
+                'vwap_dist': _vwap_dist_sq,
+                'squeeze_quality': _squeeze_quality,
+                'rsi': float(df_15m['rsi'].iloc[idx]) if 'rsi' in df_15m.columns and not pd.isna(df_15m['rsi'].iloc[idx]) else 50.0,
             }
             # Pass magnets + sr_levels for consistent TP/SL with scanner
             squeeze_result = detect_squeeze(
