@@ -766,7 +766,16 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     if cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None:
         eb_row, bt_row = m7_get_row(m7_ethbtc_df, m7_btc_df, ts)
         m7_status, m7_score, m7_details = score_m7(eb_row, bt_row, row.get('vol_ratio', np.nan), direction)
-    m13_status, m13_score, m13_details = score_m13(df_1h, idx_1h, direction, df_15m_for_m9, idx_15m_for_m9)
+    _chop_regimes_m13 = ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD')
+    _in_chop = cfg.get('M13_DEFER_IN_CHOP', True) and vol_regime in _chop_regimes_m13
+    if cfg.get('M13_ENABLED', True):
+        _m13_status2, _m13_score2, m13_details = score_m13(df_1h, idx_1h, direction, df_15m_for_m9, idx_15m_for_m9)
+        if not _in_chop:
+            m13_status = _m13_status2
+            m13_score = _m13_score2
+            m13_bias = m13_details.get('m13_bias', 'NEUTRAL')
+        # During chop: keep m13_score at 0.5 for ICS, but m13_details
+        # is updated with direction-aware swing levels for M14
     result['m9']['score'] = round(float(m9_score), 3)
     result['m9']['status'] = m9_status
     result['m7']['score'] = round(float(m7_score), 3)
@@ -1010,11 +1019,16 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
             result['m20'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
     # ── ICS ──
+    # Extract cascade params from M5 details (aligned with engine)
+    cascade_dir = m5_details.get('cascade_dir', 'NONE') if isinstance(m5_details, dict) else 'NONE'
+    cascade_strength = m5_details.get('cascade_strength', 0.0) if isinstance(m5_details, dict) else 0.0
+
     ics, effective_floor = calc_ics(
         m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
         m7_score=m7_score, m8_score=m8_score,
         use_m7=cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None,
         use_m8=m8_status != 'SKIP',
+        cascade_dir=cascade_dir, cascade_strength=cascade_strength,
         m9_score=m9_score, use_m9=True,
         m10_score=m10_score, use_m10=m10_status != 'SKIP',
         m11_score=m11_score, use_m11=m11_status != 'SKIP',
@@ -1025,6 +1039,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         m20_score=m20_score, use_m20=m20_status == 'PASS',
         config=cfg,
     )
+
+    # M5 sweet-spot boost (aligned with engine)
+    m5_spot_low = cfg.get('M5_SWEET_SPOT_LOW', 0.30)
+    m5_spot_high = cfg.get('M5_SWEET_SPOT_HIGH', 0.50)
+    if m5_spot_low <= m5_score <= m5_spot_high:
+        ics += cfg.get('M5_SWEET_SPOT_BOOST', 0.04)
+
     result['ics'] = round(float(ics), 4)
     result['effective_floor'] = round(float(effective_floor), 4)
 
@@ -1067,8 +1088,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     # Coherence check
     # In chop regimes, suppress M13 bias for coherence (M13 is anti-predictive
     # when it agrees with M9 during chop) — aligned with engine behavior
-    _chop_regimes = ('CHOP_MILD', 'CHOP_MILD_BEAR', 'CHOP_MILD_BULL', 'CHOP_HARD')
-    _in_chop = cfg.get('M13_DEFER_IN_CHOP', True) and vol_regime in _chop_regimes
+    # _in_chop already computed above during M13 re-scoring
     _coherence_m13_bias = 'NEUTRAL' if _in_chop else m13_bias
 
     if cfg.get('COHERENCE_CHECK_ENABLED', True):
@@ -1128,6 +1148,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
         result['status'] = 'NO_SIGNAL'
         result['reason'] = f'Gatekeeper: {gatekeeper.summary()}'
         return result
+    # Apply gatekeeper ICS boost (e.g., M7 strong agree) — aligned with engine
+    ics += gatekeeper.ics_boost
+    result['ics'] = round(float(ics), 4)
 
     # ── Compute trade levels (always, even on NO_SIGNAL) ──
     entry_price = float(row['Close'])

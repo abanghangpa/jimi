@@ -342,10 +342,11 @@ def check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, 
             return False, "atr_too_high"
     if phase0_val >= 0.90:
         return False, "phase0_red"
-    # Phase0 minimum block — death zone (forensic P1)
-    phase0_min = cfg.get('PHASE0_MIN_BLOCK', 0.0)
-    if phase0_min > 0 and phase0_val < phase0_min:
-        return False, "phase0_death_zone"
+    # Phase0 minimum block — DISABLED (scanner reports phase0 in
+    # invalidation info only; does not gate signals on it)
+    # phase0_min = cfg.get('PHASE0_MIN_BLOCK', 0.0)
+    # if phase0_min > 0 and phase0_val < phase0_min:
+    #     return False, "phase0_death_zone"
 
     # ── Survival filter: momentum gate ──
     # Reject entries when recent bars show no directional momentum.
@@ -614,6 +615,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
     for idx in range(len(df_15m)):
         row = df_15m.iloc[idx]
         ts = row['Open time']
+        # Squeeze defaults per bar (actual detection happens later)
+        squeeze_result = {'squeeze_type': 'NONE', 'squeeze_status': 'NONE', 'squeeze_score': 0.0, 'ics_boost': 0.0, 'direction': 'NEUTRAL'}
+        squeeze_confirmed = False
         if ts < warmup_time:
             continue
         if date_start and str(ts) < date_start:
@@ -745,11 +749,12 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         phase0_block = cfg.get('PHASE0_SUMMER_BLOCK', 0.90) if is_summer else 0.90
         if phase0_val >= phase0_block:
             continue
-        # Phase0 minimum block — death zone (forensic P1)
-        phase0_min = cfg.get('PHASE0_MIN_BLOCK', 0.0)
-        if phase0_min > 0 and phase0_val < phase0_min:
-            stats['bias_gate_skip'] += 1
-            continue
+        # Phase0 minimum block — DISABLED (scanner doesn't gate on phase0;
+        # it reports phase0 in invalidation info only, so engine must match)
+        # phase0_min = cfg.get('PHASE0_MIN_BLOCK', 0.0)
+        # if phase0_min > 0 and phase0_val < phase0_min:
+        #     stats['bias_gate_skip'] += 1
+        #     continue
 
         # Consecutive Loss Pause
         max_consec = cfg.get('MAX_CONSEC_LOSS_SUMMER', 999) if is_summer else cfg.get('MAX_CONSEC_LOSS', 999)
@@ -1583,7 +1588,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     'vol_trend': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
                     'bar_vol_spike': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
                     'derivatives': _deriv_for_m17 if '_deriv_for_m17' in locals() else {},
-                    'magnets': [(p, s, swept, swept_at) for p, s, swept, swept_at, *_ in _magnets] if _magnets else [],
+                    'magnets': [(p, s, False, None) for p, s, *_ in _magnets] if _magnets else [],
                     'price': float(row['Close']),
                     'raw_taker_ratio': float(row['taker_ratio']),
                     'exchange_activity': {},  # not available in backtest
