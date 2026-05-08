@@ -35,7 +35,7 @@ from src.modules.adaptive_weights import AdaptiveWeights
 from src.modules.cross_asset import score_cross_asset
 from src.modules.session import get_session
 from src.modules.coherence_liquidity import check_coherence, compute_liquidity_aware_tp, compute_stop_risk
-from src.sl_tp import calc_trade_levels, check_sweep_gate
+from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.m14_sweep import score_m14
 from src.modules.m17_resistance_quality import score_resistance_quality
 from src.modules.entry_optimizer import detect_wick_reclaim
@@ -1731,6 +1731,13 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 _magnets_for_levels = find_magnets(_bc, _vp)
             _sr_for_levels = find_support_resistance(df_15m, idx)
 
+        # ── Limit Entry: find better entry at nearest support/resistance ──
+        limit_entry = calc_limit_entry(
+            entry_price, direction, _magnets_for_levels, _sr_for_levels,
+            atr_1h=atr_for_sl, cfg=cfg)
+        if limit_entry['entry_source'] != 'MARKET':
+            entry_price = limit_entry['entry_price']
+
         trade_levels = calc_trade_levels(
             entry_price, direction, atr_for_sl,
             row.get('vol_ratio', np.nan),
@@ -1823,7 +1830,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         last_entry_bar = idx
 
         if verbose and stats['entries'] <= 50:
-            print(f"  ENTRY #{stats['entries']}: {ts} {direction} @ {entry_price:.2f} "
+            _le_src = limit_entry.get('entry_source', 'MARKET')
+            _le_tag = f" [{_le_src}]" if _le_src != 'MARKET' else ""
+            print(f"  ENTRY #{stats['entries']}: {ts} {direction} @ {entry_price:.2f}{_le_tag} "
                   f"SL={sl:.2f} TP1={tp1:.2f} ICS={ics:.3f} M5={m5_status}({m5_score:.2f}) M7={m7_score:.2f} size={size:.2f}")
 
     # Close remaining

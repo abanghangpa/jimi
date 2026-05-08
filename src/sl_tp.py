@@ -355,3 +355,153 @@ def check_sweep_gate(m14_status, m14_score, cfg=None):
         return True, 'sweep_confirmed'
 
     return False, f'M14 gate: {m14_status} (sweep required)'
+
+
+# ═══════════════════════════════════════════════════════════════
+# LIMIT ENTRY — Better entry price via support/resistance
+# ═══════════════════════════════════════════════════════════════
+
+_LIMIT_ENTRY_DEFAULTS = {
+    'LIMIT_ENTRY_ENABLED': True,
+    'LIMIT_ENTRY_MAX_DIST_PCT': 0.02,    # max 2.0% from current price
+    'LIMIT_ENTRY_MIN_DIST_PCT': 0.001,   # min 0.1% (avoid too-close levels)
+    'LIMIT_ENTRY_ATR_MIN_MULT': 0.2,     # min distance as ATR multiple
+    'LIMIT_ENTRY_ATR_MAX_MULT': 2.0,     # max distance as ATR multiple
+    'LIMIT_ENTRY_PREFER_SR': True,       # prefer S/R over HVN
+    'LIMIT_ENTRY_SR_MIN_STRENGTH': 15,   # min S/R strength to consider
+}
+
+
+def calc_limit_entry(current_price, direction, magnets, sr_levels,
+                     atr_1h=None, cfg=None):
+    """Compute a limit entry price using support/resistance and volume profile.
+
+    For LONG: finds the nearest strong support or HVN below current price.
+    For SHORT: finds the nearest strong resistance or HVN above current price.
+
+    Returns:
+        dict with:
+            entry_price: recommended limit entry price
+            entry_source: 'SUPPORT' | 'RESISTANCE' | 'HVN' | 'MARKET'
+            entry_level: the S/R or magnet price used
+            entry_dist_pct: distance from current price (%)
+            reason: human-readable explanation
+    """
+    cfg = cfg or {}
+    if not cfg.get('LIMIT_ENTRY_ENABLED', _LIMIT_ENTRY_DEFAULTS['LIMIT_ENTRY_ENABLED']):
+        return {
+            'entry_price': current_price, 'entry_source': 'MARKET',
+            'entry_level': current_price, 'entry_dist_pct': 0.0,
+            'reason': 'limit entry disabled',
+        }
+
+    max_dist = cfg.get('LIMIT_ENTRY_MAX_DIST_PCT', _LIMIT_ENTRY_DEFAULTS['LIMIT_ENTRY_MAX_DIST_PCT'])
+    min_dist = cfg.get('LIMIT_ENTRY_MIN_DIST_PCT', _LIMIT_ENTRY_DEFAULTS['LIMIT_ENTRY_MIN_DIST_PCT'])
+    atr_min = cfg.get('LIMIT_ENTRY_ATR_MIN_MULT', _LIMIT_ENTRY_DEFAULTS['LIMIT_ENTRY_ATR_MIN_MULT'])
+    atr_max = cfg.get('LIMIT_ENTRY_ATR_MAX_MULT', _LIMIT_ENTRY_DEFAULTS['LIMIT_ENTRY_ATR_MAX_MULT'])
+    prefer_sr = cfg.get('LIMIT_ENTRY_PREFER_SR', _LIMIT_ENTRY_DEFAULTS['LIMIT_ENTRY_PREFER_SR'])
+    sr_min_str = cfg.get('LIMIT_ENTRY_SR_MIN_STRENGTH', _LIMIT_ENTRY_DEFAULTS['LIMIT_ENTRY_SR_MIN_STRENGTH'])
+
+    atr = float(atr_1h) if atr_1h is not None and not np.isnan(atr_1h) else current_price * 0.005
+
+    candidates = []
+
+    # ── Collect S/R candidates ──
+    if sr_levels:
+        for level in sr_levels:
+            price, strength, touches, bounces, ltype = level
+            dist_pct = abs(price - current_price) / current_price
+            dist_atr = abs(price - current_price) / atr if atr > 0 else 0
+
+            # Filter by direction
+            if direction == 'LONG' and ltype != 'SUPPORT':
+                continue
+            if direction == 'SHORT' and ltype != 'RESISTANCE':
+                continue
+
+            # Filter by distance
+            if dist_pct < min_dist or dist_pct > max_dist:
+                continue
+            if dist_atr < atr_min or dist_atr > atr_max:
+                continue
+
+            # Filter by strength
+            if strength < sr_min_str:
+                continue
+
+            candidates.append({
+                'price': float(price),
+                'source': ltype,
+                'strength': float(strength),
+                'touches': touches,
+                'bounces': bounces,
+                'dist_pct': dist_pct,
+                'dist_atr': dist_atr,
+                'priority': 0 if prefer_sr else 1,  # S/R gets priority
+            })
+
+    # ── Collect HVN (magnet) candidates ──
+    if magnets:
+        for mag in magnets:
+            if len(mag) >= 3:
+                price, vol, strength = mag[0], mag[1], mag[2]
+            elif len(mag) >= 2:
+                price, strength = mag[0], mag[1]
+            else:
+                continue
+
+            dist_pct = abs(price - current_price) / current_price
+            dist_atr = abs(price - current_price) / atr if atr > 0 else 0
+
+            # Filter by direction
+            if direction == 'LONG' and price >= current_price:
+                continue
+            if direction == 'SHORT' and price <= current_price:
+                continue
+
+            # Filter by distance
+            if dist_pct < min_dist or dist_pct > max_dist:
+                continue
+            if dist_atr < atr_min or dist_atr > atr_max:
+                continue
+
+            candidates.append({
+                'price': float(price),
+                'source': 'HVN',
+                'strength': float(strength),
+                'touches': 0,
+                'bounces': 0,
+                'dist_pct': dist_pct,
+                'dist_atr': dist_atr,
+                'priority': 1,
+            })
+
+    if not candidates:
+        return {
+            'entry_price': current_price, 'entry_source': 'MARKET',
+            'entry_level': current_price, 'entry_dist_pct': 0.0,
+            'reason': 'no qualifying S/R or HVN within range',
+        }
+
+    # ── Score candidates: prefer closer, stronger levels ──
+    for c in candidates:
+        # Score = strength * proximity bonus - distance penalty
+        proximity_bonus = 1.0 / (c['dist_pct'] * 100 + 0.1)  # closer = higher
+        strength_score = c['strength'] / 100.0  # normalize
+        c['score'] = (strength_score * 0.6 + proximity_bonus * 0.4) - c['priority'] * 0.1
+
+    # Sort by score descending
+    candidates.sort(key=lambda x: -x['score'])
+    best = candidates[0]
+
+    entry_price = best['price']
+    entry_dist_pct = (current_price - entry_price) / current_price * 100
+
+    return {
+        'entry_price': round(entry_price, 2),
+        'entry_source': best['source'],
+        'entry_level': round(best['price'], 2),
+        'entry_dist_pct': round(entry_dist_pct, 4),
+        'reason': (f"{best['source']} @ ${best['price']:.2f} "
+                   f"(str={best['strength']:.0f}, dist={entry_dist_pct:+.2f}%)"),
+    }

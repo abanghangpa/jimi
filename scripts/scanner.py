@@ -48,7 +48,7 @@ from src.modules.m12_orderbook import score_m12_orderbook
 from src.modules.m14_sweep import score_m14
 from src.modules.m17_resistance_quality import score_resistance_quality, format_resistance_quality
 from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_exchange_data, compute_exchange_signals, score_exchange_activity, score_spot_signals
-from src.sl_tp import calc_trade_levels, check_sweep_gate
+from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
 from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, format_squeeze
@@ -1157,8 +1157,16 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     atr_for_sl = float(atr_1h) if not pd.isna(atr_1h) else float(row['atr'])
     _liq_for_levels = result.get('liquidity_levels')
 
+    # ── Limit Entry: find better entry at nearest support/resistance ──
+    limit_entry = calc_limit_entry(
+        entry_price, direction, magnets, sr_levels,
+        atr_1h=atr_for_sl, cfg=cfg)
+    result['limit_entry'] = limit_entry
+    # Use limit entry price if available, otherwise market price
+    effective_entry = limit_entry['entry_price'] if limit_entry['entry_source'] != 'MARKET' else entry_price
+
     levels = calc_trade_levels(
-        entry_price, direction, atr_for_sl,
+        effective_entry, direction, atr_for_sl,
         row.get('vol_ratio', np.nan),
         magnets=magnets,
         sr_levels=sr_levels,
@@ -1213,7 +1221,10 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
 
     result['what_if'] = {
         'direction': direction,
-        'entry': entry_price,
+        'entry': effective_entry,
+        'entry_source': limit_entry['entry_source'],
+        'entry_reason': limit_entry['reason'],
+        'market_entry': entry_price,
         'sl': levels['sl'],
         'tp1': levels['tp1'],
         'tp2': levels['tp2'],
@@ -1257,7 +1268,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
 
     # ── SIGNAL: set levels ──
     result.update({
-        'status': 'SIGNAL', 'entry': entry_price,
+        'status': 'SIGNAL', 'entry': effective_entry,
+        'market_entry': entry_price,
+        'limit_entry': limit_entry,
         'sl': levels['sl'], 'tp1': levels['tp1'],
         'tp2': levels['tp2'], 'tp3': levels['tp3'],
         'sl_pct': levels['sl_pct'], 'tp1_pct': levels['tp1_pct'],
@@ -1677,7 +1690,12 @@ def print_signal(result):
         tp1_src = result.get('tp1_source', 'ATR')
         tp2_src = result.get('tp2_source', 'ATR')
         tp3_src = result.get('tp3_source', 'ATR')
-        print(f"    Entry: ${result['entry']:.2f}")
+        le = result.get('limit_entry', {})
+        if le.get('entry_source', 'MARKET') != 'MARKET':
+            print(f"    Entry: ${result['entry']:.2f}  [{le.get('entry_source', '?')}]  (market: ${result.get('market_entry', result['entry']):.2f})")
+            print(f"           {le.get('reason', '')}")
+        else:
+            print(f"    Entry: ${result['entry']:.2f}")
         print(f"    SL:    ${result['sl']:.2f}  ({result['sl_pct']:.2f}%)  [{sl_src}]")
         print(f"    TP1:   ${result['tp1']:.2f}  ({result['tp1_pct']:.2f}%)  [{tp1_src}]")
         print(f"    TP2:   ${result['tp2']:.2f}  [{tp2_src}]")
@@ -1690,7 +1708,12 @@ def print_signal(result):
     if w:
         print(f"\n  {'─' * 56}")
         print(f"  IF YOU WERE TO TRADE ({w['direction']}):")
-        print(f"    Entry: ${w['entry']:.2f}")
+        if w.get('entry_source', 'MARKET') != 'MARKET':
+            print(f"    Entry: ${w['entry']:.2f}  [{w['entry_source']}]  ← limit order")
+            print(f"           {w.get('entry_reason', '')}")
+            print(f"    Market: ${w.get('market_entry', w['entry']):.2f}  ← current price")
+        else:
+            print(f"    Entry: ${w['entry']:.2f}  [MARKET]")
         print(f"    SL:    ${w['sl']:.2f}  ({w['sl_pct']:.2f}%)  [{w['sl_source']}]")
         print(f"    TP1:   ${w['tp1']:.2f}  ({w['tp1_pct']:.2f}%)  [{w['tp1_source']}]")
         print(f"    TP2:   ${w['tp2']:.2f}  [{w['tp2_source']}]")
