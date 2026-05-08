@@ -270,9 +270,15 @@ SURVIVAL_MIN_MOVE: 0.002        # min net move in trade direction (0.2%)
 SURVIVAL_MIN_CONSISTENCY: 0.35  # min fraction of bars closing in trade direction
 SURVIVAL_VOL_RATIO: 0.30        # min recent ATR / 1H ATR ratio
 
-# ─── TIME-STOP ──────────────────────────────────────────────
+# ─── TIME-STOP (ADAPTIVE) ───────────────────────────────────
 # Exit trade if TP1 not hit within N bars (0 = disabled)
-TIME_STOP_BARS: 20            # tightened from 30 — stale trades are losers
+# ADAPTIVE: time stop scales with TP1 distance.
+#   bars = max(BASE, BASE + tp1_pct * PER_PCT), capped at MAX
+# Wider TP targets get more time; tight TPs exit faster.
+TIME_STOP_BARS: 20            # legacy fallback (overridden by BASE below)
+TIME_STOP_BASE_BARS: 20       # minimum time stop bars
+TIME_STOP_PER_PCT: 25         # extra bars per 1% of TP1 distance
+TIME_STOP_MAX_BARS: 60        # hard cap
 
 # ─── M10: CROSS-ASSET MACRO ─────────────────────────────────
 M10_ENABLED: true

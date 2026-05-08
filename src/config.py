@@ -608,8 +608,11 @@ _DEFAULTS = {
     "SURVIVAL_MIN_MOVE": 0.002,
     "SURVIVAL_MIN_CONSISTENCY": 0.35,
     "SURVIVAL_VOL_RATIO": 0.30,
-    # Time stop
+    # Time stop (adaptive)
     "TIME_STOP_BARS": 20,
+    "TIME_STOP_BASE_BARS": 20,
+    "TIME_STOP_PER_PCT": 25,
+    "TIME_STOP_MAX_BARS": 60,
     # M1 MACD divergence
     "M1_MACD_DIV_ENABLED": True,
     "M1_MACD_DIV_LOOKBACK": 40,

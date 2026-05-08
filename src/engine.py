@@ -676,11 +676,22 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     continue
 
             # ── Time-stop: exit if TP1 not hit within N bars ──
-            # Prevents trades from lingering in dead momentum.
-            # Based on scanner eval: losers average 39.5 bars to SL,
-            # winners average 25.3 bars to TP1. If TP1 isn't hit in
-            # TIME_STOP_BARS, the setup has likely failed.
-            time_stop_bars = cfg.get('TIME_STOP_BARS', 30)
+            # ADAPTIVE: scales with TP1 distance. Wider TP targets need
+            # more time to develop. Formula:
+            #   bars = max(BASE, BASE + tp1_pct * PER_PCT), capped at MAX
+            # Examples (BASE=20, PER_PCT=25, MAX=60):
+            #   TP1 0.2% away → 20 bars (minimum)
+            #   TP1 0.5% away → 32 bars
+            #   TP1 1.0% away → 45 bars
+            #   TP1 1.5% away → 57 bars
+            ts_base = cfg.get('TIME_STOP_BASE_BARS', cfg.get('TIME_STOP_BARS', 30))
+            ts_per_pct = cfg.get('TIME_STOP_PER_PCT', 25)  # extra bars per 1% TP1 distance
+            ts_max = cfg.get('TIME_STOP_MAX_BARS', 60)
+            if ts_base > 0 and not trade.tp1_hit:
+                tp1_pct = abs(trade.tp1 - trade.entry_price) / trade.entry_price * 100
+                time_stop_bars = min(ts_max, max(ts_base, int(ts_base + tp1_pct * ts_per_pct)))
+            else:
+                time_stop_bars = ts_base
             if time_stop_bars > 0 and trade.bars_held >= time_stop_bars and not trade.tp1_hit:
                 trade.close(row['Close'], ts, 'TIME_STOP')
                 stats['exits_time_stop'] = stats.get('exits_time_stop', 0) + 1
