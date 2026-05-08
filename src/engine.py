@@ -805,6 +805,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         stats['signals_checked'] += 1
         veto_soft_penalty = 0.0
 
+        # Reset per-iteration module state (prevent stale values from prior bar)
+        m8_score = 0.5; m8_status = 'SKIP'; use_m8 = False
+
         # ═══════════════════════════════════════════════════════════
         # PHASE 1: REGIME (M9) — What's the market climate?
         # ═══════════════════════════════════════════════════════════
@@ -1621,6 +1624,20 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     # If squeeze was TRIGGERED but breakout REJECTED, suppress
                     if squeeze_result['squeeze_status'] == 'TRIGGERED':
                         squeeze_confirmed = False
+
+        # ── Squeeze Entry Gate ──
+        # When a squeeze is detected, only allow entry if:
+        #   - squeeze is TRIGGERED (entry condition already met), OR
+        #   - squeeze entry_triggered is True (entry condition met this bar)
+        # This aligns the engine with the scanner's squeeze entry logic,
+        # preventing entries at the current price when the squeeze is still
+        # PENDING (waiting for coil breakdown).
+        _sq_type = squeeze_result.get('squeeze_type', 'NONE')
+        _sq_status = squeeze_result.get('squeeze_status', 'NONE')
+        _sq_entry_triggered = squeeze_result.get('entry_triggered', True)
+        if _sq_type != 'NONE' and _sq_status == 'PENDING' and not _sq_entry_triggered:
+            stats['squeeze_direction_block'] += 1
+            continue
 
         # Entry Dedup
         min_dist = cfg.get('MIN_ENTRY_DIST_PCT', 0)
