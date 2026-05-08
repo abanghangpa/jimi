@@ -890,12 +890,28 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             except Exception:
                 pass
 
+        # Compute nearest_liq_direction from unswept magnets (aligned with scanner)
+        _nearest_liq_dir = None
+        if _magnets:
+            _above = [(p, s) for p, v, s in _magnets if p > _price]
+            _below = [(p, s) for p, v, s in _magnets if p < _price]
+            if _above and _below:
+                _nearest_above = min(_above, key=lambda x: x[0] - _price)
+                _nearest_below = min(_below, key=lambda x: _price - x[0])
+                _above_dist = _nearest_above[0] - _price
+                _below_dist = _price - _nearest_below[0]
+                if _above_dist < _below_dist * 0.7:
+                    _nearest_liq_dir = 'LONG'
+                elif _below_dist < _above_dist * 0.7:
+                    _nearest_liq_dir = 'SHORT'
+
         direction, dir_size_mult, dir_details = resolve_direction(
             vol_regime, m9_score, m13_bias, m13_score, m13_details,
             m7_score=m7_score, m7_status=m7_status,
             swing_bias_1d=swing_bias, trend_dir=trend_dir, config=cfg,
             long_target_score=_long_tgt, short_target_score=_short_tgt,
             long_target_details=_long_det, short_target_details=_short_det,
+            nearest_liq_direction=_nearest_liq_dir,
             m20_score=_m20_pre_score, m20_direction=_m20_pre_dir,
         )
 
@@ -1097,7 +1113,8 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             _swing_levels = m13_details.get('swing_lows', []) if direction == 'LONG' else m13_details.get('swing_highs', [])
             if _swing_levels:
                 m14_status, m14_score, m14_details = score_m14(
-                    df_15m, idx, direction, _swing_levels, config=cfg)
+                    df_15m, idx, direction, _swing_levels, config=cfg,
+                    magnets=_magnets)
                 if m14_status == 'PASS':
                     # Sweep detected + reclaimed → boost ICS
                     use_m14 = True
