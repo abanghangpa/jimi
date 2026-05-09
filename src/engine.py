@@ -1060,27 +1060,150 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 m10_status, m10_score, m10_details = score_m10_macro(macro_row, direction, trend_dir)
                 use_m10 = True
 
-        # ── Squeeze pre-check: detect compression BEFORE ICS gate ──
-        # Squeeze-triggered entries bypass the ICS pre-check (like M20 direct signals).
-        # Without this, the ICS pre-check kills bars during compression when M1-M4
-        # scores are weak — but that's exactly when squeezes form.
-        _squeeze_pre_fired = False
+        # ═══════════════════════════════════════════════════════════
+        # SQUEEZE DETECTION (M18) — BEFORE ICS gate
+        # Full detect_squeeze() + 5-filter confirmation gate.
+        # Squeeze-triggered+confirmed entries bypass the ICS pre-check,
+        # matching scanner behavior where squeeze is computed before ICS.
+        # ═══════════════════════════════════════════════════════════
+        squeeze_result = {'squeeze_type': 'NONE', 'squeeze_status': 'NONE', 'squeeze_score': 0.0, 'ics_boost': 0.0, 'direction': 'NEUTRAL'}
+        squeeze_confirmed = False
+        squeeze_filters = {}
+        breakout_result = None
         if squeeze_enabled and idx >= 47:
-            from src.modules.m18_squeeze import _check_compression, _check_cvd_trigger, SQUEEZE_V6_DEFAULTS
-            _sq_cfg = {**SQUEEZE_V6_DEFAULTS, **cfg}
-            _r48 = squeeze_compression_history[-1][0] if squeeze_compression_history else 5.0
-            _a_comp, _a_bars, _a_dry, _a_doji = _check_compression(
-                _r48, squeeze_compression_history or [], _sq_cfg)
-            if _a_comp:
-                _taker_now = float(row['taker_ratio'])
-                _pre_takers = [tr for _, _, _, tr in squeeze_compression_history[-12:]] if squeeze_compression_history else []
-                _pre_avg = np.mean(_pre_takers) if _pre_takers else None
-                _cvd_fired, _cvd_dir, _cvd_type = _check_cvd_trigger(_taker_now, _pre_avg, _sq_cfg)
-                if _cvd_fired:
-                    # Cooldown: only bypass once per squeeze event (not every bar)
-                    _sq_cooldown = cfg.get('SQUEEZE_COOLDOWN_BARS', 32)
-                    if idx - squeeze_last_squeeze_bar >= _sq_cooldown:
-                        _squeeze_pre_fired = True
+            _close_val_sq = float(row['Close'])
+            _vol_ma20_sq = float(row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0
+            _vol_ratio_sq = float(row['Volume'] / _vol_ma20_sq)
+            _taker_sq = float(row['taker_ratio'])
+            _bar_range_sq = (float(row['High']) - float(row['Low'])) / _close_val_sq * 100 if _close_val_sq > 0 else 0.5
+
+            if idx >= 19:
+                _bar_range_ma_sq = float(df_15m['High'].iloc[idx-19:idx+1].sub(
+                    df_15m['Low'].iloc[idx-19:idx+1]).div(
+                    df_15m['Close'].iloc[idx-19:idx+1]).mean() * 100)
+            else:
+                _bar_range_ma_sq = _bar_range_sq
+            _bar_range_expansion = _bar_range_sq / _bar_range_ma_sq if _bar_range_ma_sq > 0 else 1.0
+
+            if idx > 67:
+                _vol_cumsum_48 = float(df_15m['Volume'].iloc[idx-47:idx+1].sum())
+                _vol_cumsum_ma = float(df_15m['Volume'].iloc[idx-67:idx+1].rolling(20).mean().iloc[-1])
+                _oi_proxy = _vol_cumsum_48 / _vol_cumsum_ma if _vol_cumsum_ma > 0 else 1.0
+            else:
+                _oi_proxy = 1.0
+
+            _vwap_sq = float(df_15m['vwap'].iloc[idx]) if 'vwap' in df_15m.columns else _close_val_sq
+            _vwap_dist_sq = (_close_val_sq - _vwap_sq) / _vwap_sq * 100 if _vwap_sq > 0 else 0
+
+            _rw_score = max(0, min(1, 1 - (squeeze_compression_history[-1][0] - 1.5) / 4.0)) if squeeze_compression_history else 0.5
+            _vr_score = max(0, min(1, 1 - (_vol_ratio_sq - 0.05) / 0.20))
+            _oip_score = max(0, min(1, (_oi_proxy - 0.7) / 0.5))
+            _vd_score = max(0, min(1, 1 - abs(_vwap_dist_sq) / 1.0))
+            _squeeze_quality = _rw_score * 0.30 + _vr_score * 0.25 + _oip_score * 0.25 + _vd_score * 0.20
+
+            sq_result = {
+                'price': _close_val_sq,
+                'atr': float(row['atr']),
+                'range_width': squeeze_compression_history[-1][0] if squeeze_compression_history else 5.0,
+                'raw_taker_ratio': _taker_sq,
+                'raw_bar_range_pct': _bar_range_sq,
+                'vol_trend': _vol_ratio_sq,
+                'vol_ratio': float(row.get('vol_ratio', 1.0)),
+                'vol_ma20': _vol_ma20_sq,
+                'bar_vol_spike': _vol_ratio_sq,
+                'bar_range_expansion': _bar_range_expansion,
+                'bar_taker_extreme': _taker_sq > 0.65 or _taker_sq < 0.35,
+                'oi_proxy': _oi_proxy,
+                'vwap_dist': _vwap_dist_sq,
+                'squeeze_quality': _squeeze_quality,
+                'rsi': float(df_15m['rsi'].iloc[idx]) if 'rsi' in df_15m.columns and not pd.isna(df_15m['rsi'].iloc[idx]) else 50.0,
+            }
+            try:
+                squeeze_result = detect_squeeze(
+                    sq_result, config=cfg,
+                    last_signal_bar=squeeze_last_squeeze_bar,
+                    current_bar=idx,
+                    compression_history=squeeze_compression_history,
+                    df_15m=df_15m.iloc[:idx+1],
+                    magnets=_magnets if _magnets else None,
+                    sr_levels=_sr if _sr else None,
+                    liq_levels=None,
+                )
+            except Exception:
+                pass
+
+            if squeeze_result['squeeze_type'] != 'NONE':
+                stats['squeeze_detected'] += 1
+                if squeeze_result.get('failed_breakout'):
+                    stats['squeeze_failed_breakout'] += 1
+                if squeeze_result['squeeze_status'] == 'TRIGGERED':
+                    stats['squeeze_triggered'] += 1
+                    squeeze_last_squeeze_bar = idx
+                elif squeeze_result['squeeze_status'] == 'PENDING':
+                    stats['squeeze_pending'] += 1
+
+            # ── 5-filter confirmation gate (must run before ICS pre-check) ──
+            sq_type = squeeze_result.get('squeeze_type', 'NONE')
+            sq_dir = squeeze_result.get('direction', 'NEUTRAL')
+            if sq_type != 'NONE' and sq_dir != 'NEUTRAL':
+                if cfg.get('SQUEEZE_CONFIRM_EMA', True) and len(df_15m) >= 55:
+                    _close = df_15m['Close'].iloc[:idx+1]
+                    _ema21 = float(_close.ewm(span=21, adjust=False).mean().iloc[-1])
+                    _ema55 = float(_close.ewm(span=55, adjust=False).mean().iloc[-1])
+                    _ema_spread = (_ema21 - _ema55) / _ema55 * 100 if _ema55 > 0 else 0
+                    _ema_trend = 'BULL' if _ema21 > _ema55 else 'BEAR'
+                    _contrarian = (sq_dir == 'LONG' and _ema_trend == 'BEAR') or \
+                                  (sq_dir == 'SHORT' and _ema_trend == 'BULL')
+                    _aligned = not _contrarian
+                    if _ema_spread < 0:
+                        squeeze_filters['ema_regime'] = _contrarian
+                    else:
+                        squeeze_filters['ema_regime'] = _aligned
+                else:
+                    squeeze_filters['ema_regime'] = True
+
+                if cfg.get('SQUEEZE_CONFIRM_CVD', True):
+                    squeeze_filters['cvd_agrees'] = not ((sq_dir == 'LONG' and m4b_divergence == 'BEARISH') or
+                                                         (sq_dir == 'SHORT' and m4b_divergence == 'BULLISH'))
+                else:
+                    squeeze_filters['cvd_agrees'] = True
+
+                if cfg.get('SQUEEZE_CONFIRM_RSI', True) and 'rsi' in df_15m.columns:
+                    _rsi = float(df_15m['rsi'].iloc[idx]) if not pd.isna(df_15m['rsi'].iloc[idx]) else 50
+                    squeeze_filters['rsi_ok'] = (sq_dir == 'LONG' and _rsi < 75) or \
+                                                 (sq_dir == 'SHORT' and _rsi > 25)
+                else:
+                    squeeze_filters['rsi_ok'] = True
+
+                if cfg.get('SQUEEZE_CONFIRM_QUALITY', True):
+                    squeeze_filters['quality_high'] = squeeze_result.get('squeeze_score', 0) >= 0.5
+                else:
+                    squeeze_filters['quality_high'] = True
+
+                if cfg.get('SQUEEZE_CONFIRM_ATR_FLOOR', True):
+                    _atr_now = float(df_15m['atr'].iloc[idx]) if not pd.isna(df_15m['atr'].iloc[idx]) else 0
+                    _atr_hard_floor = cfg.get('SQUEEZE_MIN_ATR', 5.0)
+                    _atr_lookback = cfg.get('SQUEEZE_ATR_LOOKBACK', 8640)
+                    _atr_pctile = cfg.get('SQUEEZE_ATR_FLOOR_PCTILE', 15)
+                    _atr_series = df_15m['atr'].iloc[:idx+1].dropna()
+                    if len(_atr_series) > 100:
+                        _atr_window = _atr_series.iloc[-min(len(_atr_series), _atr_lookback):]
+                        _atr_threshold = float(np.percentile(_atr_window, _atr_pctile))
+                    else:
+                        _atr_threshold = _atr_hard_floor
+                    _atr_effective = max(_atr_hard_floor, _atr_threshold)
+                    squeeze_filters['atr_floor'] = _atr_now >= _atr_effective
+                else:
+                    squeeze_filters['atr_floor'] = True
+
+                squeeze_confirmed = all(squeeze_filters.values())
+                if squeeze_confirmed:
+                    stats['squeeze_confirmed'] += 1
+                else:
+                    stats['squeeze_not_confirmed'] += 1
+
+        # Shorthand: squeeze is TRIGGERED + confirmed (used for multiple bypass checks)
+        _squeeze_active = squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed
 
         # ICS pre-check: M1-M4 + M10 (if available), before M5/M7/M8/M11-M14
         ics_pre, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, 0.5,
@@ -1097,7 +1220,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             threshold += cfg.get('SHOULDER_ICS_BOOST', 0)
         threshold += veto_soft_penalty
         if ics_pre < precheck_floor or ics_pre < threshold:
-            if _squeeze_pre_fired:
+            # Full squeeze result (computed above) — bypass ICS gate when
+            # squeeze is TRIGGERED+CONFIRMED, matching scanner behavior
+            if _squeeze_active:
                 stats['squeeze_pre_bypass'] = stats.get('squeeze_pre_bypass', 0) + 1
                 if verbose:
                     print(f"  ⚡ SQUEEZE PRE-CHECK BYPASS @ {ts} ICS={ics_pre:.4f} (threshold={threshold:.2f})")
@@ -1369,7 +1494,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             ics += cfg.get('M5_SWEET_SPOT_BOOST', 0.04)
 
         # ── Squeeze ICS boost (only when TRIGGERED + CONFIRMED, aligned with scanner) ──
-        if squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed and \
+        if _squeeze_active and \
                 squeeze_result.get('ics_boost', 0) > 0:
             ics += squeeze_result['ics_boost']
 
@@ -1378,7 +1503,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         # Note: In engine, M9 block happens early (line ~770). This override only helps
         # when regime is NOT in M9_BLOCK_REGIMES but is still unfavorable.
         _squeeze_overrode_regime = False
-        if squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed and \
+        if _squeeze_active and \
                 squeeze_result.get('overrides_regime', False):
             _squeeze_overrode_regime = True
 
@@ -1472,7 +1597,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             stats['ics_ceiling_skip'] += 1
             continue
 
-        if m4_status == 'FAIL' and not _m20_direct and not _squeeze_pre_fired:
+        if m4_status == 'FAIL' and not _m20_direct and not _squeeze_active:
             stats['m4_required_skip'] += 1
             continue
 
@@ -1484,190 +1609,47 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 continue
 
         passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
-        if not passed and not _m20_direct and not _squeeze_pre_fired:
+        if not passed and not _m20_direct and not _squeeze_active:
             stats['filter_blocked'] += 1
             continue
 
         # ═══════════════════════════════════════════════════════════
-        # SQUEEZE DETECTION (M18) — Run per bar, track signals
+        # M19 BREAKOUT CONFIRMATION — requires Phase 4 module results
+        # (squeeze detection + 5-filter confirmation already ran above)
         # ═══════════════════════════════════════════════════════════
-        squeeze_result = {'squeeze_type': 'NONE', 'squeeze_status': 'NONE'}
-        squeeze_confirmed = False
-        squeeze_filters = {}
-        breakout_result = None
-        if squeeze_enabled and idx >= 47:
-            _close_val_sq = float(row['Close'])
-            _vol_ma20_sq = float(row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0
-            _vol_ratio_sq = float(row['Volume'] / _vol_ma20_sq)
-            _taker_sq = float(row['taker_ratio'])
-            _bar_range_sq = (float(row['High']) - float(row['Low'])) / _close_val_sq * 100 if _close_val_sq > 0 else 0.5
-
-            # Bar-level ignition (matches scanner computation)
-            if idx >= 19:
-                _bar_range_ma_sq = float(df_15m['High'].iloc[idx-19:idx+1].sub(
-                    df_15m['Low'].iloc[idx-19:idx+1]).div(
-                    df_15m['Close'].iloc[idx-19:idx+1]).mean() * 100)
-            else:
-                _bar_range_ma_sq = _bar_range_sq
-            _bar_range_expansion = _bar_range_sq / _bar_range_ma_sq if _bar_range_ma_sq > 0 else 1.0
-
-            # OI proxy: volume accumulation relative to average
-            if idx > 67:
-                _vol_cumsum_48 = float(df_15m['Volume'].iloc[idx-47:idx+1].sum())
-                _vol_cumsum_ma = float(df_15m['Volume'].iloc[idx-67:idx+1].rolling(20).mean().iloc[-1])
-                _oi_proxy = _vol_cumsum_48 / _vol_cumsum_ma if _vol_cumsum_ma > 0 else 1.0
-            else:
-                _oi_proxy = 1.0
-
-            # VWAP distance
-            _vwap_sq = float(df_15m['vwap'].iloc[idx]) if 'vwap' in df_15m.columns else _close_val_sq
-            _vwap_dist_sq = (_close_val_sq - _vwap_sq) / _vwap_sq * 100 if _vwap_sq > 0 else 0
-
-            # Squeeze quality (matches scanner formula)
-            _rw_score = max(0, min(1, 1 - (squeeze_compression_history[-1][0] - 1.5) / 4.0)) if squeeze_compression_history else 0.5
-            _vr_score = max(0, min(1, 1 - (_vol_ratio_sq - 0.05) / 0.20))
-            _oip_score = max(0, min(1, (_oi_proxy - 0.7) / 0.5))
-            _vd_score = max(0, min(1, 1 - abs(_vwap_dist_sq) / 1.0))
-            _squeeze_quality = _rw_score * 0.30 + _vr_score * 0.25 + _oip_score * 0.25 + _vd_score * 0.20
-
-            sq_result = {
-                'price': _close_val_sq,
-                'atr': float(row['atr']),
-                'range_width': squeeze_compression_history[-1][0] if squeeze_compression_history else 5.0,
-                'raw_taker_ratio': _taker_sq,
-                'raw_bar_range_pct': _bar_range_sq,
-                'vol_trend': _vol_ratio_sq,
-                'vol_ratio': float(row.get('vol_ratio', 1.0)),
-                'vol_ma20': _vol_ma20_sq,
-                'bar_vol_spike': _vol_ratio_sq,
-                'bar_range_expansion': _bar_range_expansion,
-                'bar_taker_extreme': _taker_sq > 0.65 or _taker_sq < 0.35,
-                'oi_proxy': _oi_proxy,
-                'vwap_dist': _vwap_dist_sq,
-                'squeeze_quality': _squeeze_quality,
-                'rsi': float(df_15m['rsi'].iloc[idx]) if 'rsi' in df_15m.columns and not pd.isna(df_15m['rsi'].iloc[idx]) else 50.0,
+        _sq_type = squeeze_result.get('squeeze_type', 'NONE')
+        _sq_dir = squeeze_result.get('direction', 'NEUTRAL')
+        if _sq_type != 'NONE' and _sq_dir != 'NEUTRAL':
+            # Build a minimal result dict for check_breakout_filters
+            # (same structure scanner passes)
+            _bc_result = {
+                'squeeze': squeeze_result,
+                'm4': {'div': m4_div},
+                'm4b': {'divergence': m4b_divergence},
+                'm10': {'details': m10_details} if m10_details else {},
+                'vol_trend': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
+                'bar_vol_spike': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
+                'derivatives': _deriv_for_m17 if '_deriv_for_m17' in locals() else {},
+                'magnets': [(p, s, False, None) for p, s, *_ in _magnets] if _magnets else [],
+                'price': float(row['Close']),
+                'raw_taker_ratio': float(row['taker_ratio']),
+                'exchange_activity': {},  # not available in backtest
             }
-            # Pass magnets + sr_levels for consistent TP/SL with scanner
-            squeeze_result = detect_squeeze(
-                sq_result, config=cfg,
-                last_signal_bar=squeeze_last_squeeze_bar,
-                current_bar=idx,
-                compression_history=squeeze_compression_history,
-                df_15m=df_15m.iloc[:idx+1],
-                magnets=_magnets if _magnets else None,
-                sr_levels=_sr if _sr else None,
-                liq_levels=None,  # live order book not available in backtest
-            )
-            if squeeze_result['squeeze_type'] != 'NONE':
-                stats['squeeze_detected'] += 1
-                if squeeze_result.get('failed_breakout'):
-                    stats['squeeze_failed_breakout'] += 1
+            if _bc_result['derivatives']:
+                _bc_result['derivatives']['oi_roc_1h'] = _bc_result['derivatives'].get('oi_roc_1h', 0)
+                _bc_result['derivatives']['funding_rate'] = _bc_result['derivatives'].get('funding_rate', 0)
+
+            breakout_result = check_breakout_filters(
+                _bc_result, df_15m=df_15m.iloc[:idx+1], config=cfg)
+
+            if breakout_result['status'] == 'CONFIRMED':
+                stats['breakout_confirmed'] += 1
+            elif breakout_result['status'] == 'WEAK':
+                stats['breakout_weak'] += 1
+            elif breakout_result['status'] == 'REJECTED':
+                stats['breakout_rejected'] += 1
                 if squeeze_result['squeeze_status'] == 'TRIGGERED':
-                    stats['squeeze_triggered'] += 1
-                    squeeze_last_squeeze_bar = idx
-                elif squeeze_result['squeeze_status'] == 'PENDING':
-                    stats['squeeze_pending'] += 1
-
-            # ── Squeeze 5-filter confirmation gate (aligned with scanner) ──
-            sq_type = squeeze_result.get('squeeze_type', 'NONE')
-            sq_dir = squeeze_result.get('direction', 'NEUTRAL')
-            if sq_type != 'NONE' and sq_dir != 'NEUTRAL':
-                # Filter 1: EMA trend — regime-adaptive
-                if cfg.get('SQUEEZE_CONFIRM_EMA', True) and len(df_15m) >= 55:
-                    _close = df_15m['Close'].iloc[:idx+1]
-                    _ema21 = float(_close.ewm(span=21, adjust=False).mean().iloc[-1])
-                    _ema55 = float(_close.ewm(span=55, adjust=False).mean().iloc[-1])
-                    _ema_spread = (_ema21 - _ema55) / _ema55 * 100 if _ema55 > 0 else 0
-                    _ema_trend = 'BULL' if _ema21 > _ema55 else 'BEAR'
-                    _contrarian = (sq_dir == 'LONG' and _ema_trend == 'BEAR') or \
-                                  (sq_dir == 'SHORT' and _ema_trend == 'BULL')
-                    _aligned = not _contrarian
-                    if _ema_spread < 0:
-                        squeeze_filters['ema_regime'] = _contrarian
-                    else:
-                        squeeze_filters['ema_regime'] = _aligned
-                else:
-                    squeeze_filters['ema_regime'] = True
-
-                # Filter 2: CVD divergence agrees
-                if cfg.get('SQUEEZE_CONFIRM_CVD', True):
-                    _m4b_div = m4b_divergence
-                    squeeze_filters['cvd_agrees'] = not ((sq_dir == 'LONG' and _m4b_div == 'BEARISH') or
-                                                         (sq_dir == 'SHORT' and _m4b_div == 'BULLISH'))
-                else:
-                    squeeze_filters['cvd_agrees'] = True
-
-                # Filter 3: RSI not extreme against direction
-                if cfg.get('SQUEEZE_CONFIRM_RSI', True) and 'rsi' in df_15m.columns:
-                    _rsi = float(df_15m['rsi'].iloc[idx]) if not pd.isna(df_15m['rsi'].iloc[idx]) else 50
-                    squeeze_filters['rsi_ok'] = (sq_dir == 'LONG' and _rsi < 75) or \
-                                                 (sq_dir == 'SHORT' and _rsi > 25)
-                else:
-                    squeeze_filters['rsi_ok'] = True
-
-                # Filter 4: Quality score >= 0.5
-                if cfg.get('SQUEEZE_CONFIRM_QUALITY', True):
-                    squeeze_filters['quality_high'] = squeeze_result.get('squeeze_score', 0) >= 0.5
-                else:
-                    squeeze_filters['quality_high'] = True
-
-                # Filter 5: ATR floor
-                if cfg.get('SQUEEZE_CONFIRM_ATR_FLOOR', True):
-                    _atr_now = float(df_15m['atr'].iloc[idx]) if not pd.isna(df_15m['atr'].iloc[idx]) else 0
-                    _atr_hard_floor = cfg.get('SQUEEZE_MIN_ATR', 5.0)
-                    _atr_lookback = cfg.get('SQUEEZE_ATR_LOOKBACK', 8640)
-                    _atr_pctile = cfg.get('SQUEEZE_ATR_FLOOR_PCTILE', 15)
-                    _atr_series = df_15m['atr'].iloc[:idx+1].dropna()
-                    if len(_atr_series) > 100:
-                        _atr_window = _atr_series.iloc[-min(len(_atr_series), _atr_lookback):]
-                        _atr_threshold = float(np.percentile(_atr_window, _atr_pctile))
-                    else:
-                        _atr_threshold = _atr_hard_floor
-                    _atr_effective = max(_atr_hard_floor, _atr_threshold)
-                    squeeze_filters['atr_floor'] = _atr_now >= _atr_effective
-                else:
-                    squeeze_filters['atr_floor'] = True
-
-                squeeze_confirmed = all(squeeze_filters.values())
-                if squeeze_confirmed:
-                    stats['squeeze_confirmed'] += 1
-                else:
-                    stats['squeeze_not_confirmed'] += 1
-
-            # ── M19: Breakout Confirmation (aligned with scanner) ──
-            if sq_type != 'NONE' and sq_dir != 'NEUTRAL':
-                # Build a minimal result dict for check_breakout_filters
-                # (same structure scanner passes)
-                _bc_result = {
-                    'squeeze': squeeze_result,
-                    'm4': {'div': m4_div},
-                    'm4b': {'divergence': m4b_divergence},
-                    'm10': {'details': m10_details} if m10_details else {},
-                    'vol_trend': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
-                    'bar_vol_spike': float(row['Volume'] / row['vol_ma20']) if row['vol_ma20'] > 0 else 1.0,
-                    'derivatives': _deriv_for_m17 if '_deriv_for_m17' in locals() else {},
-                    'magnets': [(p, s, False, None) for p, s, *_ in _magnets] if _magnets else [],
-                    'price': float(row['Close']),
-                    'raw_taker_ratio': float(row['taker_ratio']),
-                    'exchange_activity': {},  # not available in backtest
-                }
-                # Add OI roc from derivatives if available
-                if _bc_result['derivatives']:
-                    _bc_result['derivatives']['oi_roc_1h'] = _bc_result['derivatives'].get('oi_roc_1h', 0)
-                    _bc_result['derivatives']['funding_rate'] = _bc_result['derivatives'].get('funding_rate', 0)
-
-                breakout_result = check_breakout_filters(
-                    _bc_result, df_15m=df_15m.iloc[:idx+1], config=cfg)
-
-                if breakout_result['status'] == 'CONFIRMED':
-                    stats['breakout_confirmed'] += 1
-                elif breakout_result['status'] == 'WEAK':
-                    stats['breakout_weak'] += 1
-                elif breakout_result['status'] == 'REJECTED':
-                    stats['breakout_rejected'] += 1
-                    # If squeeze was TRIGGERED but breakout REJECTED, suppress
-                    if squeeze_result['squeeze_status'] == 'TRIGGERED':
-                        squeeze_confirmed = False
+                    squeeze_confirmed = False
 
         # ── Squeeze Entry Gate ──
         # When a squeeze is detected, only allow entry if:
@@ -1732,7 +1714,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         # M14 Sweep Gate (bypass for M20 direct signals)
         sweep_passed, sweep_reason = check_sweep_gate(m14_status, m14_score, cfg)
-        if not sweep_passed and not _m20_direct and not _squeeze_pre_fired:
+        if not sweep_passed and not _m20_direct and not _squeeze_active:
             stats['filter_blocked'] += 1
             continue
 
