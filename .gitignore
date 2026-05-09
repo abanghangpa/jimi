@@ -36,3 +36,6 @@ venv/
 data/
 *.csv
 __pycache__/
+
+# Intrabar delta (pre-computed, shared)
+!data/eth_15m_intrabar_delta.csv
