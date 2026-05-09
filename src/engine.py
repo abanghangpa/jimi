@@ -3,6 +3,7 @@ JIMI Framework — Core Backtest Engine
 Orchestrates modules, ICS scoring, veto system, and trade lifecycle.
 """
 
+import os
 import pandas as pd
 import numpy as np
 from src.config import CONFIG
@@ -441,16 +442,44 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
     df_15m['cvd_divergence_15m'] = detect_cvd_divergence_15m(df_15m, cfg['CVD_LOOKBACK'], cfg['CVD_DIVERGENCE_WINDOW'])
     print(f"  CVD divergences (15m): {(df_15m['cvd_divergence_15m']=='BULLISH').sum()} bullish, {(df_15m['cvd_divergence_15m']=='BEARISH').sum()} bearish")
 
-    # M4b: Intrabar CVD (LucF-style, adapted for backtest with 15m bars)
-    # Uses close vs open of each 15m bar to classify volume direction
+    # M4b: Intrabar CVD (LucF-style)
+    # Try loading pre-computed 1m delta file first (built by build_intrabar_delta.py).
+    # Falls back to 15m bar proxy when file is unavailable.
+    _intrabar_delta_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                        'data', 'eth_15m_intrabar_delta.csv')
+    _use_real_intrabar = False
     if cfg.get('M4B_INTRABAR_ENABLED', True):
-        intrabar_delta = compute_intrabar_delta(df_15m)
-        df_15m['cvd_intrabar'] = intrabar_delta.cumsum()
-        df_15m['cvd_intrabar_div'] = detect_intrabar_divergence(
-            df_15m.rename(columns={'cvd_intrabar': 'cvd'}), lookback=24, window=12)
-        bull = (df_15m['cvd_intrabar_div'] == 'BULLISH').sum()
-        bear = (df_15m['cvd_intrabar_div'] == 'BEARISH').sum()
-        print(f"  CVD intrabar (M4b):    {bull} bullish, {bear} bearish divergences")
+        if os.path.exists(_intrabar_delta_path):
+            try:
+                df_delta = pd.read_csv(_intrabar_delta_path)
+                if len(df_delta) > 0:
+                    # Match by timestamp: convert both to datetime for merge
+                    df_delta['ts_key'] = pd.to_datetime(df_delta['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                    df_15m['ts_key'] = df_15m['Open time'].astype(str).str[:19]
+                    df_15m = df_15m.merge(
+                        df_delta[['ts_key', 'delta_15m']].rename(columns={'delta_15m': 'cvd_intrabar_delta'}),
+                        on='ts_key', how='left')
+                    df_15m['cvd_intrabar_delta'] = df_15m['cvd_intrabar_delta'].fillna(0)
+                    df_15m['cvd_intrabar'] = df_15m['cvd_intrabar_delta'].cumsum()
+                    df_15m = df_15m.drop(columns=['ts_key'])
+                    df_15m['cvd_intrabar_div'] = detect_intrabar_divergence(
+                        df_15m.rename(columns={'cvd_intrabar': 'cvd'}), lookback=24, window=12)
+                    _use_real_intrabar = True
+                    bull = (df_15m['cvd_intrabar_div'] == 'BULLISH').sum()
+                    bear = (df_15m['cvd_intrabar_div'] == 'BEARISH').sum()
+                    print(f"  CVD intrabar (M4b):    {bull} bullish, {bear} bearish divergences [1m delta file]")
+            except Exception as e:
+                print(f"  ⚠️  Intrabar delta file load failed: {e}, using proxy")
+
+        if not _use_real_intrabar:
+            # Fallback: 15m bar proxy (close vs open per bar)
+            intrabar_delta = compute_intrabar_delta(df_15m)
+            df_15m['cvd_intrabar'] = intrabar_delta.cumsum()
+            df_15m['cvd_intrabar_div'] = detect_intrabar_divergence(
+                df_15m.rename(columns={'cvd_intrabar': 'cvd'}), lookback=24, window=12)
+            bull = (df_15m['cvd_intrabar_div'] == 'BULLISH').sum()
+            bear = (df_15m['cvd_intrabar_div'] == 'BEARISH').sum()
+            print(f"  CVD intrabar (M4b):    {bull} bullish, {bear} bearish divergences [15m proxy]")
     else:
         df_15m['cvd_intrabar'] = 0.0
         df_15m['cvd_intrabar_div'] = 'NONE'
