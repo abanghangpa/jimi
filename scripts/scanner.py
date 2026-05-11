@@ -18,10 +18,10 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.config import CONFIG
-from src.utils.data_handler import fetch_recent
+from src.utils.data_handler import fetch_recent, fetch_btc_15m
 from src.utils.indicators import (
     calc_ema, calc_macd, calc_rsi, calc_atr, calc_vwap, calc_vol_ratio,
-    calc_swing_bias, calc_phase0, calc_trend_state,
+    calc_swing_bias, calc_phase0, calc_trend_state, compute_btc_correlation,
 )
 from src.modules.m1_macd_v2 import score_m1_v2 as score_m1
 from src.modules.m2_ema import score_m2
@@ -48,6 +48,7 @@ from src.modules.m12_orderbook import score_m12_orderbook
 from src.modules.m14_sweep import score_m14
 from src.modules.m17_resistance_quality import score_resistance_quality, format_resistance_quality
 from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_exchange_data, compute_exchange_signals, score_exchange_activity, score_spot_signals
+from src.modules.cross_asset import score_cross_asset
 from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
@@ -386,7 +387,8 @@ def _detect_cascade_risk(df, idx, result):
     }
 
 
-def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
+def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
+                btc_15m_df=None, btc_corr_series=None):
     """Scan current market for trading signals.
 
     Uses the same pipeline as the backtest engine:
@@ -1051,11 +1053,26 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     cascade_dir = m5_details.get('cascade_dir', 'NONE') if isinstance(m5_details, dict) else 'NONE'
     cascade_strength = m5_details.get('cascade_strength', 0.0) if isinstance(m5_details, dict) else 0.0
 
+    # Cross-asset scoring (aligned with engine)
+    cross_asset_score = 0.5
+    use_cross_asset = False
+    if cfg.get('CROSS_ASSET_ENABLED', False) and btc_15m_df is not None and btc_corr_series is not None:
+        btc_corr_val = btc_corr_series.iloc[-1] if len(btc_corr_series) > 0 else 0.5
+        btc_change = 0.0
+        if len(btc_15m_df) > 4:
+            btc_close_now = float(btc_15m_df['Close'].iloc[-1])
+            btc_close_1h_ago = float(btc_15m_df['Close'].iloc[max(0, len(btc_15m_df) - 5)])
+            if btc_close_1h_ago > 0:
+                btc_change = (btc_close_now - btc_close_1h_ago) / btc_close_1h_ago
+        cross_asset_score = score_cross_asset(
+            float(df_15m['Close'].iloc[-1]), btc_close_now, btc_corr_val, btc_change, direction)
+        use_cross_asset = True
+
     ics, effective_floor = calc_ics(
         m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
-        m7_score=m7_score, m8_score=m8_score,
+        m7_score=m7_score, m8_score=m8_score, cross_asset_score=cross_asset_score,
         use_m7=cfg.get('M7_ENABLED', False) and m7_ethbtc_df is not None,
-        use_m8=m8_status != 'SKIP',
+        use_m8=m8_status != 'SKIP', use_cross_asset=use_cross_asset,
         cascade_dir=cascade_dir, cascade_strength=cascade_strength,
         m9_score=m9_score, use_m9=True,
         m10_score=m10_score, use_m10=m10_status != 'SKIP',
@@ -1076,6 +1093,8 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
 
     result['ics'] = round(float(ics), 4)
     result['effective_floor'] = round(float(effective_floor), 4)
+    if use_cross_asset:
+        result['cross_asset'] = {'score': round(float(cross_asset_score), 3)}
 
     # ── Squeeze ICS boost (only when TRIGGERED + CONFIRMED) ──
     if squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed and squeeze_result['ics_boost'] > 0:
@@ -1296,9 +1315,10 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
     }
 
     # ── Entry filters ──
-    # Bypass for M20 direct signals (failed breakouts have different dynamics)
+    # Bypass for M20 direct signals and squeeze-triggered entries
     _m20_direct = result.get('m20_direct_signal', False)
-    if not _m20_direct:
+    _squeeze_active_for_filters = squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed
+    if not _m20_direct and not _squeeze_active_for_filters:
         passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
         if not passed:
             result['status'] = 'FILTERED'
@@ -1306,7 +1326,8 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None):
             return result
 
     # ── M14 Sweep Gate ──
-    if not _m20_direct:
+    # Bypass for M20 direct signals and squeeze-triggered entries
+    if not _m20_direct and not _squeeze_active_for_filters:
         sweep_passed, sweep_reason = check_sweep_gate(m14_status, m14_score, cfg)
         if not sweep_passed:
             result['status'] = 'NO_SIGNAL'
@@ -2214,8 +2235,27 @@ def main():
     print("Computing indicators...")
     df_base, df_1h, df_2h, df_4h, df_1d = compute_indicators(
         df_base, config=scaled_config, df_1d_hist=df_1d_hist)
+
+    # Step 3b: Fetch BTC 15m for cross-asset correlation (aligned with engine)
+    btc_15m_df, btc_corr_series = None, None
+    if scaled_config.get('CROSS_ASSET_ENABLED', False):
+        try:
+            print("Fetching BTC/USDT 15m for cross-asset...")
+            btc_15m_df = fetch_btc_15m(df_base['Open time'].iloc[0], df_base['Open time'].iloc[-1])
+            if btc_15m_df is not None and len(btc_15m_df) > 100:
+                btc_corr_series = compute_btc_correlation(
+                    df_base, btc_15m_df, scaled_config.get('CROSS_ASSET_LOOKBACK', 48))
+                print(f"  BTC data: {len(btc_15m_df)} bars, correlation computed")
+            else:
+                print("  BTC data: insufficient, cross-asset disabled")
+                btc_15m_df = None
+        except Exception as e:
+            print(f"  BTC data: fetch failed ({e}), cross-asset disabled")
+            btc_15m_df = None
+
     print(f"Scanning [{args.tf}]...")
-    result = scan_signal(df_base, df_1h, df_2h, df_4h, df_1d, config=scaled_config)
+    result = scan_signal(df_base, df_1h, df_2h, df_4h, df_1d, config=scaled_config,
+                         btc_15m_df=btc_15m_df, btc_corr_series=btc_corr_series)
 
     # Tag the result with timeframe
     result['timeframe'] = args.tf

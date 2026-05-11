@@ -852,11 +852,14 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 vol_regime, m9_raw, 'NEUTRAL', trend_dir)
             use_m9 = True
 
-            # Hard block on CRISIS — skip immediately
+            # Hard block on CRISIS — deferred until after squeeze detection
+            # so squeeze override can lift the block (aligned with scanner)
             block_regimes = cfg.get('M9_BLOCK_REGIMES', ['CRISIS'])
-            if vol_regime in block_regimes:
+            _m9_regime_blocked = vol_regime in block_regimes
+            if _m9_regime_blocked:
                 stats['m9_block'] += 1
-                continue
+        else:
+            _m9_regime_blocked = False
 
         # Update regime tracking for open trades (after M9, before entries)
         for trade in open_trades:
@@ -1040,8 +1043,14 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         m3_status, m3_score, m3_entry = score_m3(df_15m, idx, direction, cfg)
         if m3_status == 'FAIL':
-            stats['m3_fail'] += 1
-            continue
+            # Allow M20 failed breakout to override M3 fail (aligned with scanner)
+            _m20_override_active_for_m3 = dir_details.get('m20_override') is not None
+            _m20_strong_for_m3 = (_m20_pre_score is not None and
+                                  _m20_pre_score >= cfg.get('M20_DIRECT_SIGNAL_THRESHOLD', 0.85) and
+                                  _m20_pre_dir is not None)
+            if not (_m20_override_active_for_m3 and _m20_strong_for_m3):
+                stats['m3_fail'] += 1
+                continue
 
         if direction == 'LONG' and m2_status == 'NEUTRAL':
             stats['m2_neutral_long_skip'] += 1
@@ -1332,13 +1341,10 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         if cfg.get('M17_ENABLED', True) and _sr:
             _current_price = float(row['Close'])
             _deriv_for_m17 = {}
-            # Fetch derivatives summary for M17 defender analysis
-            try:
-                _deriv_for_m17 = get_derivatives_summary() if cfg.get('DERIV_ENABLED', False) else {}
-                if 'error' in _deriv_for_m17:
-                    _deriv_for_m17 = {}
-            except Exception:
-                _deriv_for_m17 = {}
+            # NOTE: Do NOT call get_derivatives_summary() in backtest — it returns
+            # live data which leaks into every historical bar. Use empty dict so
+            # M17 defender analysis falls back to neutral behavior.
+            # (Scanner correctly uses live data since it runs in real-time.)
 
             # Reuse volume profile from M5 cache (already computed)
             _m17_bc, _m17_vp = None, None
@@ -1383,7 +1389,10 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             stats['m17_skip'] += 1
 
         # Extract M4 divergence string early — needed by both veto and coherence
+        # Include M4b intrabar divergence when M4 has no divergence (aligned with scanner)
         m4_div_str_veto = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else ('NONE' if m4_div is None else str(m4_div))
+        if m4_div_str_veto == 'NONE' and m4b_divergence != 'NONE':
+            m4_div_str_veto = m4b_divergence
 
         # M2 Veto — aligned with scanner (after module scoring, before veto system)
         if cfg.get('M2_VETO_ENABLED', False):
@@ -1529,12 +1538,15 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
         # ── Squeeze regime override (aligned with scanner) ──
         # When squeeze is TRIGGERED + confirmed + overrides_regime, lift regime block
-        # Note: In engine, M9 block happens early (line ~770). This override only helps
-        # when regime is NOT in M9_BLOCK_REGIMES but is still unfavorable.
         _squeeze_overrode_regime = False
         if _squeeze_active and \
                 squeeze_result.get('overrides_regime', False):
             _squeeze_overrode_regime = True
+            _m9_regime_blocked = False  # lift M9 block
+
+        # ── Deferred M9 regime block (after squeeze override check) ──
+        if _m9_regime_blocked:
+            continue
 
         # ═══════════════════════════════════════════════════════════
         # COHERENCE CHECK — do module states tell a consistent story?
