@@ -95,8 +95,12 @@ def _print_strategy(s, mode):
         tp1_pct = s.get('tp1_pct', 0)
         ics = s.get('ics', 0)
         size = s.get('size', 0)
+        entry_mode = s.get('mode', '')
 
         print(f"  ✅ SIGNAL: {direction}")
+        if 'pullback' in entry_mode:
+            print(f"     📐 Entry Mode: PULLBACK RETEST")
+            print(f"     📐 Retrace: {s.get('pullback_retrace', 0)*100:.1f}%  Wait: {s.get('pullback_bars', 0)} bars")
         print(f"     Entry: ${entry:.2f}  (size={size:.1f})")
         print(f"     SL:    ${sl:.2f}  ({sl_pct:.2f}%)")
         print(f"     TP1:   ${tp1:.2f}  ({tp1_pct:.2f}%)", end="")
@@ -119,7 +123,14 @@ def _print_strategy(s, mode):
     elif status == 'FILTERED':
         print(f"  🔶 FILTERED: {s.get('reason', '?')}")
     else:
-        print(f"  ⛔ NO SIGNAL: {s.get('reason', '?')}")
+        reason = s.get('reason', '?')
+        entry_mode = s.get('mode', '')
+        if 'pullback_pending' in entry_mode:
+            strength = s.get('strength', 0)
+            print(f"  ⏳ PENDING: {reason}")
+            print(f"     📊 Ignition strength: {strength:.2f}")
+        else:
+            print(f"  ⛔ NO SIGNAL: {reason}")
 
 
 def main():

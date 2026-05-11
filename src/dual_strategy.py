@@ -106,6 +106,168 @@ class MomentumEntry:
         return is_mom, min(strength, 1.0), ', '.join(reasons) if reasons else 'no_momentum'
 
 
+class PullbackTracker:
+    """Track momentum ignition levels and wait for pullback entry.
+
+    Flow:
+      1. Momentum ignites → record ignition level + direction
+      2. Wait for price to pull back (retrace 30-70% of ignition move)
+      3. Enter on the retest with stop below/above pullback extreme
+    """
+
+    def __init__(self, config=None):
+        self.cfg = config or {}
+        self.enabled = self.cfg.get('MOM_PULLBACK_ENABLED', True)
+        self.retrace_min = self.cfg.get('MOM_PULLBACK_RETRACE_MIN', 0.30)
+        self.retrace_max = self.cfg.get('MOM_PULLBACK_RETRACE_MAX', 0.70)
+        self.max_bars = self.cfg.get('MOM_PULLBACK_MAX_BARS', 12)
+        self.entry_tol = self.cfg.get('MOM_PULLBACK_ENTRY_TOL', 0.002)
+        self.sl_atr = self.cfg.get('MOM_PULLBACK_SL_ATR', 1.2)
+        self.vol_min = self.cfg.get('MOM_PULLBACK_VOL_MIN', 0.8)
+        self.retest_ratio = self.cfg.get('MOM_PULLBACK_RETEST_RATIO', 1.1)
+
+        # Pending setups: list of dicts
+        self.pending = []
+
+    def record_ignition(self, direction, ignition_price, move_high, move_low,
+                        strength, reason, bar_idx, atr):
+        """Record a new momentum ignition for pullback tracking."""
+        if not self.enabled:
+            return
+
+        setup = {
+            'direction': direction,
+            'ignition_price': ignition_price,
+            'move_high': move_high,
+            'move_low': move_low,
+            'move_range': move_high - move_low,
+            'strength': strength,
+            'reason': reason,
+            'bar_idx': bar_idx,
+            'atr': atr,
+            'bars_waiting': 0,
+            'pullback_extreme': ignition_price,  # updated as pullback develops
+            'retraced_pct': 0.0,
+        }
+        self.pending.append(setup)
+
+    def check_pullback_entry(self, df_15m, idx, direction, vol_avg):
+        """Check if any pending setup has a valid pullback entry.
+
+        Returns: (entry_price, sl, strength, reason, setup_dict) or None
+        """
+        if not self.enabled or not self.pending:
+            return None
+
+        row = df_15m.iloc[idx]
+        high = float(row['High'])
+        low = float(row['Low'])
+        close = float(row['Close'])
+        vol = float(row['Volume'])
+        bar_range = high - low
+        avg_range = float(df_15m['High'].iloc[max(0, idx-19):idx+1].sub(
+            df_15m['Low'].iloc[max(0, idx-19):idx+1]).mean())
+
+        # Check each pending setup
+        result = None
+        best_strength = 0
+
+        for setup in self.pending[:]:
+            if setup['direction'] != direction:
+                continue
+
+            setup['bars_waiting'] += 1
+
+            # Expire old setups
+            if setup['bars_waiting'] > self.max_bars:
+                self.pending.remove(setup)
+                continue
+
+            move_range = setup['move_range']
+            if move_range <= 0:
+                self.pending.remove(setup)
+                continue
+
+            # Track pullback extreme
+            if direction == 'LONG':
+                # Pullback is downward after bullish ignition
+                if low < setup['pullback_extreme']:
+                    setup['pullback_extreme'] = low
+                retrace_from_high = (setup['move_high'] - low) / move_range
+                setup['retraced_pct'] = retrace_from_high
+
+                # Check if pullback is in the sweet spot
+                if retrace_from_high < self.retrace_min:
+                    continue  # not enough pullback yet
+                if retrace_from_high > self.retrace_max:
+                    self.pending.remove(setup)
+                    continue  # too much pullback, momentum dead
+
+                # Check for retest bounce: price should be moving back up
+                if close <= setup['pullback_extreme'] * (1 + self.entry_tol):
+                    continue  # not bouncing yet
+
+                # Retest quality: current candle should show buying
+                vol_ok = vol >= vol_avg * self.vol_min if vol_avg > 0 else True
+                range_ok = bar_range >= avg_range * self.retest_ratio if avg_range > 0 else True
+
+                if not vol_ok:
+                    continue
+
+                # Entry at current close, SL below pullback extreme
+                entry = close
+                sl = setup['pullback_extreme'] - self.sl_atr * setup['atr']
+
+            else:  # SHORT
+                # Pullback is upward after bearish ignition
+                if high > setup['pullback_extreme']:
+                    setup['pullback_extreme'] = high
+                retrace_from_low = (high - setup['move_low']) / move_range
+                setup['retraced_pct'] = retrace_from_low
+
+                # Check if pullback is in the sweet spot
+                if retrace_from_low < self.retrace_min:
+                    continue
+                if retrace_from_low > self.retrace_max:
+                    self.pending.remove(setup)
+                    continue
+
+                # Check for retest rejection: price should be moving back down
+                if close >= setup['pullback_extreme'] * (1 - self.entry_tol):
+                    continue
+
+                vol_ok = vol >= vol_avg * self.vol_min if vol_avg > 0 else True
+                range_ok = bar_range >= avg_range * self.retest_ratio if avg_range > 0 else True
+
+                if not vol_ok:
+                    continue
+
+                entry = close
+                sl = setup['pullback_extreme'] + self.sl_atr * setup['atr']
+
+            # Score this setup
+            strength = setup['strength']
+            # Bonus for clean pullback (38.2-61.8% retrace = Fibonacci sweet spot)
+            retrace = setup['retraced_pct']
+            if 0.382 <= retrace <= 0.618:
+                strength *= 1.15  # Fibonacci bonus
+            # Bonus for quick pullback (within 4 bars)
+            if setup['bars_waiting'] <= 4:
+                strength *= 1.10  # quick retest bonus
+            # Penalty for slow pullback
+            if setup['bars_waiting'] > 8:
+                strength *= 0.90
+
+            strength = min(strength, 1.0)
+
+            if strength > best_strength:
+                best_strength = strength
+                reason = f"pullback retrace={retrace:.1%} bars={setup['bars_waiting']} {setup['reason']}"
+                result = (entry, sl, strength, reason, setup)
+
+        return result
+
+
 class DualStrategy:
     """Run Strategy A (scalp) and Strategy B (momentum) in parallel."""
 
@@ -123,6 +285,7 @@ class DualStrategy:
                 self.mom_cfg.update(mom_overrides)
 
         self.momentum = MomentumEntry(self.mom_cfg)
+        self.pullback = PullbackTracker(self.mom_cfg)
         self.regime_state = RegimeState(config=self.cfg)
 
     def _find_tf_idx(self, ts, df_tf):
@@ -295,8 +458,14 @@ class DualStrategy:
                       direction, vol_regime, m9_score, m9_status,
                       m13_bias, m13_score, m13_details,
                       magnets, gaps, sr, atr_1h, swing_bias, phase0_val, trend_dir, price):
-        """Strategy B: Momentum Rider — lower WR, big wins."""
+        """Strategy B: Momentum Rider — lower WR, big wins.
+
+        Supports two entry modes:
+          ignition: enter on the ignition candle (old behavior)
+          pullback: wait for pullback, enter on retest (new, default)
+        """
         mom_cfg = self.mom_cfg
+        pullback_mode = mom_cfg.get('MOM_PULLBACK_MODE', 'pullback')
 
         if direction == 'NEUTRAL':
             return {'status': 'NO_SIGNAL', 'reason': 'neutral direction', 'mode': 'momentum'}
@@ -306,32 +475,89 @@ class DualStrategy:
         if vol_regime not in allowed:
             return {'status': 'NO_SIGNAL', 'reason': f'regime {vol_regime} not allowed', 'mode': 'momentum'}
 
-        # Check momentum
+        # ── Check for pending pullback entry first ──
+        if pullback_mode == 'pullback' and self.pullback.enabled:
+            vol_avg = float(df_15m['Volume'].iloc[max(0, idx-19):idx+1].mean())
+            pullback_result = self.pullback.check_pullback_entry(
+                df_15m, idx, direction, vol_avg)
+
+            if pullback_result is not None:
+                entry, sl, strength, reason, setup = pullback_result
+
+                # Compute TPs using pullback-specific ATR multiples
+                atr_for_sl = atr_1h if not pd.isna(atr_1h) else float(df_15m['atr'].iloc[idx])
+                tp1_mult = mom_cfg.get('MOM_TP1_ATR', 2.5)
+                tp2_mult = mom_cfg.get('MOM_TP2_ATR', 4.0)
+                tp3_mult = mom_cfg.get('MOM_TP3_ATR', 6.0)
+
+                if direction == 'LONG':
+                    tp1 = entry + tp1_mult * atr_for_sl
+                    tp2 = entry + tp2_mult * atr_for_sl
+                    tp3 = entry + tp3_mult * atr_for_sl
+                else:
+                    tp1 = entry - tp1_mult * atr_for_sl
+                    tp2 = entry - tp2_mult * atr_for_sl
+                    tp3 = entry - tp3_mult * atr_for_sl
+
+                sl_pct = abs(entry - sl) / entry * 100
+                tp1_pct = abs(tp1 - entry) / entry * 100
+
+                # ICS with momentum boost
+                ics = self._compute_momentum_ics(
+                    df_15m, df_1h, df_2h, df_4h, df_1d,
+                    idx, idx_1h, idx_2h, idx_4h, idx_1d, direction, mom_cfg)
+                ics += strength * 0.10
+
+                mom_floor = mom_cfg.get('MOM_ICS_FLOOR', 0.40)
+                mom_threshold = mom_cfg.get('MOM_ICS_THRESHOLD', 0.45)
+
+                if ics < mom_floor or ics < mom_threshold:
+                    # Don't remove setup — let it retry on next bar
+                    return {'status': 'NO_SIGNAL', 'reason': f'pullback ICS {ics:.3f} < {mom_threshold:.2f}', 'mode': 'momentum'}
+
+                # ICS passed — remove the used setup
+                if setup in self.pullback.pending:
+                    self.pullback.pending.remove(setup)
+
+                return {
+                    'status': 'SIGNAL', 'mode': 'momentum_pullback',
+                    'direction': direction, 'entry': round(entry, 2),
+                    'sl': round(sl, 2), 'tp1': round(tp1, 2),
+                    'tp2': round(tp2, 2), 'tp3': round(tp3, 2),
+                    'sl_pct': round(sl_pct, 3), 'tp1_pct': round(tp1_pct, 3),
+                    'ics': round(ics, 4), 'regime': vol_regime,
+                    'momentum_strength': round(strength, 3),
+                    'momentum_reason': reason,
+                    'size': mom_cfg.get('MOM_SIZE_STD', 3.0),
+                    'tp1_close': mom_cfg.get('MOM_TP1_CLOSE', 0.15),
+                    'pullback_retrace': round(setup.get('retraced_pct', 0), 3),
+                    'pullback_bars': setup.get('bars_waiting', 0),
+                }
+
+        # ── Check for new momentum ignition ──
         is_mom, strength, reason = self.momentum.check(df_15m, idx, direction)
         if not is_mom:
             return {'status': 'NO_SIGNAL', 'reason': f'no momentum ({reason})', 'mode': 'momentum'}
 
+        # Ignition detected — record for pullback tracking
+        if pullback_mode == 'pullback' and self.pullback.enabled:
+            window = df_15m.iloc[idx - self.momentum.lookback:idx + 1]
+            move_high = float(window['High'].max())
+            move_low = float(window['Low'].min())
+            atr_val = float(df_15m['atr'].iloc[idx]) if not pd.isna(df_15m['atr'].iloc[idx]) else atr_1h
+
+            self.pullback.record_ignition(
+                direction, price, move_high, move_low,
+                strength, reason, idx, atr_val)
+
+            return {'status': 'NO_SIGNAL', 'reason': f'ignition recorded, waiting for pullback ({reason})',
+                    'mode': 'momentum_pullback_pending', 'strength': strength}
+
+        # ── Ignition mode: enter immediately (original behavior) ──
         # ICS with lower threshold (momentum is self-confirming)
-        from src.modules.m1_macd_v2 import score_m1_v2 as score_m1
-        from src.modules.m2_ema import score_m2
-        from src.modules.m3_vwap import score_m3
-        from src.modules.m4_cvd import score_m4
-        from src.modules.m5_liquidation import score_m5
-
-        m1_dir, m1_score, _ = score_m1(df_1h, idx_1h, mom_cfg, df_15m=df_15m, idx_15m=idx)
-        if m1_dir == 'BEARISH' and direction == 'LONG':
-            m1_score = 1.0 - m1_score
-        elif m1_dir == 'BULLISH' and direction == 'SHORT':
-            m1_score = 1.0 - m1_score
-
-        m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
-        m3_status, m3_score, _ = score_m3(df_15m, idx, direction, mom_cfg)
-        m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, mom_cfg)
-        m5_status, m5_score, m5_details = score_m5(df_15m, idx, direction, mom_cfg)
-
-        ics, floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score, config=mom_cfg)
-
-        # Momentum boost: strong momentum gets ICS boost
+        ics = self._compute_momentum_ics(
+            df_15m, df_1h, df_2h, df_4h, df_1d,
+            idx, idx_1h, idx_2h, idx_4h, idx_1d, direction, mom_cfg)
         ics += strength * 0.10
 
         mom_floor = mom_cfg.get('MOM_ICS_FLOOR', 0.40)
@@ -373,3 +599,26 @@ class DualStrategy:
             'size': mom_cfg.get('MOM_SIZE_STD', 3.0),
             'tp1_close': mom_cfg.get('MOM_TP1_CLOSE', 0.15),
         }
+
+    def _compute_momentum_ics(self, df_15m, df_1h, df_2h, df_4h, df_1d,
+                              idx, idx_1h, idx_2h, idx_4h, idx_1d, direction, mom_cfg):
+        """Compute ICS for momentum entry (shared between ignition and pullback)."""
+        from src.modules.m1_macd_v2 import score_m1_v2 as score_m1
+        from src.modules.m2_ema import score_m2
+        from src.modules.m3_vwap import score_m3
+        from src.modules.m4_cvd import score_m4
+        from src.modules.m5_liquidation import score_m5
+
+        m1_dir, m1_score, _ = score_m1(df_1h, idx_1h, mom_cfg, df_15m=df_15m, idx_15m=idx)
+        if m1_dir == 'BEARISH' and direction == 'LONG':
+            m1_score = 1.0 - m1_score
+        elif m1_dir == 'BULLISH' and direction == 'SHORT':
+            m1_score = 1.0 - m1_score
+
+        m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
+        m3_status, m3_score, _ = score_m3(df_15m, idx, direction, mom_cfg)
+        m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, mom_cfg)
+        m5_status, m5_score, m5_details = score_m5(df_15m, idx, direction, mom_cfg)
+
+        ics, floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score, config=mom_cfg)
+        return ics

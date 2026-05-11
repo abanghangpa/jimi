@@ -50,3 +50,17 @@ MOM_EARLY_EXIT_BARS: 32        # vs 24 for scalp
 
 # Cooldown: longer between entries (don't overtrade trends)
 MOM_COOLDOWN_BARS: 8           # vs 2 for scalp
+
+# ── PULLBACK ENTRY MODE ─────────────────────────────────────
+# Instead of entering on the ignition candle (tight stop, whipsaw risk),
+# wait for a pullback and enter on the retest. Gives tighter stops and
+# better R:R at the cost of fewer entries.
+MOM_PULLBACK_ENABLED: true
+MOM_PULLBACK_MODE: pullback    # 'ignition' = old behavior, 'pullback' = new
+MOM_PULLBACK_RETRACE_MIN: 0.30  # min 30% retracement of ignition move
+MOM_PULLBACK_RETRACE_MAX: 0.70  # max 70% (beyond this, momentum is dead)
+MOM_PULLBACK_MAX_BARS: 12       # max bars to wait for pullback (15m bars)
+MOM_PULLBACK_ENTRY_TOL: 0.002   # entry tolerance (0.2% from ignition level)
+MOM_PULLBACK_SL_ATR: 1.2        # tighter SL (below pullback extreme)
+MOM_PULLBACK_VOL_MIN: 0.8       # min volume on retest candle (vs avg)
+MOM_PULLBACK_RETEST_RATIO: 1.1  # retest candle range must be > 1.1x avg
