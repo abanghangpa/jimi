@@ -313,13 +313,13 @@ def run_gatekeepers(direction, vol_regime, m7_score, m7_status, m7_details,
             result.block('M9', f'regime={vol_regime}')
             return result
 
+    # Trend filter — ADVISORY ONLY (aligned with scanner)
+    # Scanner doesn't block on counter-trend, so gatekeeper must match.
     if cfg.get('TREND_FILTER_ENABLED', False):
         if direction == 'LONG' and trend_dir == 'STRONG_DOWN':
-            result.block('TREND', 'STRONG_DOWN vs LONG')
-            return result
+            pass  # Advisory only — don't block
         elif direction == 'SHORT' and trend_dir == 'STRONG_UP':
-            result.block('TREND', 'STRONG_UP vs SHORT')
-            return result
+            pass  # Advisory only — don't block
 
     return result
 
@@ -1001,7 +1001,10 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             m1_score = 1.0 - m1_score
         m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
 
-        # Adaptive Direction Bias
+        # Adaptive Direction Bias — ADVISORY ONLY (aligned with scanner)
+        # Computes bias but does NOT block entries. Scanner uses this for
+        # display/information only, so engine must match.
+        dir_details_adaptive = {}
         if cfg.get('ADAPTIVE_DIR_ENABLED', False):
             ema_1h_f = df_1h['ema_fast'].iloc[idx_1h] if idx_1h >= 0 else None
             ema_1h_s = df_1h['ema_slow'].iloc[idx_1h] if idx_1h >= 0 else None
@@ -1010,7 +1013,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             ema_1d_f = calc_ema(df_1d['Close'], cfg['EMA_FAST']).iloc[idx_1d] if idx_1d >= 0 else None
             ema_1d_s = calc_ema(df_1d['Close'], cfg['EMA_SLOW']).iloc[idx_1d] if idx_1d >= 0 else None
 
-            dir_bias, dir_allowed, dir_details = compute_adaptive_direction(
+            dir_bias, dir_allowed, dir_details_adaptive = compute_adaptive_direction(
                 trend_dir, trend_val,
                 ema_1h_f, ema_1h_s, ema_4h_f, ema_4h_s, ema_1d_f, ema_1d_s,
                 'NEUTRAL', recent_trades=trades[-8:] if trades else None,
@@ -1018,28 +1021,27 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             )
             if not dir_allowed:
                 stats['adaptive_dir_block'] += 1
-                continue
+                # Advisory only — don't block, just track
 
-        # Legacy trend filter
+        # Legacy trend filter — ADVISORY ONLY (aligned with scanner)
+        # Scanner doesn't block on trend, so engine must match.
         if cfg.get('TREND_FILTER_ENABLED', False):
             _trend_is_bull = trend_dir in ('STRONG_UP', 'UP')
             _trend_is_bear = trend_dir in ('STRONG_DOWN', 'DOWN')
             if cfg.get('TREND_BLOCK_COUNTER_TREND', False):
                 if _trend_is_bear and direction == 'LONG':
                     stats['trend_flip'] += 1
-                    continue
+                    # Advisory only
                 if _trend_is_bull and direction == 'SHORT':
                     stats['trend_flip'] += 1
-                    continue
-            # Regime-aware threshold: relaxed in NEUTRAL/COMPRESSING
-            # where weak trend is expected (Proposal 4)
+                    # Advisory only
             if vol_regime in ('NEUTRAL', 'COMPRESSING'):
                 min_score = cfg.get('TREND_MIN_SCORE_NEUTRAL', cfg.get('TREND_MIN_SCORE', 0.05))
             else:
                 min_score = cfg.get('TREND_MIN_SCORE', 0.05)
             if abs(trend_val) < min_score:
                 stats['trend_weak'] += 1
-                continue
+                # Advisory only
 
         m3_status, m3_score, m3_entry = score_m3(df_15m, idx, direction, cfg)
         if m3_status == 'FAIL':
@@ -1052,9 +1054,10 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 stats['m3_fail'] += 1
                 continue
 
-        if direction == 'LONG' and m2_status == 'NEUTRAL':
-            stats['m2_neutral_long_skip'] += 1
-            continue
+        # M2 NEUTRAL on LONG — removed (scanner doesn't block this)
+        # if direction == 'LONG' and m2_status == 'NEUTRAL':
+        #     stats['m2_neutral_long_skip'] += 1
+        #     continue
 
         m4_status, m4_score, m4_div = score_m4(df_15m, df_2h, idx, idx_2h, direction, cfg)
 
@@ -1243,30 +1246,10 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         # Shorthand: squeeze is TRIGGERED + confirmed (used for multiple bypass checks)
         _squeeze_active = squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed
 
-        # ICS pre-check: M1-M4 + M10 (if available), before M5/M7/M8/M11-M14
-        ics_pre, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, 0.5,
-                                            m10_score=m10_score, use_m10=use_m10, config=cfg)
+        # ICS pre-check REMOVED — scanner uses single ICS gate with all modules.
+        # Engine now matches: score all modules first, then single ICS gate.
         if m4_status == 'FAIL':
             stats['m4_false_anchored'] += 1
-        # Use dedicated pre-check thresholds (lower than final ICS — fewer modules)
-        precheck_floor = cfg.get('ICS_PRECHECK_FLOOR', cfg['ICS_FLOOR'])
-        precheck_threshold = cfg.get('ICS_PRECHECK_THRESHOLD', cfg['ICS_THRESHOLD_NORMAL'])
-        threshold = cfg['ICS_THRESHOLD_CAUTION'] if phase0_val >= 0.40 else precheck_threshold
-        if is_summer:
-            threshold += cfg.get('SUMMER_ICS_BOOST', 0)
-        elif is_shoulder:
-            threshold += cfg.get('SHOULDER_ICS_BOOST', 0)
-        threshold += veto_soft_penalty
-        if ics_pre < precheck_floor or ics_pre < threshold:
-            # Full squeeze result (computed above) — bypass ICS gate when
-            # squeeze is TRIGGERED+CONFIRMED, matching scanner behavior
-            if _squeeze_active:
-                stats['squeeze_pre_bypass'] = stats.get('squeeze_pre_bypass', 0) + 1
-                if verbose:
-                    print(f"  ⚡ SQUEEZE PRE-CHECK BYPASS @ {ts} ICS={ics_pre:.4f} (threshold={threshold:.2f})")
-            else:
-                stats['ics_blocked'] += 1
-                continue
 
         # M5 (lazy, cached every 4 bars)
         m5_cache_key = idx // 4
@@ -1331,9 +1314,10 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     # Sweep detected + reclaimed → boost ICS
                     use_m14 = True
                 elif m14_status == 'FAIL':
-                    # Sweep detected but price sliced through → block entry
+                    # M14 FAIL — advisory only (aligned with scanner)
+                    # Scanner doesn't block on M14 FAIL.
                     stats['m14_fail'] += 1
-                    continue
+                    # Don't block — just track
                 # SKIP (no sweep detected) → invisible, don't affect ICS
 
         # M17: Resistance Quality — validate nearest S/R level (aligned with scanner)
@@ -1510,8 +1494,13 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             except Exception:
                 stats['m21_skip'] = stats.get('m21_skip', 0) + 1
 
-        # ICS
+        # ICS — single gate with all modules (aligned with scanner)
         use_m13 = cfg.get('M13_ENABLED', False)
+        threshold = cfg['ICS_THRESHOLD_CAUTION'] if phase0_val >= 0.40 else cfg['ICS_THRESHOLD_NORMAL']
+        if is_summer:
+            threshold += cfg.get('SUMMER_ICS_BOOST', 0)
+        elif is_shoulder:
+            threshold += cfg.get('SHOULDER_ICS_BOOST', 0)
         ics, effective_floor = calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score,
                                         m7_score=m7_score, m8_score=m8_score, cross_asset_score=cross_asset_score,
                                         use_m7=use_m7, use_m8=use_m8, use_cross_asset=use_cross_asset,
@@ -1594,23 +1583,20 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             else:
                 stats['m14_skip'] += 1
 
-        # Session
+        # Session — ADVISORY ONLY (aligned with scanner)
+        # Scanner doesn't block on session or adjust threshold by session.
         session_mult = 1.0; session_name = 'UNKNOWN'
         if cfg.get('SESSION_AWARENESS_ENABLED', False):
             session_name, session_mult = get_session(ts, cfg)
-            if session_name == 'ASIAN' and cfg.get('SESSION_ASIAN_BLOCK', False):
-                stats['session_asian_block'] += 1
-                continue
-            threshold *= (2.0 - session_mult)
+            # Advisory only — no blocking, no threshold adjustment
 
         threshold += veto_soft_penalty
 
-        # M5 Failure Penalty
+        # M5 Failure Penalty — soft only (aligned with scanner)
+        # Scanner doesn't hard-block on M5 < 0.25, just raises threshold.
         if m5_status == 'FAIL':
             threshold += cfg.get('M5_FAIL_ICS_BOOST', 0.06)
-            if m5_score < cfg.get('M5_FAIL_HARD_THRESHOLD', 0.25):
-                stats['m5_hard_block'] += 1
-                continue
+            # M5 hard block removed — scanner doesn't have it
 
         if ics < effective_floor or ics < threshold:
             # ── M20 Direct Signal Path ──
@@ -1638,16 +1624,17 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             stats['ics_ceiling_skip'] += 1
             continue
 
-        if m4_status == 'FAIL' and not _m20_direct and not _squeeze_active:
-            stats['m4_required_skip'] += 1
-            continue
+        # M4 FAIL hard block REMOVED — scanner doesn't block on M4 FAIL,
+        # it just lowers the ICS floor. Aligned with scanner.
+        # if m4_status == 'FAIL' and not _m20_direct and not _squeeze_active:
+        #     stats['m4_required_skip'] += 1
+        #     continue
 
-        # Bias gate
-        bad_gate_months = [3, 7, 9]
-        if cfg.get('BIAS_GATE_ENABLED', False) and direction == 'LONG' and swing_bias == 'BEARISH' and ts.month in bad_gate_months:
-            if ics < cfg.get('BIAS_GATE_LONG_ICS', 0.65):
-                stats['bias_gate_skip'] += 1
-                continue
+        # Bias gate REMOVED — scanner doesn't have seasonal month blocking.
+        # if cfg.get('BIAS_GATE_ENABLED', False) and direction == 'LONG' and swing_bias == 'BEARISH' and ts.month in bad_gate_months:
+        #     if ics < cfg.get('BIAS_GATE_LONG_ICS', 0.65):
+        #         stats['bias_gate_skip'] += 1
+        #         continue
 
         passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
         if not passed and not _m20_direct and not _squeeze_active:
@@ -1692,19 +1679,15 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 if squeeze_result['squeeze_status'] == 'TRIGGERED':
                     squeeze_confirmed = False
 
-        # ── Squeeze Entry Gate ──
-        # When a squeeze is detected, only allow entry if:
-        #   - squeeze is TRIGGERED (entry condition already met), OR
-        #   - squeeze entry_triggered is True (entry condition met this bar)
-        # This aligns the engine with the scanner's squeeze entry logic,
-        # preventing entries at the current price when the squeeze is still
-        # PENDING (waiting for coil breakdown).
-        _sq_type = squeeze_result.get('squeeze_type', 'NONE')
-        _sq_status = squeeze_result.get('squeeze_status', 'NONE')
-        _sq_entry_triggered = squeeze_result.get('entry_triggered', True)
-        if _sq_type != 'NONE' and _sq_status == 'PENDING' and not _sq_entry_triggered:
-            stats['squeeze_direction_block'] += 1
-            continue
+        # ── Squeeze Entry Gate — REMOVED (aligned with scanner) ──
+        # Scanner doesn't block entries on squeeze PENDING status.
+        # Engine now matches — squeeze is informational/advisory only.
+        # _sq_type = squeeze_result.get('squeeze_type', 'NONE')
+        # _sq_status = squeeze_result.get('squeeze_status', 'NONE')
+        # _sq_entry_triggered = squeeze_result.get('entry_triggered', True)
+        # if _sq_type != 'NONE' and _sq_status == 'PENDING' and not _sq_entry_triggered:
+        #     stats['squeeze_direction_block'] += 1
+        #     continue
 
         # Entry Dedup
         min_dist = cfg.get('MIN_ENTRY_DIST_PCT', 0)
