@@ -1934,6 +1934,22 @@ def print_summary(result):
             print(f"  {'  Confirmation':<22} {conf_label}")
         if result.get('squeeze_override'):
             print(f"  {'⚡ Regime Override':<22} {'ACTIVE':>10}")
+        # Squeeze trade plan
+        if sq.get('tp', 0) > 0 and sq.get('entry_price', 0) > 0:
+            sq_entry = sq['entry_price']
+            sq_tp = sq['tp']
+            sq_sl = sq['sl']
+            sq_tp_pct = sq.get('tp_pct', 0)
+            sq_sl_pct = sq.get('sl_pct', 0)
+            sq_tp_dist = abs(sq_tp - sq_entry)
+            sq_sl_dist = abs(sq_entry - sq_sl)
+            sq_rr = sq_tp_dist / sq_sl_dist if sq_sl_dist > 0 else 0
+            print(f"  {'  ── Trade Plan':<22} {'──────────':>10}")
+            print(f"  {'  Entry':<22} ${sq_entry:<10.2f} (trigger)")
+            print(f"  {'  TP':<22} ${sq_tp:<10.2f} (+{sq_tp_pct:.2f}%)")
+            print(f"  {'  SL':<22} ${sq_sl:<10.2f} ({sq_sl_pct:.2f}%)")
+            print(f"  {'  R:R':<22} {sq_rr:.2f}x")
+            print(f"  {'  Target Source':<22} {sq.get('tp1_source', 'ATR'):>10}")
     else:
         sq_gates = sq.get('gates_failed', []) if sq else []
         sq_reason = sq_gates[0] if sq_gates else 'no detection'

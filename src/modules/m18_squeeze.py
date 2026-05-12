@@ -1712,12 +1712,30 @@ def format_squeeze(sq):
             lines.append(f'    ✅ {f}')
 
     if sq.get('tp', 0) > 0:
+        tp = sq['tp']
+        sl = sq['sl']
+        entry = sq.get('entry_price', 0)
         tp_src = sq.get('tp1_source', 'ATR')
         dur_mult = sq.get('tp_duration_mult', 1.0)
         coil_h = sq.get('coil_hours', 0)
         dur_note = f'  coil={coil_h}h dur_mult={dur_mult:.2f}' if dur_mult > 1.0 else ''
-        lines.append(f'\n  TP: ${sq["tp"]:.2f} ({sq["tp_pct"]:.2f}%)  [{tp_src}]{dur_note}  '
-                     f'SL: ${sq["sl"]:.2f} ({sq["sl_pct"]:.2f}%)')
+
+        # Calculate R:R
+        tp_dist = abs(tp - entry) if entry > 0 else 0
+        sl_dist = abs(entry - sl) if entry > 0 else 0
+        rr = tp_dist / sl_dist if sl_dist > 0 else 0
+
+        lines.append(f'\n  ┌─────────────────────────────────────┐')
+        lines.append(f'  │  SQUEEZE TRADE PLAN  ({sq["direction"]})          │')
+        lines.append(f'  ├─────────────────────────────────────┤')
+        if entry > 0:
+            lines.append(f'  │  Entry:  ${entry:<10.2f} (trigger)      │')
+        lines.append(f'  │  TP:     ${tp:<10.2f} (+{sq["tp_pct"]:.2f}%)  [{tp_src}]│')
+        lines.append(f'  │  SL:     ${sl:<10.2f} ({sq["sl_pct"]:.2f}%)         │')
+        lines.append(f'  │  R:R:    {rr:.2f}x                        │')
+        if dur_note:
+            lines.append(f'  │  {dur_note:<35}│')
+        lines.append(f'  └─────────────────────────────────────┘')
 
     if sq.get('failed_breakout'):
         lines.append(f'  ⚠️ FAILED BREAKOUT: {sq.get("failed_breakout_detail", "")}')
