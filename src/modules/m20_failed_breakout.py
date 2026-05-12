@@ -326,8 +326,12 @@ def _detect_breakout_failure(df_15m, idx, attempt, config):
     failure_bars = _cfg(config, 'M20_FAILURE_BARS')
     return_pct = _cfg(config, 'M20_FAILURE_RETURN_PCT') / 100.0
 
-    # Look at bars after the breakout
-    end_idx = min(bar_idx + failure_bars + 1, idx + 1)
+    # Always scan from the breakout bar to the current bar.
+    # The old code capped end_idx at bar_idx + failure_bars + 1, which meant
+    # that for breakouts older than failure_bars, current_close was read from
+    # an intermediate bar instead of the actual current bar — causing stale
+    # breakouts (e.g. 14 bars ago) to be judged on outdated price data.
+    end_idx = idx + 1
 
     if end_idx <= bar_idx + 2:
         return {'failed': False, 'status': 'TOO_EARLY', 'bars_since': 0}
@@ -398,6 +402,8 @@ def _detect_breakout_failure(df_15m, idx, attempt, config):
         return_distance = (max_close - level) / level if level > 0 else 0
 
         current_close = float(df_15m['Close'].iloc[end_idx-1])
+
+        # Current price still below level — breakout is holding
         if current_close < level:
             hold_bars = _cfg(config, 'M20_HOLD_BARS')
             if bars_since >= hold_bars:
@@ -409,6 +415,9 @@ def _detect_breakout_failure(df_15m, idx, attempt, config):
                 }
             return {'failed': False, 'status': 'HOLDING_WEAK', 'bars_since': bars_since}
 
+        # Current price is above level — breakout may have failed.
+        # But require that price SUSTAINED above the level (max close far
+        # enough above) to filter out brief wicks that immediately reversed.
         if return_distance >= return_pct:
             failure_bar = bar_idx + 1
             for i, c in enumerate(post_closes):

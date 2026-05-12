@@ -175,7 +175,8 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
                       long_target_score=None, short_target_score=None,
                       long_target_details=None, short_target_details=None,
                       nearest_liq_direction=None,
-                      m20_score=None, m20_direction=None):
+                      m20_score=None, m20_direction=None,
+                      rsi_value=None):
     """
     Resolve unified direction and sizing from regime + structure + macro.
 
@@ -410,6 +411,54 @@ def resolve_direction(regime, regime_score, m13_bias, m13_score,
 
             details['m20_score'] = round(m20_score, 3)
             details['m20_direction'] = m20_direction
+
+    # ── Phase 2g: RSI Extreme Override ──
+    # When RSI is at extreme levels, it's a strong contrarian signal.
+    # RSI < 25 = extreme oversold → bias LONG (mean reversion)
+    # RSI > 75 = extreme overbought → bias SHORT (mean reversion)
+    # This is a standalone signal — doesn't need structure alignment.
+    if rsi_value is not None and not np.isnan(rsi_value):
+        details['rsi'] = round(rsi_value, 1)
+        if rsi_value <= 25:
+            # Extreme oversold — strong LONG bias
+            if direction == 'SHORT':
+                # RSI conflicts with SHORT — flip to NEUTRAL at minimum
+                details['rsi_extreme'] = f'RSI {rsi_value:.0f} extreme oversold — conflicts with SHORT'
+                if rsi_value <= 20:
+                    # RSI < 20 is rare and powerful — flip direction
+                    direction = 'LONG'
+                    size_mult *= 0.75
+                    details['rsi_override'] = f'RSI {rsi_value:.0f} < 20 → flip to LONG (reduced size)'
+                else:
+                    direction = 'NEUTRAL'
+                    details['rsi_dampen'] = f'RSI {rsi_value:.0f} < 25 → neutralize SHORT'
+            elif direction == 'NEUTRAL':
+                # No direction — RSI provides one
+                direction = 'LONG'
+                size_mult *= 0.70
+                details['rsi_direction'] = f'RSI {rsi_value:.0f} extreme oversold → LONG (reduced size)'
+            elif direction == 'LONG':
+                # RSI confirms LONG — slight boost
+                size_mult = min(size_mult * 1.10, 1.0)
+                details['rsi_confirm_bonus'] = 1.10
+        elif rsi_value >= 75:
+            # Extreme overbought — strong SHORT bias
+            if direction == 'LONG':
+                details['rsi_extreme'] = f'RSI {rsi_value:.0f} extreme overbought — conflicts with LONG'
+                if rsi_value >= 80:
+                    direction = 'SHORT'
+                    size_mult *= 0.75
+                    details['rsi_override'] = f'RSI {rsi_value:.0f} > 80 → flip to SHORT (reduced size)'
+                else:
+                    direction = 'NEUTRAL'
+                    details['rsi_dampen'] = f'RSI {rsi_value:.0f} > 75 → neutralize LONG'
+            elif direction == 'NEUTRAL':
+                direction = 'SHORT'
+                size_mult *= 0.70
+                details['rsi_direction'] = f'RSI {rsi_value:.0f} extreme overbought → SHORT (reduced size)'
+            elif direction == 'SHORT':
+                size_mult = min(size_mult * 1.10, 1.0)
+                details['rsi_confirm_bonus'] = 1.10
 
     # ── Final: Clamp ──
     size_mult = max(0.0, min(1.0, size_mult))

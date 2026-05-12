@@ -144,6 +144,22 @@ def classify_swing_sequence(swings, min_swings=4):
         'swing_lows': [(s['price'], s['idx']) for s in recent_lows[-3:]],
     }
 
+    # Detect wedge patterns: when highs and lows diverge
+    # Rising wedge: LH + HL (bearish highs, bullish lows → compression)
+    # Falling wedge: HH + LL (bullish highs, bearish lows → compression)
+    rising_wedge = (lh_count > 0 and hl_count > 0 and hh_count == 0 and ll_count == 0)
+    falling_wedge = (hh_count > 0 and ll_count > 0 and lh_count == 0 and hl_count == 0)
+
+    if rising_wedge:
+        # Rising wedge: lower highs + higher lows → compression, leans neutral-to-bull
+        # The lows rising means buyers defending higher — not bearish
+        details['pattern'] = 'RISING_WEDGE'
+        return 'NEUTRAL', 0.5, details
+    elif falling_wedge:
+        # Falling wedge: higher highs + lower lows → compression, leans neutral-to-bear
+        details['pattern'] = 'FALLING_WEDGE'
+        return 'NEUTRAL', 0.5, details
+
     if bull_score >= 0.6 and bear_score < 0.3:
         return 'BULLISH', bull_score, details
     elif bear_score >= 0.6 and bull_score < 0.3:
@@ -412,6 +428,9 @@ def compute_structure_bias(df_1h, idx_1h, df_15m=None, idx_15m=None):
 
     # ── 5. Composite Direction ──
     # Blend: 50% 1H swing, 30% 15m swing, 10% FVG alignment, 10% OB alignment
+    # When 1H is NEUTRAL (e.g. rising wedge), 15m should NOT dominate —
+    # it gets reduced weight to avoid false directional signals from
+    # short-term noise overriding the bigger picture.
     bull_points = 0.0
     bear_points = 0.0
 
@@ -426,14 +445,16 @@ def compute_structure_bias(df_1h, idx_1h, df_15m=None, idx_15m=None):
         bear_points += 0.30 * swing_confidence
 
     # 15m swing (execution confirmation)
+    # Reduce weight when 1H is NEUTRAL — 15m alone shouldn't set direction
+    tf15_weight = 0.30 if swing_bias not in ('NEUTRAL',) else 0.15
     if swing_bias_15m == 'BULLISH':
-        bull_points += 0.30 * swing_conf_15m
+        bull_points += tf15_weight * swing_conf_15m
     elif swing_bias_15m == 'BEARISH':
-        bear_points += 0.30 * swing_conf_15m
+        bear_points += tf15_weight * swing_conf_15m
     elif swing_bias_15m == 'LEAN_BULL':
-        bull_points += 0.15 * swing_conf_15m
+        bull_points += tf15_weight * 0.5 * swing_conf_15m
     elif swing_bias_15m == 'LEAN_BEAR':
-        bear_points += 0.15 * swing_conf_15m
+        bear_points += tf15_weight * 0.5 * swing_conf_15m
 
     # FVG alignment
     if fvgs:

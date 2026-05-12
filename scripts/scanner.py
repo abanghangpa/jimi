@@ -530,6 +530,8 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         except Exception:
             pass
 
+    _rsi_val = float(df_15m['rsi'].iloc[idx]) if 'rsi' in df_15m.columns and not pd.isna(df_15m['rsi'].iloc[idx]) else None
+
     direction, dir_size_mult, dir_details = resolve_direction(
         vol_regime, m9_raw if m9_raw else 0.5,
         m13_bias, m13_score_raw, m13_details,
@@ -539,6 +541,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         long_target_details=long_tgt_details, short_target_details=short_tgt_details,
         nearest_liq_direction=nearest_liq_dir,
         m20_score=_m20_pre_score, m20_direction=_m20_pre_dir,
+        rsi_value=_rsi_val,
     )
     # ── Gather market data (always, regardless of signal status) ──
     swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5])
@@ -803,11 +806,46 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
                 'spring_upthrust': m21_details.get('spring_upthrust', {}).get('type', 'NONE'),
                 'details': m21_details,
             }
-            # Block entry if M21 says phase+zone is wrong
+            # When M21 blocks a direction, try flipping to the opposite side
+            # instead of just blocking. ACCUMULATION blocking SHORT → try LONG.
+            # DISTRIBUTION blocking LONG → try SHORT.
             if m21_status == 'BLOCKED':
-                result['status'] = 'NO_SIGNAL'
-                result['reason'] = f'M21 block: {", ".join(m21_details.get("reasons", []))}'
-                return result
+                flip_dir = 'LONG' if direction == 'SHORT' else 'SHORT'
+                try:
+                    m21_flip_status, m21_flip_score, m21_flip_details = score_m21(
+                        df_15m, df_1h, df_4h, df_1d, idx, flip_dir, config=cfg)
+                    if m21_flip_status != 'BLOCKED':
+                        # Flipped direction is viable — use it
+                        direction = flip_dir
+                        m21_status = m21_flip_status
+                        m21_score = m21_flip_score
+                        m21_details = m21_flip_details
+                        range_info_m21 = m21_details.get('range_info')
+                        result['m21'] = {
+                            'status': m21_status,
+                            'score': round(float(m21_score), 3),
+                            'phase': m21_details.get('phase', 'RANGE'),
+                            'zone': m21_details.get('premium_discount', {}).get('zone', 'UNKNOWN'),
+                            'kill_zone': m21_details.get('kill_zone', {}).get('session', 'ANY'),
+                            'spring_upthrust': m21_details.get('spring_upthrust', {}).get('type', 'NONE'),
+                            'details': m21_details,
+                        }
+                        result['m21_direction_flip'] = f'M21 flipped {flip_dir} → {direction}'
+                        # Update the stored direction to reflect the flip
+                        result['direction'] = direction
+                        result['direction_resolver']['direction'] = direction
+                        result['direction_resolver']['reason'] = (
+                            f"{dir_details.get('reason', '?')} → M21 flip to {direction}"
+                        )
+                    else:
+                        # Both directions blocked — no signal
+                        result['status'] = 'NO_SIGNAL'
+                        result['reason'] = f'M21 block: {", ".join(m21_details.get("reasons", []))}'
+                        return result
+                except Exception:
+                    result['status'] = 'NO_SIGNAL'
+                    result['reason'] = f'M21 block: {", ".join(m21_details.get("reasons", []))}'
+                    return result
         except Exception as e:
             result['m21'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
