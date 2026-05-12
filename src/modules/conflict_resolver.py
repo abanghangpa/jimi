@@ -15,6 +15,9 @@ from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any
 
 
+from src.modules.m_historical_sweep import get_historical_pattern, format_historical_pattern
+
+
 @dataclass
 class ConflictScenario:
     """A single conflict hypothesis."""
@@ -47,6 +50,7 @@ class ConflictResult:
     forward_test: Optional[ForwardTest] = None
     precaution: str = ""         # what to do / not do
     action_plan: List[str] = field(default_factory=list)
+    historical_pattern: Optional[Dict[str, Any]] = None  # statistical tiebreaker
 
 
 def detect_conflict(result: dict, config: dict = None) -> ConflictResult:
@@ -174,15 +178,32 @@ def detect_conflict(result: dict, config: dict = None) -> ConflictResult:
     elif spot_flow == 'SELLERS' and direction == 'SHORT':
         factors_for.append('Spot flow: sellers (supports short)')
 
+    # ── Historical pattern (statistical tiebreaker) ──
+    historical_pattern = get_historical_pattern(result, config)
+
     # ── Determine severity ──
-    if len(conflicts) >= 3:
-        severity = 'HIGH'
-    elif len(conflicts) >= 2:
-        severity = 'MEDIUM'
-    elif len(conflicts) >= 1:
-        severity = 'LOW'
+    # Historical pattern can reduce severity if it confirms one side
+    if historical_pattern and historical_pattern.get('resolution_hint') != 'NEUTRAL':
+        # Strong historical pattern = reduce conflict severity by one level
+        hint = historical_pattern['resolution_hint']
+        sweep_rate = historical_pattern.get('sweep_rate', 0)
+        if sweep_rate >= 0.85:
+            # Historical data strongly supports one path — downgrade severity
+            if len(conflicts) >= 3:
+                severity = 'MEDIUM'
+            elif len(conflicts) >= 2:
+                severity = 'LOW'
+            elif len(conflicts) >= 1:
+                severity = 'LOW'
     else:
-        severity = 'NONE'
+        if len(conflicts) >= 3:
+            severity = 'HIGH'
+        elif len(conflicts) >= 2:
+            severity = 'MEDIUM'
+        elif len(conflicts) >= 1:
+            severity = 'LOW'
+        else:
+            severity = 'NONE'
 
     has_conflict = severity != 'NONE'
 
@@ -194,6 +215,7 @@ def detect_conflict(result: dict, config: dict = None) -> ConflictResult:
             summary='No conflict — scanner verdict stands',
             factors_for=factors_for,
             factors_against=factors_against,
+            historical_pattern=historical_pattern,
         )
 
     # ── Determine conflict type ──
@@ -207,13 +229,19 @@ def detect_conflict(result: dict, config: dict = None) -> ConflictResult:
         conflict_type = 'MIXED'
 
     # ── Find key level for forward test ──
-    forward_test = _build_forward_test(result, direction, conflicts, magnets, sr_levels, liq)
+    forward_test = _build_forward_test(result, direction, conflicts, magnets, sr_levels, liq,
+                                       historical_pattern=historical_pattern)
 
     # ── Build summary ──
     opposing = len(factors_against)
     supporting = len(factors_for)
     summary = (f'{direction} bias conflicted: {opposing} signals against vs '
                f'{supporting} supporting. {severity} severity.')
+
+    # ── Augment summary with historical pattern ──
+    if historical_pattern and historical_pattern.get('confidence') in ('HIGH', 'MEDIUM'):
+        hp = historical_pattern
+        summary += f' Historical: {hp["expected_path"]} (sweep {hp["sweep_rate"]:.0%}, bounce {hp["bounce_rate"]:.0%}).'
 
     # ── Precaution ──
     precaution = _build_precaution(severity, conflict_type, direction, phase0, rev_24h)
@@ -231,10 +259,12 @@ def detect_conflict(result: dict, config: dict = None) -> ConflictResult:
         forward_test=forward_test,
         precaution=precaution,
         action_plan=action_plan,
+        historical_pattern=historical_pattern,
     )
 
 
-def _build_forward_test(result, direction, conflicts, magnets, sr_levels, liq):
+def _build_forward_test(result, direction, conflicts, magnets, sr_levels, liq,
+                        historical_pattern=None):
     """Pick the key level and build forward test scenarios."""
     price = result.get('price', 0)
 
@@ -249,20 +279,9 @@ def _build_forward_test(result, direction, conflicts, magnets, sr_levels, liq):
     key_zone = None
     zone_name = ''
 
-    if direction == 'LONG':
-        # For LONG conflicts: watch above for rejection or breakout
-        if unswept_above:
-            top = unswept_above[0]
-            key_zone = (price, top['price'])
-            zone_name = f"unswept_liquidity_above_{top['type']}"
-        elif magnets:
-            # Use nearest magnet above
-            above_mags = [(p, s) for p, s, *_ in magnets if p > price]
-            if above_mags:
-                key_zone = (price, above_mags[0][0])
-                zone_name = 'volume_magnet_above'
-    else:
-        # For SHORT conflicts: watch below for sweep or breakdown
+    # Historical pattern can override zone selection
+    if historical_pattern and historical_pattern.get('resolution_hint') == 'SWEEP_FIRST_THEN_LONG':
+        # Historical says sweep DOWN first — key level is the lower boundary
         if unswept_below:
             bot = unswept_below[0]
             key_zone = (bot['price'], price)
@@ -272,6 +291,53 @@ def _build_forward_test(result, direction, conflicts, magnets, sr_levels, liq):
             if below_mags:
                 key_zone = (below_mags[0][0], price)
                 zone_name = 'volume_magnet_below'
+        elif sr_levels:
+            supports = sorted([p for p, s, t, _, _ in sr_levels if t == 'SUPPORT'])
+            if supports:
+                key_zone = (supports[-1], price)
+                zone_name = 'support_level'
+    elif historical_pattern and historical_pattern.get('resolution_hint') == 'SWEEP_FIRST_THEN_SHORT':
+        # Historical says sweep UP first — key level is the upper boundary
+        if unswept_above:
+            top = unswept_above[0]
+            key_zone = (price, top['price'])
+            zone_name = f"unswept_liquidity_above_{top['type']}"
+        elif magnets:
+            above_mags = [(p, s) for p, s, *_ in magnets if p > price]
+            if above_mags:
+                key_zone = (price, above_mags[0][0])
+                zone_name = 'volume_magnet_above'
+        elif sr_levels:
+            resistances = sorted([p for p, s, t, _, _ in sr_levels if t == 'RESISTANCE'])
+            if resistances:
+                key_zone = (price, resistances[0])
+                zone_name = 'resistance_level'
+
+    # Fallback: original logic
+    if not key_zone:
+        if direction == 'LONG':
+            # For LONG conflicts: watch above for rejection or breakout
+            if unswept_above:
+                top = unswept_above[0]
+                key_zone = (price, top['price'])
+                zone_name = f"unswept_liquidity_above_{top['type']}"
+            elif magnets:
+                # Use nearest magnet above
+                above_mags = [(p, s) for p, s, *_ in magnets if p > price]
+                if above_mags:
+                    key_zone = (price, above_mags[0][0])
+                    zone_name = 'volume_magnet_above'
+        else:
+            # For SHORT conflicts: watch below for sweep or breakdown
+            if unswept_below:
+                bot = unswept_below[0]
+                key_zone = (bot['price'], price)
+                zone_name = f"unswept_liquidity_below_{bot['type']}"
+            elif magnets:
+                below_mags = [(p, s) for p, s, *_ in magnets if p < price]
+                if below_mags:
+                    key_zone = (below_mags[0][0], price)
+                    zone_name = 'volume_magnet_below'
 
     # Fallback: use S/R levels
     if not key_zone and sr_levels:
@@ -341,6 +407,43 @@ def _build_forward_test(result, direction, conflicts, magnets, sr_levels, liq):
             ],
             confidence=0.5,
         ))
+
+    # ── Historical pattern scenario (statistical tiebreaker) ──
+    if historical_pattern and historical_pattern.get('confidence') in ('HIGH', 'MEDIUM'):
+        hp = historical_pattern
+        hint = hp.get('resolution_hint', 'NEUTRAL')
+        sweep_rate = hp.get('sweep_rate', 0)
+        bounce_rate = hp.get('bounce_rate', 0)
+        avg_bars = hp.get('avg_sweep_bars', 8)
+        avg_rr = hp.get('avg_bounce_rr', 1.0)
+
+        if hint == 'SWEEP_FIRST_THEN_LONG':
+            # Historical says: sweep down first, then bounce up
+            scenarios.append(ConflictScenario(
+                name='HISTORICAL_SWEEP_BOUNCE',
+                direction='LONG',
+                trigger=f'sweep below ${key_zone[0]:.0f} + reclaim within {avg_bars} bars',
+                conditions=[
+                    f'Sweep rate: {sweep_rate:.0%} — price likely to sweep the low first',
+                    f'After sweep, {bounce_rate:.0%} chance of bounce to range top',
+                    f'Avg bounce R:R: {avg_rr:.2f}x',
+                    f'Wait for sweep, then evaluate bounce quality',
+                ],
+                confidence=sweep_rate * bounce_rate,  # combined probability
+            ))
+        elif hint == 'SWEEP_FIRST_THEN_SHORT':
+            scenarios.append(ConflictScenario(
+                name='HISTORICAL_SWEEP_REJECT',
+                direction='SHORT',
+                trigger=f'sweep above ${key_zone[1]:.0f} + reject within {avg_bars} bars',
+                conditions=[
+                    f'Sweep rate: {sweep_rate:.0%} — price likely to sweep the high first',
+                    f'After sweep, {bounce_rate:.0%} chance of rejection to range bottom',
+                    f'Avg rejection R:R: {avg_rr:.2f}x',
+                    f'Wait for sweep, then evaluate rejection quality',
+                ],
+                confidence=sweep_rate * bounce_rate,
+            ))
 
     if not scenarios:
         return None
@@ -438,6 +541,9 @@ def format_conflict(cr: ConflictResult) -> str:
         for step in cr.action_plan:
             lines.append(f'     {step}')
 
+    if cr.historical_pattern:
+        lines.append(format_historical_pattern(cr.historical_pattern))
+
     return '\n'.join(lines)
 
 
@@ -462,4 +568,6 @@ def conflict_to_dict(cr: ConflictResult) -> dict:
             'resolution': ft.resolution,
             'scenarios': [asdict(s) for s in ft.scenarios],
         }
+    if cr.historical_pattern:
+        d['historical_pattern'] = cr.historical_pattern
     return d
