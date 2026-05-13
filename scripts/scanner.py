@@ -1722,31 +1722,48 @@ def print_signal(result):
     liq = result.get('liquidity_levels', {})
     if liq:
         price = result['price']
+        n_fresh = 0
+        for z in liq.get('below', []) + liq.get('above', []):
+            if z.get('formed_at') is not None and not z.get('swept'):
+                n_fresh += 1
         print(f"\n  Liquidity Levels (estimated):")
         print(f"    High cascade zones: {liq.get('high_cascade_zones', 0)}  |  "
-              f"Bid walls: {liq.get('bid_walls', 0)}  Ask walls: {liq.get('ask_walls', 0)}")
+              f"Bid walls: {liq.get('bid_walls', 0)}  Ask walls: {liq.get('ask_walls', 0)}  |  "
+              f"🆕 Fresh unswept: {n_fresh}")
 
         below = liq.get('below', [])
         if below:
             print(f"    ▼ Below ${price:.0f} (long liquidations / stops):")
-            for z in below[:6]:
+            for z in below[:8]:
                 icon = {'LONG_LIQ': '💥', 'LONG_STOP': '🛑', 'BID_WALL': '🟢',
                         'SHORT_LIQ': '💥', 'SHORT_STOP': '🛑', 'ASK_WALL': '🔴'}.get(z['type'], '•')
                 cascade = z.get('cascade_risk', '')
                 swept_tag = f"  ✅ SWEPT" if z.get('swept') else ""
+                is_fresh = z.get('formed_at') is not None
+                age = z.get('age_bars')
+                fresh_tag = f"  🆕 {age}bars" if is_fresh and age else ""
+                dist_pct = z.get('dist_pct', (z['price'] - price) / price * 100)
+                source = z.get('source', '')
+                source_tag = f"  [{source}]" if source and is_fresh else ""
                 print(f"      {icon} ${z['price']:.2f}  {z['type']}  "
-                      f"str={z['strength']:.0f}  cascade={cascade}  ({z['dist_pct']:+.2f}%){swept_tag}")
+                      f"str={z['strength']:.0f}  cascade={cascade}  ({dist_pct:+.2f}%){swept_tag}{fresh_tag}{source_tag}")
 
         above = liq.get('above', [])
         if above:
             print(f"    ▲ Above ${price:.0f} (short liquidations / stops):")
-            for z in above[:6]:
+            for z in above[:8]:
                 icon = {'LONG_LIQ': '💥', 'LONG_STOP': '🛑', 'BID_WALL': '🟢',
                         'SHORT_LIQ': '💥', 'SHORT_STOP': '🛑', 'ASK_WALL': '🔴'}.get(z['type'], '•')
                 cascade = z.get('cascade_risk', '')
                 swept_tag = f"  ✅ SWEPT" if z.get('swept') else ""
+                is_fresh = z.get('formed_at') is not None
+                age = z.get('age_bars')
+                fresh_tag = f"  🆕 {age}bars" if is_fresh and age else ""
+                dist_pct = z.get('dist_pct', (z['price'] - price) / price * 100)
+                source = z.get('source', '')
+                source_tag = f"  [{source}]" if source and is_fresh else ""
                 print(f"      {icon} ${z['price']:.2f}  {z['type']}  "
-                      f"str={z['strength']:.0f}  cascade={cascade}  ({z['dist_pct']:+.2f}%){swept_tag}")
+                      f"str={z['strength']:.0f}  cascade={cascade}  ({dist_pct:+.2f}%){swept_tag}{fresh_tag}{source_tag}")
 
     # Conflict History
     conflict = result.get('conflict')

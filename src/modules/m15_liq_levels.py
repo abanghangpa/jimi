@@ -270,6 +270,215 @@ def fetch_order_book_depth(symbol="ETHUSDT", limit=20):
         return [], []
 
 
+def find_formation_time(df_15m, idx, zone_price, lookback=288):
+    """Find when a zone was first formed (first bar that touched it).
+
+    Returns the bar index of first touch, or None if never touched.
+    """
+    start = max(0, idx - lookback + 1)
+    highs = df_15m['High'].values[start:idx+1].astype(float)
+    lows = df_15m['Low'].values[start:idx+1].astype(float)
+
+    for i in range(len(highs)):
+        if lows[i] <= zone_price <= highs[i]:
+            return start + i
+    return None
+
+
+def find_bounce_rejection_zones(df_15m, idx, lookback=288):
+    """Find NEW liquidation zones from bounce points and rejection wicks.
+
+    These are freshly formed stop clusters from recent price action —
+    where traders entered positions and placed stops during recovery/consolidation.
+
+    Returns zones with 'formed_at' bar index for proper sweep tracking.
+    """
+    start = max(0, idx - lookback + 1)
+    highs = df_15m['High'].values[start:idx+1].astype(float)
+    lows = df_15m['Low'].values[start:idx+1].astype(float)
+    closes = df_15m['Close'].values[start:idx+1].astype(float)
+    opens = df_15m['Open'].values[start:idx+1].astype(float)
+    volumes = df_15m['Volume'].values[start:idx+1].astype(float)
+    times = df_15m['Open time'].values[start:idx+1]
+    current_price = closes[-1]
+
+    zones = []
+
+    # 1. Swing lows → long entry zones (stops below)
+    for i in range(2, len(highs) - 2):
+        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and \
+           lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+            dist = abs(lows[i] - current_price) / current_price
+            if dist < 0.03:
+                # Stops sit 0.3-0.8% below the swing low
+                stop_price = lows[i] * 0.995
+                # Higher strength for closer zones; base 40 for swing stops
+                base_strength = max(0, 1.0 - dist / 0.03) * 60 + 20
+                # Bonus for recovery-formed zones (last 48h = 192 bars)
+                if i > len(highs) - 192:
+                    base_strength *= 1.3
+                zones.append({
+                    'price': round(stop_price, 2),
+                    'type': 'LONG_STOP',
+                    'source': f'Swing L ${lows[i]:.0f} @ {str(times[i])[:16]}',
+                    'strength': round(min(base_strength, 100), 1),
+                    'cluster_size': 3,
+                    'cascade_risk': 'MED',
+                    'formed_at': start + i,
+                    'fresh': True,
+                })
+
+    # 2. Swing highs → short entry zones (stops above)
+    for i in range(2, len(highs) - 2):
+        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and \
+           highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+            dist = abs(highs[i] - current_price) / current_price
+            if dist < 0.03:
+                stop_price = highs[i] * 1.005
+                base_strength = max(0, 1.0 - dist / 0.03) * 60 + 20
+                if i > len(highs) - 192:
+                    base_strength *= 1.3
+                zones.append({
+                    'price': round(stop_price, 2),
+                    'type': 'SHORT_STOP',
+                    'source': f'Swing H ${highs[i]:.0f} @ {str(times[i])[:16]}',
+                    'strength': round(min(base_strength, 100), 1),
+                    'cluster_size': 3,
+                    'cascade_risk': 'MED',
+                    'formed_at': start + i,
+                    'fresh': True,
+                })
+
+    # 3. Rejection wicks → stop clusters at the extreme
+    for i in range(len(highs)):
+        body = abs(closes[i] - opens[i])
+        total = highs[i] - lows[i]
+        if total == 0 or body == 0:
+            continue
+
+        upper_wick = highs[i] - max(opens[i], closes[i])
+        lower_wick = min(opens[i], closes[i]) - lows[i]
+
+        # Long upper rejection → stops above the wick high
+        if upper_wick > body * 1.5 and upper_wick > total * 0.35:
+            dist = abs(highs[i] - current_price) / current_price
+            if dist < 0.03:
+                base_strength = max(0, 1.0 - dist / 0.03) * 55 + 15
+                if i > len(highs) - 192:
+                    base_strength *= 1.3
+                zones.append({
+                    'price': round(highs[i] * 1.002, 2),
+                    'type': 'SHORT_STOP',
+                    'source': f'Rejection H ${highs[i]:.0f} @ {str(times[i])[:16]}',
+                    'strength': round(min(base_strength, 100), 1),
+                    'cluster_size': 2,
+                    'cascade_risk': 'MED',
+                    'formed_at': start + i,
+                    'fresh': True,
+                })
+
+        # Long lower rejection → stops below the wick low
+        if lower_wick > body * 1.5 and lower_wick > total * 0.35:
+            dist = abs(lows[i] - current_price) / current_price
+            if dist < 0.03:
+                base_strength = max(0, 1.0 - dist / 0.03) * 55 + 15
+                if i > len(highs) - 192:
+                    base_strength *= 1.3
+                zones.append({
+                    'price': round(lows[i] * 0.998, 2),
+                    'type': 'LONG_STOP',
+                    'source': f'Rejection L ${lows[i]:.0f} @ {str(times[i])[:16]}',
+                    'strength': round(min(base_strength, 100), 1),
+                    'cluster_size': 2,
+                    'cascade_risk': 'MED',
+                    'formed_at': start + i,
+                    'fresh': True,
+                })
+
+    # 4. Consolidation zones → breakout stops
+    for i in range(4, len(highs)):
+        window_range = np.mean(highs[i-4:i+1] - lows[i-4:i+1])
+        current_range = highs[i] - lows[i]
+        if current_range < window_range * 0.5:  # Tight bar
+            mid = (highs[i] + lows[i]) / 2
+            dist = abs(mid - current_price) / current_price
+            if dist < 0.02:
+                # Stops above and below the consolidation
+                zones.append({
+                    'price': round(highs[i] * 1.003, 2),
+                    'type': 'SHORT_STOP',
+                    'source': f'Consolidation H ${highs[i]:.0f} @ {str(times[i])[:16]}',
+                    'strength': round(max(0, 1.0 - dist / 0.02) * 35, 1),
+                    'cluster_size': 2,
+                    'cascade_risk': 'LOW',
+                    'formed_at': start + i,
+                    'fresh': True,
+                })
+                zones.append({
+                    'price': round(lows[i] * 0.997, 2),
+                    'type': 'LONG_STOP',
+                    'source': f'Consolidation L ${lows[i]:.0f} @ {str(times[i])[:16]}',
+                    'strength': round(max(0, 1.0 - dist / 0.02) * 35, 1),
+                    'cluster_size': 2,
+                    'cascade_risk': 'LOW',
+                    'formed_at': start + i,
+                    'fresh': True,
+                })
+
+    # 5. High-volume nodes from recovery (where most positions accumulated)
+    # Cluster by price and weight by volume
+    if len(closes) > 20:
+        price_min, price_max = np.min(lows), np.max(highs)
+        n_bins = 40
+        bin_edges = np.linspace(price_min, price_max, n_bins + 1)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        vol_profile = np.zeros(n_bins)
+
+        for i in range(len(closes)):
+            for j in range(n_bins):
+                overlap_low = max(lows[i], bin_edges[j])
+                overlap_high = min(highs[i], bin_edges[j+1])
+                overlap = max(overlap_high - overlap_low, 0)
+                candle_range = highs[i] - lows[i]
+                if candle_range > 0:
+                    vol_profile[j] += volumes[i] * (overlap / candle_range)
+
+        # Find peaks (high-volume nodes)
+        mean_vol = np.mean(vol_profile)
+        for i in range(1, len(vol_profile) - 1):
+            if vol_profile[i] > vol_profile[i-1] and vol_profile[i] > vol_profile[i+1] and \
+               vol_profile[i] > mean_vol * 1.5:
+                price = bin_centers[i]
+                dist = abs(price - current_price) / current_price
+                if dist < 0.03:
+                    strength_ratio = vol_profile[i] / mean_vol
+                    # Determine if this is above or below current price
+                    if price < current_price:
+                        ztype = 'LONG_LIQ'  # Long entries here → their liqs below
+                    else:
+                        ztype = 'SHORT_LIQ'  # Short entries here → their liqs above
+
+                    # Find when this node was formed (first high-volume bar in the zone)
+                    formed_bar = None
+                    for k in range(len(closes)):
+                        if lows[k] <= price <= highs[k] and volumes[k] > mean_vol:
+                            formed_bar = start + k
+                            break
+
+                    zones.append({
+                        'price': round(float(price), 2),
+                        'type': ztype,
+                        'source': f'HVN {strength_ratio:.1f}x avg vol',
+                        'strength': round(min(strength_ratio * 20, 80), 1),
+                        'cluster_size': int(vol_profile[i] / mean_vol),
+                        'cascade_risk': 'HIGH' if strength_ratio > 3 else 'MED' if strength_ratio > 2 else 'LOW',
+                        'formed_at': formed_bar,
+                        'fresh': True,
+                    })
+
+    return zones
+
+
 def estimate_liquidity_levels(df_15m, idx, sr_levels, oi_usd, ls_ratio,
                                direction_bias=None, order_book=None):
     """Main function: combine all sources into liquidation level estimates.
@@ -373,14 +582,36 @@ def estimate_liquidity_levels(df_15m, idx, sr_levels, oi_usd, ls_ratio,
             if zone['strength'] > deduped[-1]['strength']:
                 deduped[-1] = zone
 
+    # ── Add fresh bounce/rejection zones ──
+    # These capture newly formed stop clusters from recent swing points,
+    # rejection wicks, and consolidation zones that the OI/leverage model misses.
+    fresh_zones = find_bounce_rejection_zones(df_15m, idx, lookback=288)
+    current_px = df_15m['Close'].values[idx]
+    for fz in fresh_zones:
+        # Ensure dist_pct is set
+        if 'dist_pct' not in fz:
+            fz['dist_pct'] = round((fz['price'] - current_px) / current_px * 100, 2)
+        # Only add if not already covered by a FRESH zone (don't dedup against OI zones).
+        # Fresh zones represent a different signal (stop clusters from price action)
+        # than OI/leverage estimates — both are valid and should coexist.
+        already_exists = any(
+            abs(fz['price'] - dz['price']) / fz['price'] < 0.003 and fz['type'] == dz['type']
+            and dz.get('fresh')
+            for dz in deduped
+        )
+        if not already_exists:
+            deduped.append(fz)
+
     # Check if zones have been swept by recent price action.
-    # Use a short lookback (4h = 16 bars on 15m) so a single wick
-    # doesn't permanently invalidate a level that may have rebuilt.
-    # Skip live order book walls — if they're in the current book, they exist.
-    sweep_lookback = 16  # 4h
+    # For zones with known formation time, check if swept AFTER formation.
+    # For zones without formation time (legacy), use 4h lookback.
+    sweep_lookback = 16  # 4h fallback
     recent_high = float(np.max(df_15m['High'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)))
     recent_low = float(np.min(df_15m['Low'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)))
     recent_times = df_15m['Open time'].values[max(0, idx - sweep_lookback + 1):idx+1]
+    all_highs = df_15m['High'].values[:idx+1].astype(float)
+    all_lows = df_15m['Low'].values[:idx+1].astype(float)
+    all_times = df_15m['Open time'].values[:idx+1]
 
     for zone in deduped:
         zp = zone['price']
@@ -391,24 +622,43 @@ def estimate_liquidity_levels(df_15m, idx, sr_levels, oi_usd, ls_ratio,
         if zone['type'] in ('BID_WALL', 'ASK_WALL'):
             zone['swept'] = False
             zone['swept_at'] = None
+            zone['age_bars'] = None
             continue
 
-        # Zone above price: swept if recent high passed it
-        if zp > current_price and recent_high >= zp:
-            swept = True
-            highs_arr = df_15m['High'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)
-            for i in range(len(recent_times)):
-                if highs_arr[i] >= zp:
-                    swept_at = str(recent_times[i])
-                    break
-        # Zone below price: swept if recent low passed it
-        elif zp < current_price and recent_low <= zp:
-            swept = True
-            lows_arr = df_15m['Low'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)
-            for i in range(len(recent_times)):
-                if lows_arr[i] <= zp:
-                    swept_at = str(recent_times[i])
-                    break
+        formed_at = zone.get('formed_at')
+
+        if formed_at is not None and formed_at < idx:
+            # Check if swept AFTER formation (the correct way)
+            check_start = formed_at + 1
+            if check_start <= idx:
+                for i in range(check_start, idx + 1):
+                    if zp > current_price and all_highs[i] >= zp:
+                        swept = True
+                        swept_at = str(all_times[i])
+                        break
+                    elif zp < current_price and all_lows[i] <= zp:
+                        swept = True
+                        swept_at = str(all_times[i])
+                        break
+            zone['age_bars'] = idx - formed_at
+        else:
+            # Legacy fallback: fixed 4h lookback
+            if zp > current_price and recent_high >= zp:
+                swept = True
+                highs_arr = df_15m['High'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)
+                for i in range(len(recent_times)):
+                    if highs_arr[i] >= zp:
+                        swept_at = str(recent_times[i])
+                        break
+            elif zp < current_price and recent_low <= zp:
+                swept = True
+                lows_arr = df_15m['Low'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)
+                for i in range(len(recent_times)):
+                    if lows_arr[i] <= zp:
+                        swept_at = str(recent_times[i])
+                        break
+            zone['age_bars'] = None
+
         zone['swept'] = swept
         zone['swept_at'] = swept_at
 
@@ -417,26 +667,48 @@ def estimate_liquidity_levels(df_15m, idx, sr_levels, oi_usd, ls_ratio,
     #   - LOW cascade: 6% hit rate → noise
     #   - Strength < 20: 5.5% hit rate → noise
     #   - Distance > 3%: 6.4% hit rate → noise
+    #
+    # EXCEPTION: fresh zones (formed in last 48h) get relaxed filtering
+    # because they haven't had time to prove themselves yet.
+    fresh_cutoff = max(0, idx - 192)  # 48h = 192 bars of 15m
     filtered = []
     for zone in deduped:
         # Keep order book walls regardless (they're real liquidity)
         if zone['type'] in ('BID_WALL', 'ASK_WALL'):
             filtered.append(zone)
             continue
-        # Filter: cascade risk
-        if zone.get('cascade_risk') == 'LOW':
+
+        is_fresh = zone.get('formed_at') is not None and zone['formed_at'] > fresh_cutoff
+
+        # Skip swept zones (they're done)
+        if zone.get('swept'):
             continue
-        # Filter: minimum strength
-        if zone['strength'] < 20:
-            continue
-        # Filter: max distance
+
+        # Filter: max distance (always apply)
         dist = abs(zone['price'] - current_price) / current_price
         if dist > 0.03:
             continue
+
+        # Relaxed filtering for fresh zones
+        if is_fresh:
+            # Fresh zones: only require strength > 10 (vs 20 for old zones)
+            # and accept LOW cascade (they need time to build)
+            if zone['strength'] < 10:
+                continue
+        else:
+            # Legacy strict filtering
+            if zone.get('cascade_risk') == 'LOW':
+                continue
+            if zone['strength'] < 20:
+                continue
+
         filtered.append(zone)
 
-    # Sort by strength
-    filtered.sort(key=lambda x: x['strength'], reverse=True)
+    # Sort: fresh unswept zones first, then by strength
+    def sort_key(z):
+        fresh = z.get('formed_at') is not None and z['formed_at'] > fresh_cutoff
+        return (0 if fresh else 1, -z['strength'])
+    filtered.sort(key=sort_key)
 
     return filtered
 
