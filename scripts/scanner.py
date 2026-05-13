@@ -48,6 +48,7 @@ from src.modules.m12_orderbook import score_m12_orderbook
 from src.modules.m14_sweep import score_m14
 from src.modules.m17_resistance_quality import score_resistance_quality, format_resistance_quality
 from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_exchange_data, compute_exchange_signals, score_exchange_activity, score_spot_signals
+from src.modules.taker_tracker import get_taker_summary, format_taker_summary
 from src.modules.cross_asset import score_cross_asset
 from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
@@ -677,6 +678,12 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     # Pass raw taker_ratio and bar_range to result for squeeze detector
     result['raw_taker_ratio'] = taker_ratio
     result['raw_bar_range_pct'] = bar_range
+
+    # Taker flow analysis
+    try:
+        result['taker_summary'] = get_taker_summary(df_15m, idx)
+    except Exception:
+        result['taker_summary'] = None
 
     squeeze_result = detect_squeeze(result, config=cfg,
                                      last_signal_bar=result.get('_last_squeeze_bar', -1),
@@ -1432,6 +1439,12 @@ def print_signal(result):
         print(f"    ATR (1H):       ${atr:.2f}  ({atr/result['price']*100:.2f}% of price)")
     if vol_r:
         print(f"    Vol Ratio:      {vol_r:.2f}x  (24h vs 7d)")
+
+    # Taker Flow Analysis
+    taker_data = result.get('taker_summary')
+    if taker_data:
+        print()
+        print(format_taker_summary(taker_data))
 
     # Direction Resolver
     dr = result.get('direction_resolver', {})
