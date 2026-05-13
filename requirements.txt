@@ -30,8 +30,8 @@ pyyaml>=6.0
 
 ## Git Notes
 - data/ and *.csv are gitignored
-- Exception: data/eth_15m_intrabar_delta.csv
-- To push derivatives data: use git add -f or update .gitignore
+- Exceptions: data/derivatives_history/* and data/eth_15m_intrabar_delta.csv
+- Derivatives CSVs track normally — no force-add needed
 
 ## Behavioral Rules
 1. WORKSPACE IS TEMPORARY — only GitHub is permanent
@@ -41,4 +41,4 @@ pyyaml>=6.0
 
 ## Session Log
 _(Append dated notes below — keep it short, delete old entries when cluttered)_
-- 2026-05-13: Initial setup. Derivatives collector running every 15m. AGENT_MEMORY.md created.
+- 2026-05-13: Initial setup. Derivatives collector running every 15m. All instructions consolidated into this file.
