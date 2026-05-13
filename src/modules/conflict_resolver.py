@@ -313,14 +313,32 @@ def _build_forward_test(result, direction, conflicts, magnets, sr_levels, liq,
                 key_zone = (price, resistances[0])
                 zone_name = 'resistance_level'
 
-    # Fallback: original logic
+    # Fallback: original logic — but prefer closer S/R over distant unswept
     if not key_zone:
         if direction == 'LONG':
             # For LONG conflicts: watch above for rejection or breakout
             if unswept_above:
                 top = unswept_above[0]
-                key_zone = (price, top['price'])
-                zone_name = f"unswept_liquidity_above_{top['type']}"
+                # Check if a resistance S/R level is closer than the unswept zone
+                if sr_levels:
+                    resistances = sorted([(p, s) for p, s, t, _, _ in sr_levels if t == 'RESISTANCE' and p > price])
+                    if resistances:
+                        nearest_sr = resistances[0][0]
+                        nearest_unswept = top['price']
+                        sr_dist = abs(nearest_sr - price) / price
+                        unswept_dist = abs(nearest_unswept - price) / price
+                        if sr_dist < unswept_dist:
+                            key_zone = (price, nearest_sr)
+                            zone_name = 'resistance_level'
+                        else:
+                            key_zone = (price, nearest_unswept)
+                            zone_name = f"unswept_liquidity_above_{top['type']}"
+                    else:
+                        key_zone = (price, top['price'])
+                        zone_name = f"unswept_liquidity_above_{top['type']}"
+                else:
+                    key_zone = (price, top['price'])
+                    zone_name = f"unswept_liquidity_above_{top['type']}"
             elif magnets:
                 # Use nearest magnet above
                 above_mags = [(p, s) for p, s, *_ in magnets if p > price]
@@ -331,8 +349,26 @@ def _build_forward_test(result, direction, conflicts, magnets, sr_levels, liq,
             # For SHORT conflicts: watch below for sweep or breakdown
             if unswept_below:
                 bot = unswept_below[0]
-                key_zone = (bot['price'], price)
-                zone_name = f"unswept_liquidity_below_{bot['type']}"
+                # Check if a support S/R level is closer than the unswept zone
+                if sr_levels:
+                    supports = sorted([(p, s) for p, s, t, _, _ in sr_levels if t == 'SUPPORT' and p < price], reverse=True)
+                    if supports:
+                        nearest_sr = supports[0][0]
+                        nearest_unswept = bot['price']
+                        sr_dist = abs(price - nearest_sr) / price
+                        unswept_dist = abs(price - nearest_unswept) / price
+                        if sr_dist < unswept_dist:
+                            key_zone = (nearest_sr, price)
+                            zone_name = 'support_level'
+                        else:
+                            key_zone = (bot['price'], price)
+                            zone_name = f"unswept_liquidity_below_{bot['type']}"
+                    else:
+                        key_zone = (bot['price'], price)
+                        zone_name = f"unswept_liquidity_below_{bot['type']}"
+                else:
+                    key_zone = (bot['price'], price)
+                    zone_name = f"unswept_liquidity_below_{bot['type']}"
             elif magnets:
                 below_mags = [(p, s) for p, s, *_ in magnets if p < price]
                 if below_mags:
