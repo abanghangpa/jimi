@@ -13,15 +13,9 @@ pyyaml>=6.0
 # =============================================================
 
 ## First Session Protocol
-1. Clone repo to workspace if not present
-2. Read THIS FILE to restore all context
-3. Check data/derivatives_history/ for collected data status
-4. Check if lockfile exists: data/derivatives_history/.collect_lock
-
-## Project: JIMI Trading Framework
-- ETH/USDT 15m scoring system with live scanner
-- Repo: https://github.com/abanghangpa/jimi
-- Key scripts: scanner.py, collect_derivatives.py
+1. Read THIS FILE to restore all context
+2. Check data/derivatives_history/ for collected data status
+3. Check if lockfile exists: data/derivatives_history/.collect_lock
 
 ## Derivatives Data Collection
 - Collector: scripts/collect_derivatives.py (Binance FAPI — OI, L/S, taker, funding)
@@ -31,7 +25,7 @@ pyyaml>=6.0
 - Note: Binance keeps ~30 days of history only
 
 ## Push Reminder Cron
-- jimi-push-reminder fires 10:00 AM Asia/Shanghai daily
+- jimi-push-reminder fires every 45-minutes
 - Checks CSV row count and reminds user to push
 
 ## Git Notes
@@ -42,9 +36,8 @@ pyyaml>=6.0
 ## Behavioral Rules
 1. WORKSPACE IS TEMPORARY — only GitHub is permanent
 2. When accessing this GitHub repo (pull/push/fetch), ALWAYS remind user to push data files and show what changed
-3. After workspace wipe, re-clone and re-read this file
-4. User controls when to push — just remind, don't auto-push
-5. All persistent notes go in THIS FILE or AGENT_MEMORY.md in the repo
+3. User controls when to push — just remind, don't auto-push
+4. All persistent notes go in THIS FILE or AGENT_MEMORY.md in the repo
 
 ## Session Log
 _(Append dated notes below — keep it short, delete old entries when cluttered)_
