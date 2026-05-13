@@ -56,6 +56,7 @@ from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
 from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, format_squeeze
 from src.modules.m19_breakout_confirm import check_breakout_filters, format_breakout_confirm
 from src.modules.m20_failed_breakout import score_m20, format_failed_breakout
+from src.dual_strategy import DualStrategy
 
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
@@ -2252,6 +2253,109 @@ def print_summary(result):
     print("─" * 55)
 
 
+def print_dual_strategy(result):
+    """Print dual strategy (scalp + momentum) results."""
+    dual = result.get('dual_strategy')
+    if not dual:
+        return
+
+    sa = dual.get('strategy_a') or {}
+    sb = dual.get('strategy_b') or {}
+
+    print(f"\n  {'═' * 56}")
+    print(f"  DUAL STRATEGY")
+    print(f"  {'═' * 56}")
+
+    # Strategy A: Range Scalper
+    print(f"\n  {'─' * 56}")
+    print(f"  📐 STRATEGY A: RANGE SCALPER")
+    print(f"  {'─' * 56}")
+    _print_dual_sub(sa, 'scalp')
+
+    # Strategy B: Momentum Rider
+    print(f"\n  {'─' * 56}")
+    print(f"  🚀 STRATEGY B: MOMENTUM RIDER")
+    print(f"  {'─' * 56}")
+    _print_dual_sub(sb, 'momentum')
+
+    # Combined verdict
+    print(f"\n  {'─' * 56}")
+    signals = []
+    if sa.get('status') == 'SIGNAL':
+        signals.append(f"📐 SCALP {sa['direction']} ${sa['entry']:.2f} → TP1 ${sa['tp1']:.2f}")
+    if sb.get('status') == 'SIGNAL':
+        signals.append(f"🚀 MOMENTUM {sb['direction']} ${sb['entry']:.2f} → TP1 ${sb['tp1']:.2f}")
+
+    if signals:
+        print(f"  ✅ DUAL SIGNALS:")
+        for s in signals:
+            print(f"     {s}")
+    else:
+        reasons = []
+        if sa.get('reason'):
+            reasons.append(f"Scalp: {sa['reason']}")
+        if sb.get('reason'):
+            reasons.append(f"Mom: {sb['reason']}")
+        print(f"  ⛔ NO DUAL SIGNALS — {'; '.join(reasons)}")
+    print(f"  {'═' * 56}")
+
+
+def _print_dual_sub(s, mode):
+    """Print one dual-strategy sub-result."""
+    if not s:
+        print(f"  ⚪ No data")
+        return
+
+    status = s.get('status', '?')
+    if status == 'SIGNAL':
+        direction = s.get('direction', '?')
+        entry = s.get('entry', 0)
+        sl = s.get('sl', 0)
+        tp1 = s.get('tp1', 0)
+        tp2 = s.get('tp2', 0)
+        tp3 = s.get('tp3', 0)
+        sl_pct = s.get('sl_pct', 0)
+        tp1_pct = s.get('tp1_pct', 0)
+        ics = s.get('ics', 0)
+        size = s.get('size', 0)
+        entry_mode = s.get('mode', '')
+
+        print(f"  ✅ SIGNAL: {direction}")
+        if 'pullback' in entry_mode:
+            print(f"     📐 Entry Mode: PULLBACK RETEST")
+            print(f"     📐 Retrace: {s.get('pullback_retrace', 0)*100:.1f}%  Wait: {s.get('pullback_bars', 0)} bars")
+        print(f"     Entry: ${entry:.2f}  (size={size:.1f})")
+        print(f"     SL:    ${sl:.2f}  ({sl_pct:.2f}%)")
+        print(f"     TP1:   ${tp1:.2f}  ({tp1_pct:.2f}%)", end="")
+        if mode == 'momentum':
+            tp1_close = s.get('tp1_close', 0.15)
+            print(f"  [close {tp1_close*100:.0f}%]")
+        else:
+            print(f"  [close 30%]")
+        print(f"     TP2:   ${tp2:.2f}")
+        print(f"     TP3:   ${tp3:.2f}")
+        print(f"     ICS:   {ics:.4f}  Regime: {s.get('regime', '?')}")
+
+        if mode == 'momentum':
+            strength = s.get('momentum_strength', 0)
+            reason = s.get('momentum_reason', '')
+            rr = abs(tp1_pct / sl_pct) if sl_pct > 0 else 0
+            print(f"     📊 Momentum: {strength:.2f}  ({reason})")
+            print(f"     📊 R:R:     {rr:.2f}x (TP1 vs SL)")
+
+    elif status == 'FILTERED':
+        print(f"  🔶 FILTERED: {s.get('reason', '?')}")
+    else:
+        reason = s.get('reason', '?')
+        entry_mode = s.get('mode', '')
+        if 'pullback_pending' in entry_mode:
+            strength = s.get('strength', 0)
+            print(f"  ⏳ PENDING: {reason}")
+            print(f"     📊 Ignition strength: {strength:.2f}")
+        else:
+            print(f"  ⛔ NO SIGNAL: {reason}")
+
+
 def main():
     parser = argparse.ArgumentParser(description='JIMI Live Scanner')
     parser.add_argument('--json', action='store_true', help='Output JSON only')
@@ -2323,6 +2427,15 @@ def main():
     # Tag the result with timeframe
     result['timeframe'] = args.tf
 
+    # ── Dual Strategy Scan ──
+    try:
+        ds = DualStrategy(config=scaled_config)
+        dual_result = ds.scan(df_base, df_1h, df_2h, df_4h, df_1d)
+        result['dual_strategy'] = dual_result
+    except Exception as e:
+        print(f"  ⚠️  Dual strategy error: {e}")
+        result['dual_strategy'] = None
+
     # Always save scan result to data/scans/
     scan_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'scans')
     os.makedirs(scan_dir, exist_ok=True)
@@ -2342,6 +2455,7 @@ def main():
     else:
         print_signal(result)
         print_summary(result)
+        print_dual_strategy(result)
 
         # ── Power of 3 Phase Detection ──
         p3 = detect_phase(result, config=scaled_config, df_15m=df_base)
