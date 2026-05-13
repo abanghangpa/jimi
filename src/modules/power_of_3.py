@@ -1,5 +1,5 @@
 """
-Power of 3 Phase Detector — ICT/SMC market phase analysis (v2).
+Power of 3 Phase Detector — ICT/SMC market phase analysis (v3).
 
 Determines whether the current market structure is:
   - ACCUMULATION: Smart money loading, range-bound, preparing for markup
@@ -14,6 +14,12 @@ v2 changes:
   - Forward-looking reversal targets: after a sweep, targets the opposite side
   - Timing integration: uses M4b intrabar CVD divergence for sweep-in-progress detection
   - Actionable output: replaces vague "wait" with concrete entry/invalidation levels
+
+v3 changes:
+  - Zone sweep detection: tolerances for near-miss sweeps (price gets 99% then reverses)
+  - Partial sweep assessment: distinguishes completed sweeps from liquidity revisit setups
+  - Directional confirmation: uses OI, taker, M4b, whale signals to confirm sweep direction
+  - Unswept liquidity gravity: strong unswept clusters above/below act as magnets
 """
 
 import numpy as np
@@ -25,6 +31,16 @@ from typing import List, Optional, Dict
 MIN_KEY_LEVEL_DIST_PCT = 0.005  # 0.5%
 # How many bars back to check for a completed sweep
 SWEEP_LOOKBACK_BARS = 96  # 24h on 15m
+
+# ── v3: Zone sweep detection ─────────────────────────────────────────
+# Tolerance for near-miss sweeps (price gets within this % of level = swept)
+SWEEP_ZONE_TOLERANCE_PCT = 0.0015  # 0.15% — catches $2,323 vs $2,326 miss
+# Width of the liquidity zone to check (expand key level by this % each side)
+SWEEP_ZONE_WIDTH_PCT = 0.003  # 0.3% — treats nearby stops/magnets as one zone
+# Minimum unswept strength above/below to count as "gravity" pulling price
+SWEEP_GRAVITY_MIN_STRENGTH = 80  # combined stop strength
+# Maximum bars ago for a zone sweep to still be considered fresh
+SWEEP_ZONE_FRESH_BARS = 24  # 6h on 15m
 
 # ── Judas Sweep Historical Performance Stats ─────────────────────────
 # Source: Backtested on ETH/USDT 15m (2017-08 → 2026-05), 305k+ bars
@@ -113,6 +129,275 @@ def get_judas_stats_for_sweep(sweep_pct: float) -> dict:
         'recent_reversal_rate': JUDAS_SWEEP_STATS['recent_2025_2026']['reversal_gt_03'],
         'recent_avg_drop': JUDAS_SWEEP_STATS['recent_2025_2026']['avg_drop'],
     }
+
+
+# ── v3: Zone Sweep Detection ─────────────────────────────────────────
+
+def _check_zone_swept(price, key_level, df_15m_highs, df_15m_lows,
+                      magnets, sr_levels, liq, current_idx, direction,
+                      lookback=SWEEP_LOOKBACK_BARS):
+    """Check if a liquidity zone around key_level was swept.
+
+    Unlike _check_sweep_completed which checks exact level crossing,
+    this checks whether price got within tolerance of ANY level in the zone
+    (magnets, stops, S/R) and then reversed.
+
+    Returns:
+        dict with:
+            zone_swept: bool — whether the zone was swept
+            zone_high: float — highest price that swept the zone
+            swept_levels: list — which levels in the zone were hit
+            bars_ago: int — how many bars since the zone sweep
+            is_fresh: bool — whether the sweep is recent enough to trade
+            zone_center: float — center of the swept zone
+    """
+    none_result = {
+        'zone_swept': False, 'zone_high': 0, 'swept_levels': [],
+        'bars_ago': -1, 'is_fresh': False, 'zone_center': key_level,
+    }
+    if key_level is None or df_15m_highs is None:
+        return none_result
+
+    tolerance = key_level * SWEEP_ZONE_TOLERANCE_PCT
+    zone_low = key_level * (1 - SWEEP_ZONE_WIDTH_PCT)
+    zone_high_bound = key_level * (1 + SWEEP_ZONE_WIDTH_PCT)
+
+    # Collect all levels within the zone
+    zone_levels = []
+
+    # Magnets in zone
+    if magnets:
+        for entry in magnets:
+            p = entry[0]
+            if zone_low <= p <= zone_high_bound:
+                zone_levels.append(('MAGNET', p, entry[1] if len(entry) > 1 else 1))
+
+    # S/R in zone
+    if sr_levels:
+        for entry in sr_levels:
+            if len(entry) >= 3:
+                p, s, t = entry[0], entry[1], entry[2]
+                if zone_low <= p <= zone_high_bound:
+                    zone_levels.append(('SR', p, s))
+
+    # Liquidity levels in zone
+    if liq:
+        for side_key in ('above', 'below'):
+            for z in liq.get(side_key, []):
+                p = z.get('price', 0)
+                if zone_low <= p <= zone_high_bound:
+                    zone_levels.append(('LIQ', p, z.get('strength', 1)))
+
+    # Always include the key level itself
+    zone_levels.append(('KEY', key_level, 0))
+
+    # Deduplicate
+    seen_prices = set()
+    unique_levels = []
+    for lt, p, s in zone_levels:
+        rounded = round(p, 2)
+        if rounded not in seen_prices:
+            seen_prices.add(rounded)
+            unique_levels.append((lt, p, s))
+
+    # Check if price swept through the zone
+    start = max(0, current_idx - lookback + 1)
+    highs = df_15m_highs[start:current_idx + 1].astype(float)
+    lows = df_15m_lows[start:current_idx + 1].astype(float)
+
+    # For SHORT direction (sweep above): check if highs entered the zone
+    # For LONG direction (sweep below): check if lows entered the zone
+    swept_levels = []
+    sweep_bar_idx = None
+    zone_extreme = None
+
+    if direction == 'SHORT':
+        # Zone is above price — check if highs reached it
+        zone_entry_price = zone_low - tolerance
+        for i in range(len(highs) - 1, -1, -1):
+            if highs[i] >= zone_entry_price:
+                sweep_bar_idx = i + start
+                zone_extreme = float(highs[i])
+                # Check which specific levels were hit
+                for lt, p, s in unique_levels:
+                    if highs[i] >= p - tolerance:
+                        swept_levels.append({'type': lt, 'price': p, 'strength': s, 'hit': True})
+                    else:
+                        swept_levels.append({'type': lt, 'price': p, 'strength': s, 'hit': False})
+                break
+    else:
+        # Zone is below price — check if lows reached it
+        zone_entry_price = zone_high_bound + tolerance
+        for i in range(len(lows) - 1, -1, -1):
+            if lows[i] <= zone_entry_price:
+                sweep_bar_idx = i + start
+                zone_extreme = float(lows[i])
+                for lt, p, s in unique_levels:
+                    if lows[i] <= p + tolerance:
+                        swept_levels.append({'type': lt, 'price': p, 'strength': s, 'hit': True})
+                    else:
+                        swept_levels.append({'type': lt, 'price': p, 'strength': s, 'hit': False})
+                break
+
+    if sweep_bar_idx is None:
+        return none_result
+
+    bars_ago = current_idx - sweep_bar_idx
+    is_fresh = bars_ago <= SWEEP_ZONE_FRESH_BARS
+    any_hit = any(item['hit'] for item in swept_levels)
+
+    return {
+        'zone_swept': any_hit,
+        'zone_high': zone_extreme,
+        'swept_levels': swept_levels,
+        'bars_ago': bars_ago,
+        'is_fresh': is_fresh,
+        'zone_center': key_level,
+    }
+
+
+def _assess_sweep_completeness(price, swept_zone_high, unswept_above, unswept_below,
+                                m4b_divergence, m4b_slope, oi_roc, taker_ratio,
+                                direction_after_sweep, whale_signal, futures_flow):
+    """After a zone sweep, assess if the sweep is done or price will revisit.
+
+    Uses multiple confirmation signals to determine whether:
+      - SWEEP_DONE: reversal is real, trade the opposite direction
+      - PARTIAL_SWEEP: more liquidity in the sweep direction, wait for revisit
+      - AMBIGUOUS: need more data
+
+    Returns:
+        dict with:
+            status: 'SWEEP_DONE' | 'PARTIAL_SWEEP' | 'AMBIGUOUS'
+            score: int (positive = done, negative = revisit)
+            factors: list of contributing signals
+            recommendation: str
+    """
+    score = 0
+    factors = []
+
+    # ── 1. Unswept liquidity gravity ──
+    # Strong unswept levels in the sweep direction = price likely to revisit
+    if direction_after_sweep == 'SHORT':
+        # Sweep was upward — check unswept above
+        unswept_strength = sum(z.get('strength', 0) for z in unswept_above
+                               if z.get('price', 0) > price)
+        unswept_count = len([z for z in unswept_above if z.get('price', 0) > price])
+    else:
+        # Sweep was downward — check unswept below
+        unswept_strength = sum(z.get('strength', 0) for z in unswept_below
+                               if z.get('price', 0) < price)
+        unswept_count = len([z for z in unswept_below if z.get('price', 0) < price])
+
+    if unswept_strength >= 150:
+        score -= 3
+        factors.append(f'Strong unswept gravity: str={unswept_strength:.0f} ({unswept_count} levels) — price likely to revisit')
+    elif unswept_strength >= SWEEP_GRAVITY_MIN_STRENGTH:
+        score -= 2
+        factors.append(f'Moderate unswept gravity: str={unswept_strength:.0f} — revisit possible')
+    elif unswept_strength < 30:
+        score += 2
+        factors.append(f'Weak unswept gravity: str={unswept_strength:.0f} — no pull remaining')
+    else:
+        factors.append(f'Unswept gravity: str={unswept_strength:.0f} — neutral')
+
+    # ── 2. M4b momentum exhaustion ──
+    if direction_after_sweep == 'SHORT':
+        # Sweep was up — bearish div = momentum exhausted
+        momentum_exhausted = (m4b_divergence == 'BEARISH' or m4b_slope < 0)
+    else:
+        momentum_exhausted = (m4b_divergence == 'BULLISH' or m4b_slope > 0)
+
+    if momentum_exhausted:
+        score += 1
+        factors.append(f'M4b {m4b_divergence} div, slope={m4b_slope:.1f} — momentum exhausted')
+    else:
+        score -= 1
+        factors.append(f'M4b {m4b_divergence} div, slope={m4b_slope:.1f} — momentum still pushing')
+
+    # ── 3. Taker on reversal ──
+    if direction_after_sweep == 'SHORT':
+        # Sweep was up — sellers on reversal = sweep done
+        sellers_on_reversal = taker_ratio < 0.48
+        buyers_on_reversal = taker_ratio > 0.55
+    else:
+        sellers_on_reversal = taker_ratio > 0.52
+        buyers_on_reversal = taker_ratio < 0.45
+
+    if sellers_on_reversal:
+        score += 1
+        factors.append(f'Taker {taker_ratio:.3f} — sellers on reversal (sweep done)')
+    elif buyers_on_reversal:
+        score -= 1
+        factors.append(f'Taker {taker_ratio:.3f} — buyers absorbing dip (revisit likely)')
+    else:
+        factors.append(f'Taker {taker_ratio:.3f} — neutral')
+
+    # ── 4. OI dynamics ──
+    if oi_roc < -0.5:
+        score += 2
+        factors.append(f'OI {oi_roc:+.2f}%/hr — positions closing (capitulation)')
+    elif oi_roc < -0.2:
+        score += 1
+        factors.append(f'OI {oi_roc:+.2f}%/hr — mild decline')
+    elif oi_roc > 0.3:
+        score -= 1
+        factors.append(f'OI {oi_roc:+.2f}%/hr — new positions opening (revisit setup)')
+    else:
+        factors.append(f'OI {oi_roc:+.2f}%/hr — stable')
+
+    # ── 5. Whale alignment ──
+    if direction_after_sweep == 'SHORT':
+        whale_aligned = whale_signal == 'WHALE_BEARISH'
+        whale_against = whale_signal == 'WHALE_BULLISH'
+    else:
+        whale_aligned = whale_signal == 'WHALE_BULLISH'
+        whale_against = whale_signal == 'WHALE_BEARISH'
+
+    if whale_aligned:
+        score += 1
+        factors.append(f'Whales {whale_signal} — aligned with reversal')
+    elif whale_against:
+        score -= 1
+        factors.append(f'Whales {whale_signal} — against reversal (revisit risk)')
+
+    # ── 6. Futures flow ──
+    if direction_after_sweep == 'SHORT':
+        flow_aligned = futures_flow == 'SELLERS_DOMINANT'
+    else:
+        flow_aligned = futures_flow == 'BUYERS_DOMINANT'
+
+    if flow_aligned:
+        score += 1
+        factors.append(f'Futures flow {futures_flow} — aligned with reversal')
+
+    # ── Determine status ──
+    if score >= 3:
+        status = 'SWEEP_DONE'
+        recommendation = 'Trade the reversal — multiple confirmations'
+    elif score >= 1:
+        status = 'SWEEP_DONE'
+        recommendation = 'Trade the reversal — moderate confidence'
+    elif score <= -3:
+        status = 'PARTIAL_SWEEP'
+        recommendation = 'Wait for price to revisit sweep zone — strong gravity remaining'
+    elif score <= -1:
+        status = 'PARTIAL_SWEEP'
+        recommendation = 'Wait for revisit — unswept liquidity still pulling'
+    else:
+        status = 'AMBIGUOUS'
+        recommendation = 'Wait for more confirmation — mixed signals'
+
+    return {
+        'status': status,
+        'score': score,
+        'factors': factors,
+        'recommendation': recommendation,
+        'unswept_strength': unswept_strength,
+        'unswept_count': unswept_count,
+    }
+
+
 # Maximum age (in bars) for a sweep to still be considered actionable
 SWEEP_MAX_ACTIONABLE_AGE = 24  # 6h on 15m — older sweeps are stale
 # Minimum distance reversal target must have from current price to be actionable
@@ -306,6 +591,9 @@ class PhaseResult:
     invalidation: Optional[float] = None  # Level that kills the thesis
     # v3 additions — cascading reversal targets for Judas sweeps
     target_tiers: List[Dict] = field(default_factory=list)  # [{price, type, strength, distance_pct, reasoning}]
+    # v3 additions — zone sweep detection + completeness assessment
+    sweep_completeness: Optional[Dict] = None  # _assess_sweep_completeness output
+    zone_sweep: Optional[Dict] = None  # _check_zone_swept output
 
 
 def _build_target_tiers(price, direction, magnets, sr_levels, liq, sweep_target, stats):
@@ -875,6 +1163,8 @@ def detect_phase(result: dict, config: dict = None, df_15m=None) -> PhaseResult:
     entry_zone_low = None
     entry_zone_high = None
     invalidation = None
+    zone_result = None
+    completeness = None
 
     # Check if the key level (or nearest unswept) has already been swept
     highs_arr = None
@@ -893,6 +1183,74 @@ def detect_phase(result: dict, config: dict = None, df_15m=None) -> PhaseResult:
         swept = sweep_result['swept']
         bars_ago = sweep_result['bars_ago']
         is_stale = sweep_result['is_stale']
+
+        # ── v3: Zone sweep detection (tolerance + zone awareness) ──
+        # If exact match failed, check if the zone around the key level was swept.
+        # This catches near-misses like $2,323 vs $2,326 (0.1% miss).
+        zone_result = None
+        zone_swept = False
+        if not swept and df_15m is not None and highs_arr is not None:
+            zone_result = _check_zone_swept(
+                price, key_level, highs_arr, lows_arr,
+                magnets, sr_levels, liq,
+                len(df_15m) - 1, impl_direction,
+                lookback=cfg.get('P3_SWEEP_LOOKBACK', SWEEP_LOOKBACK_BARS))
+            zone_swept = zone_result.get('zone_swept', False) and zone_result.get('is_fresh', False)
+
+            if zone_swept:
+                # Zone was swept — now assess completeness
+                m4b = result.get('m4b', {})
+                completeness = _assess_sweep_completeness(
+                    price=price,
+                    swept_zone_high=zone_result.get('zone_high', 0),
+                    unswept_above=unswept_above,
+                    unswept_below=unswept_below,
+                    m4b_divergence=m4b.get('divergence', 'NONE'),
+                    m4b_slope=m4b.get('cvd_slope', 0),
+                    oi_roc=deriv.get('oi_roc_1h', 0),
+                    taker_ratio=result.get('raw_taker_ratio', 0.5),
+                    direction_after_sweep=impl_direction,
+                    whale_signal=whale,
+                    futures_flow=futures_flow,
+                )
+
+                if completeness['status'] == 'PARTIAL_SWEEP':
+                    # Not done yet — price likely to revisit the zone
+                    narrative = (
+                        f"Partial sweep detected at ${zone_result['zone_high']:.0f} "
+                        f"({zone_result['bars_ago']} bars ago). "
+                        f"{completeness['recommendation']}. "
+                        f"Unswept gravity: str={completeness['unswept_strength']:.0f}. "
+                        f"Watch for revisit to ${key_level:.0f} zone."
+                    )
+                    return PhaseResult(
+                        phase=phase, confidence=round(confidence * 0.6, 3),
+                        direction='NEUTRAL', narrative=narrative,
+                        signals_for=completeness['factors'],
+                        signals_against=['Partial sweep — not ready to trade'],
+                        key_level=key_level, key_level_name=key_level_name,
+                        trade_bias='WAIT',
+                        sweep_status='PARTIAL_SWEEP', sweep_level=key_level,
+                        reversal_target=None, reversal_target_name='',
+                        timing_signal='NONE',
+                        entry_zone_low=None, entry_zone_high=None,
+                        invalidation=None,
+                        target_tiers=[],
+                        sweep_completeness=completeness,
+                        zone_sweep=zone_result,
+                    )
+                elif completeness['status'] == 'SWEEP_DONE':
+                    # Zone swept + reversal confirmed — treat as completed sweep
+                    swept = True
+                    bars_ago = zone_result['bars_ago']
+                    is_stale = bars_ago > SWEEP_MAX_ACTIONABLE_AGE
+                    # Update sweep_result for downstream logic
+                    sweep_result = {
+                        'swept': True, 'swept_at': len(df_15m) - 1 - bars_ago,
+                        'sweep_depth_pct': 0, 'bars_ago': bars_ago,
+                        'is_stale': is_stale, 'sweep_price': zone_result['zone_high'],
+                    }
+                # AMBIGUOUS falls through to existing logic (no sweep detected)
 
         if swept and is_stale:
             # Sweep happened but it's too old — the move already played out.
@@ -1117,6 +1475,8 @@ def detect_phase(result: dict, config: dict = None, df_15m=None) -> PhaseResult:
         entry_zone_low=entry_zone_low, entry_zone_high=entry_zone_high,
         invalidation=invalidation,
         target_tiers=target_tiers,
+        sweep_completeness=completeness,
+        zone_sweep=zone_result,
     )
 
 
@@ -1289,10 +1649,32 @@ def format_phase(pr: PhaseResult) -> str:
     if pr.sweep_status and pr.sweep_status != 'NONE':
         sweep_icons = {'COMPLETED': '✅', 'IN_PROGRESS': '⏳', 'PENDING': '🔄',
                        'EXPIRED': '💀', 'STALE': '⚠️', 'TARGET_HIT': '🎯',
-                       'SECONDARY': '🔄'}
+                       'SECONDARY': '🔄', 'PARTIAL_SWEEP': '🔶'}
         icon = sweep_icons.get(pr.sweep_status, '❓')
         lines.append(f'  Sweep: {icon} {pr.sweep_status}' +
                      (f' at ${pr.sweep_level:.0f}' if pr.sweep_level else ''))
+
+    # ── v3: Zone sweep + completeness assessment ──
+    if pr.zone_sweep and pr.zone_sweep.get('zone_swept'):
+        zs = pr.zone_sweep
+        lines.append(f'\n  🔍 Zone Sweep Detection:')
+        lines.append(f'    Zone high:    ${zs["zone_high"]:.2f}  ({zs["bars_ago"]} bars ago)')
+        lines.append(f'    Zone center:  ${zs["zone_center"]:.2f}')
+        hit_levels = [l for l in zs.get('swept_levels', []) if l.get('hit')]
+        missed_levels = [l for l in zs.get('swept_levels', []) if not l.get('hit')]
+        if hit_levels:
+            lines.append(f'    Levels hit:   {", ".join(f"${l["price"]:.0f}({l["type"]})" for l in hit_levels)}')
+        if missed_levels:
+            lines.append(f'    Levels missed: {", ".join(f"${l["price"]:.0f}({l["type"]})" for l in missed_levels)}')
+
+    if pr.sweep_completeness:
+        sc = pr.sweep_completeness
+        status_icons = {'SWEEP_DONE': '✅', 'PARTIAL_SWEEP': '🔶', 'AMBIGUOUS': '❓'}
+        s_icon = status_icons.get(sc['status'], '❓')
+        lines.append(f'\n  📊 Sweep Completeness: {s_icon} {sc["status"]}  (score={sc["score"]:+d})')
+        lines.append(f'    Recommendation: {sc["recommendation"]}')
+        for f in sc.get('factors', []):
+            lines.append(f'      • {f}')
 
     # Reversal target
     if pr.reversal_target:
