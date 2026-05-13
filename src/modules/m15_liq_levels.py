@@ -734,6 +734,29 @@ def get_liquidity_summary(df_15m, idx, sr_levels, oi_usd, ls_ratio,
     below.sort(key=lambda x: x['price'], reverse=True)  # closest first
     above.sort(key=lambda x: x['price'])
 
+    # Final dedup: merge same-type zones within 0.3% (cross-source).
+    # Keeps the stronger zone when two overlap (e.g. OI zone + fresh zone).
+    def _dedup_close(zones):
+        if not zones:
+            return zones
+        out = []
+        for z in zones:
+            merged = False
+            for existing in out:
+                if z['type'] == existing['type'] and \
+                   abs(z['price'] - existing['price']) / max(z['price'], existing['price']) < 0.003:
+                    # Same type, same bucket — keep stronger
+                    if z['strength'] > existing['strength']:
+                        out[out.index(existing)] = z
+                    merged = True
+                    break
+            if not merged:
+                out.append(z)
+        return out
+
+    below = _dedup_close(below)
+    above = _dedup_close(above)
+
     return {
         'current_price': round(float(current_price), 2),
         'below': below[:n_levels],
