@@ -108,11 +108,21 @@ def fetch_taker_chunk(symbol="ETHUSDT", period="15m", limit=500, end_time_ms=Non
 
 
 def fetch_derivatives_chunk(end_time_ms=None, symbol="ETHUSDT"):
-    """Fetch one chunk of all derivatives data, merged."""
-    oi = fetch_oi_chunk(symbol, end_time_ms=end_time_ms)
-    ls = fetch_ls_chunk(symbol, end_time_ms=end_time_ms)
-    top = fetch_top_trader_chunk(symbol, end_time_ms=end_time_ms)
-    taker = fetch_taker_chunk(symbol, end_time_ms=end_time_ms)
+    """Fetch one chunk of all derivatives data, merged. Returns None on API error."""
+    try:
+        oi = fetch_oi_chunk(symbol, end_time_ms=end_time_ms)
+        ls = fetch_ls_chunk(symbol, end_time_ms=end_time_ms)
+        top = fetch_top_trader_chunk(symbol, end_time_ms=end_time_ms)
+        taker = fetch_taker_chunk(symbol, end_time_ms=end_time_ms)
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 400:
+            print(f"  ⚠️  Binance API 400 — data likely doesn't go back this far (endTime={end_time_ms})")
+            return None
+        raise
+
+    if len(oi) == 0:
+        print(f"  ⚠️  Empty response from Binance — reached data limit")
+        return None
 
     df = oi.merge(ls, on=["timestamp", "timestamp_ms"], how="outer")
     df = df.merge(top, on=["timestamp", "timestamp_ms"], how="outer")
@@ -380,7 +390,7 @@ def run_fetch_cycle(end_time_ms=None, chunk_num=1):
 
     # Fetch derivatives
     df_deriv = fetch_derivatives_chunk(end_time_ms=end_time_ms)
-    if len(df_deriv) == 0:
+    if df_deriv is None or len(df_deriv) == 0:
         print("  ⚠️  No derivatives data returned.")
         return None, None
 
@@ -434,6 +444,9 @@ def run_fetch_cycle(end_time_ms=None, chunk_num=1):
     structure_bias = compute_structure_bias(df_price)
     fwd_returns = compute_forward_returns(df_price)
 
+    # Save raw derivative timestamps for pagination (before reindex)
+    deriv_raw_earliest_ms = int(df_deriv['timestamp_ms'].min()) if 'timestamp_ms' in df_deriv.columns else None
+
     # Align derivatives to price timestamps
     df_price['ts'] = pd.to_datetime(df_price['Open time'])
     df_deriv['ts'] = pd.to_datetime(df_deriv['timestamp'])
@@ -474,8 +487,8 @@ def run_fetch_cycle(end_time_ms=None, chunk_num=1):
     df_results = pd.DataFrame(results)
     save_analysis(df_results, chunk_num)
 
-    # Get earliest timestamp for next chunk pagination
-    earliest_ts = int(df_deriv.index.min().timestamp() * 1000) if len(df_deriv) > 0 else None
+    # Use the raw derivatives earliest timestamp (saved before reindex)
+    earliest_ts = deriv_raw_earliest_ms
 
     stats = analyze_results(df_results, f"Chunk {chunk_num}")
 
