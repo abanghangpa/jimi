@@ -25,6 +25,7 @@ from src.modules.m6_derivatives import (
 from src.modules.m7_market_regime import m7_prepare_data, m7_get_row, score_m7
 from src.modules.m8_funding import score_m8_funding
 from src.modules.m9_volatility import RegimeState, compute_vol_regime, score_vol_regime
+from src.modules.taker_tracker import compute_taker_series, score_taker_signal
 from src.modules.m10_macro import m10_prepare_data, m10_get_row, m10_compute_emas, score_m10_macro
 from src.modules.m11_momentum import score_m11_mtf_momentum
 from src.modules.m12_orderbook import score_m12_orderbook
@@ -182,6 +183,7 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
              m13_score=0.5, use_m13=False, m14_score=0.5, use_m14=False,
              m17_score=0.5, use_m17=False,
              m20_score=0.5, use_m20=False,
+             taker_score=0.5, use_taker=False,
              config=None):
     cfg = config or CONFIG
     m4_contrib = m4_score if m4_status == 'PASS' else 0.5
@@ -209,6 +211,8 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
         extra_modules.append(('M17', m17_score, cfg.get('M17_WEIGHT', 0.05)))
     if use_m20 and cfg.get('M20_ENABLED', False):
         extra_modules.append(('M20', m20_score, cfg.get('M20_WEIGHT', 0.10)))
+    if use_taker and cfg.get('TAKER_ENABLED', False):
+        extra_modules.append(('TAKER', taker_score, cfg.get('TAKER_WEIGHT', 0.08)))
 
     base_sum = (cfg['M1_WEIGHT'] + cfg['M2_WEIGHT'] +
                 cfg['M3_WEIGHT'] + cfg['M4_WEIGHT'] + cfg['M5_WEIGHT'])
@@ -427,6 +431,12 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
     df_15m['taker_ratio'] = (taker_base / total_vol.replace(0, np.nan)).fillna(cfg['TAKER_FILLNA'])
     df_15m['atr'] = calc_atr(df_15m['High'], df_15m['Low'], df_15m['Close'], cfg['ATR_PERIOD'])
     df_15m['vol_ratio'] = calc_vol_ratio(df_15m['Volume'])
+
+    # Pre-compute taker flow series for TAKER module
+    taker_series = None
+    if cfg.get('TAKER_ENABLED', False):
+        taker_series = compute_taker_series(df_15m)
+        print(f"  Taker flow series computed (4h/12h/24h rolling, momentum, acceleration)")
 
     df_1h['macd_line'], df_1h['macd_signal'], df_1h['macd_hist'] = calc_macd(
         df_1h['Close'], cfg['MACD_FAST'], cfg['MACD_SLOW'], cfg['MACD_SIGNAL'])
@@ -1524,6 +1534,30 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             except Exception:
                 stats['m21_skip'] = stats.get('m21_skip', 0) + 1
 
+        # TAKER: Taker flow momentum + regime scoring
+        taker_score = 0.5
+        use_taker = False
+        if cfg.get('TAKER_ENABLED', False) and taker_series is not None:
+            try:
+                _taker_4h = taker_series['avg_4h'][idx]
+                _taker_12h = taker_series['avg_12h'][idx]
+                _taker_mom = taker_series['momentum'][idx]
+                _taker_acc = taker_series['acceleration'][idx]
+                if not (np.isnan(_taker_4h) or np.isnan(_taker_12h)):
+                    _taker_dir, _taker_sc, _taker_reason = score_taker_signal(
+                        _taker_4h, _taker_12h, _taker_mom, _taker_acc)
+                    if _taker_dir == 'LONG':
+                        taker_score = 0.5 + _taker_sc * 0.5  # 0.5-1.0
+                        use_taker = True
+                    elif _taker_dir == 'SHORT':
+                        taker_score = 0.5 - _taker_sc * 0.5  # 0.0-0.5
+                        use_taker = True
+                    else:
+                        taker_score = 0.5
+                        use_taker = True  # still include, just neutral
+            except Exception:
+                taker_score = 0.5
+
         # ICS — single gate with all modules (aligned with scanner)
         use_m13 = cfg.get('M13_ENABLED', False)
         threshold = cfg['ICS_THRESHOLD_CAUTION'] if phase0_val >= 0.40 else cfg['ICS_THRESHOLD_NORMAL']
@@ -1540,6 +1574,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                                         m13_score=m13_score, use_m13=use_m13, m14_score=m14_score, use_m14=use_m14,
                                         m17_score=m17_score, use_m17=use_m17,
                                         m20_score=m20_score, use_m20=use_m20,
+                                        taker_score=taker_score, use_taker=use_taker,
                                         config=cfg)
         ics += gatekeeper.ics_boost
 

@@ -1094,6 +1094,23 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         except Exception as e:
             result['m20'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
+    # TAKER: Taker flow momentum + regime scoring
+    taker_score = 0.5
+    use_taker = False
+    taker_data = result.get('taker_summary')
+    if cfg.get('TAKER_ENABLED', False) and taker_data:
+        _taker_dir = taker_data.get('direction', 'NEUTRAL')
+        _taker_sc = taker_data.get('score', 0)
+        if _taker_dir == 'LONG':
+            taker_score = 0.5 + _taker_sc * 0.5
+            use_taker = True
+        elif _taker_dir == 'SHORT':
+            taker_score = 0.5 - _taker_sc * 0.5
+            use_taker = True
+        else:
+            taker_score = 0.5
+            use_taker = True  # include neutral
+
     # ── ICS ──
     # Extract cascade params from M5 details (aligned with engine)
     cascade_dir = m5_details.get('cascade_dir', 'NONE') if isinstance(m5_details, dict) else 'NONE'
@@ -1128,6 +1145,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         m14_score=m14_score, use_m14=m14_status == 'PASS',
         m17_score=m17_score, use_m17=m17_status == 'PASS',
         m20_score=m20_score, use_m20=m20_status == 'PASS',
+        taker_score=taker_score, use_taker=use_taker,
         config=cfg,
     )
 
@@ -1139,6 +1157,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
 
     result['ics'] = round(float(ics), 4)
     result['effective_floor'] = round(float(effective_floor), 4)
+    result['taker_score'] = round(float(taker_score), 4)
     if use_cross_asset:
         result['cross_asset'] = {'score': round(float(cross_asset_score), 3)}
 
@@ -1564,6 +1583,15 @@ def print_signal(result):
         if m20_st not in ('SKIP', 'NO_LEVELS', 'NO_ACTIONABLE', 'DISABLED', 'INSUFFICIENT_DATA'):
             print(f"    M20 (FailBO):  {m20_st:>8}  score={m20_sc:.3f}  "
                   f"{m20_bd} @ ${m20_lv:.0f}  quality={m20_q:.2f}  fail={m20_fs}  → {m20_ct}")
+    # Taker flow module score
+    if CONFIG.get('TAKER_ENABLED', False):
+        _td = result.get('taker_summary', {})
+        _td_dir = _td.get('direction', 'NEUTRAL') if _td else 'NEUTRAL'
+        _td_sc = _td.get('score', 0) if _td else 0
+        _td_regime = _td.get('regime', '?') if _td else '?'
+        _td_icon = {'LONG': '🟢', 'SHORT': '🔴', 'NEUTRAL': '⚪'}.get(_td_dir, '⚪')
+        _taker_ics = result.get('taker_score', 0.5)
+        print(f"    Taker (Flow): {_td_icon} {_td_dir:>8}  score={_taker_ics:.3f}  regime={_td_regime}")
     if 'cascade' in result and result['cascade'].get('cascade'):
         c = result['cascade']
         print(f"    ⚡ CASCADE:    momentum={c['momentum']}% vol_spike={c['vol_spike']}x range={c['range_expansion']}x")

@@ -44,6 +44,12 @@ M14_WEIGHT: 0.08      # sweep-retest, keep
 M8_WEIGHT: 0.10       # funding rate, keep
 M6_WEIGHT: 0.08       # derivatives, keep
 M20_WEIGHT: 0.10      # failed breakout detector
+TAKER_ENABLED: true
+TAKER_WEIGHT: 0.08    # taker flow momentum + regime
+TAKER_DEVIATION_THRESHOLD: 0.02   # min deviation from 0.50 to score
+TAKER_MOMENTUM_BONUS: 0.20       # max score from momentum
+TAKER_12H_AGREE_BONUS: 0.15      # bonus when 12h confirms
+TAKER_DIVERGENCE_PENALTY: 0.50   # multiplier when 12h disagrees
 
 # ─── V6.12 IMPROVEMENTS ─────────────────────────────────────
 BIAS_GATE_ENABLED: true
