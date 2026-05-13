@@ -11,7 +11,7 @@ ICS_FLOOR: 0.48       # keep original — 0.48-0.55 bucket has positive edge
 
 # ─── M4b: INTRABAR CVD (LucF-style) ─────────────────────────
 M4B_INTRABAR_ENABLED: true
-M4B_INTRABAR_HOURS: 48
+M4B_INTRABAR_HOURS: 72
 ICS_FLOOR_M4_FALSE: 0.48
 ICS_CEILING: 0.75       # relaxed — 0.7+ bucket was strong in 10d attribution
 
