@@ -29,6 +29,170 @@ SWEEP_LOOKBACK_BARS = 96  # 24h on 15m
 SWEEP_MAX_ACTIONABLE_AGE = 24  # 6h on 15m — older sweeps are stale
 # Minimum distance reversal target must have from current price to be actionable
 SWEEP_TARGET_MIN_DIST_PCT = 0.003  # 0.3%
+# Minimum bounce from reversal target to form a secondary setup (as fraction)
+SECONDARY_BOUNCE_MIN_PCT = 0.003  # 0.3%
+
+
+def _detect_secondary_setup(price, sweep_level, reversal_target, target_result,
+                            df_15m_highs, df_15m_lows, current_idx, phase, confidence,
+                            key_level_name, impl_direction):
+    """After both sweep and target are completed, check if a secondary setup is forming.
+
+    When price sweeps a level, hits the reversal target, and then bounces,
+    that bounce is itself a potential new move. This function detects that
+    bounce and returns a forward-looking PhaseResult if actionable.
+
+    Args:
+        price: Current price
+        sweep_level: The level that was swept (e.g. $2311)
+        reversal_target: The reversal target that was hit (e.g. $2287)
+        target_result: Dict from _check_target_already_hit
+        df_15m_highs, df_15m_lows: Price arrays
+        current_idx: Current bar index
+        phase: The detected phase (MANIPULATION, etc.)
+        confidence: Current confidence
+        key_level_name: Name of the key level
+        impl_direction: Direction implied by the sweep (SHORT if sweep above, LONG if sweep below)
+
+    Returns:
+        PhaseResult if a secondary setup is detected, else None
+    """
+    if reversal_target is None or target_result.get('hit_at') is None:
+        return None
+
+    hit_at = target_result['hit_at']
+    bars_since_target = current_idx - hit_at
+    if bars_since_target < 3:
+        return None  # too soon to call a bounce
+
+    # Check price action since the target was hit
+    highs = df_15m_highs[hit_at:current_idx + 1].astype(float)
+    lows = df_15m_lows[hit_at:current_idx + 1].astype(float)
+
+    if impl_direction == 'SHORT':
+        # Original: swept above → dropped to target below
+        # Secondary: bounce UP from the low target
+        low_since_target = float(np.min(lows))
+        bounce_from_low = (price - low_since_target) / low_since_target if low_since_target > 0 else 0
+
+        if bounce_from_low < SECONDARY_BOUNCE_MIN_PCT:
+            return None  # no meaningful bounce yet
+
+        # Bounce detected — direction is LONG (up from the low)
+        new_direction = 'LONG'
+        mid = (sweep_level + reversal_target) / 2
+
+        # If midpoint already reached, target the sweep level (full re-test)
+        if price >= mid:
+            new_target = sweep_level
+            target_label = 'sweep_retest'
+        else:
+            new_target = mid
+            target_label = 'midpoint_retest'
+
+        # If target is too close, try the sweep level instead
+        target_dist = abs(new_target - price) / price
+        if target_dist < SECONDARY_BOUNCE_MIN_PCT:
+            sweep_dist = abs(sweep_level - price) / price
+            if sweep_dist >= SECONDARY_BOUNCE_MIN_PCT:
+                new_target = sweep_level
+                target_label = 'sweep_retest'
+                target_dist = sweep_dist
+            else:
+                return None  # neither target is actionable
+
+        new_entry = price
+        new_invalidation = low_since_target * 0.997  # 0.3% below the bounce low
+
+        bounce_pct = bounce_from_low * 100
+        signals_for = [
+            f'Bounce +{bounce_pct:.1f}% from reversal target ${reversal_target:.0f}',
+            f'Target: {target_label} ${new_target:.0f} (sweep ${sweep_level:.0f} / target ${reversal_target:.0f})',
+        ]
+        signals_against = [
+            'Secondary setup — reduced confidence (0.5x)',
+            f'Original sweep was {bars_since_target + target_result["bars_ago"]} bars ago',
+        ]
+
+        narrative = (
+            f"Secondary LONG setup: price swept ${sweep_level:.0f} SHORT, "
+            f"hit target ${reversal_target:.0f} {target_result['bars_ago']} bars ago, "
+            f"then bounced +{bounce_pct:.1f}% to ${price:.0f}. "
+            f"Watching for continuation to {target_label} ${new_target:.0f} (+{(new_target-price)/price*100:.1f}%). "
+            f"Invalidation below ${new_invalidation:.0f}."
+        )
+
+    else:
+        # Original: swept below → rallied to target above
+        # Secondary: drop DOWN from the high target
+        high_since_target = float(np.max(highs))
+        drop_from_high = (high_since_target - price) / high_since_target if high_since_target > 0 else 0
+
+        if drop_from_high < SECONDARY_BOUNCE_MIN_PCT:
+            return None
+
+        new_direction = 'SHORT'
+        mid = (sweep_level + reversal_target) / 2
+
+        # If midpoint already reached, target the sweep level (full re-test)
+        if price <= mid:
+            new_target = sweep_level
+            target_label = 'sweep_retest'
+        else:
+            new_target = mid
+            target_label = 'midpoint_retest'
+
+        # If target is too close, try the sweep level instead
+        target_dist = abs(new_target - price) / price
+        if target_dist < SECONDARY_BOUNCE_MIN_PCT:
+            sweep_dist = abs(sweep_level - price) / price
+            if sweep_dist >= SECONDARY_BOUNCE_MIN_PCT:
+                new_target = sweep_level
+                target_label = 'sweep_retest'
+                target_dist = sweep_dist
+            else:
+                return None  # neither target is actionable
+
+        new_entry = price
+        new_invalidation = high_since_target * 1.003
+
+        drop_pct = drop_from_high * 100
+        signals_for = [
+            f'Drop -{drop_pct:.1f}% from reversal target ${reversal_target:.0f}',
+            f'Target: {target_label} ${new_target:.0f} (sweep ${sweep_level:.0f} / target ${reversal_target:.0f})',
+        ]
+        signals_against = [
+            'Secondary setup — reduced confidence (0.5x)',
+            f'Original sweep was {bars_since_target + target_result["bars_ago"]} bars ago',
+        ]
+
+        narrative = (
+            f"Secondary SHORT setup: price swept ${sweep_level:.0f} LONG, "
+            f"hit target ${reversal_target:.0f} {target_result['bars_ago']} bars ago, "
+            f"then dropped -{drop_pct:.1f}% to ${price:.0f}. "
+            f"Watching for continuation to {target_label} ${new_target:.0f} ({(new_target-price)/price*100:.1f}%). "
+            f"Invalidation above ${new_invalidation:.0f}."
+        )
+
+    return PhaseResult(
+        phase=phase,
+        confidence=round(confidence * 0.5, 3),  # halved — secondary setup
+        direction=new_direction,
+        narrative=narrative,
+        signals_for=signals_for,
+        signals_against=signals_against,
+        key_level=sweep_level,
+        key_level_name=f'secondary_from_{key_level_name}',
+        trade_bias='WATCH',
+        sweep_status='SECONDARY',
+        sweep_level=sweep_level,
+        reversal_target=new_target,
+        reversal_target_name='midpoint_retest',
+        timing_signal='NONE',
+        entry_zone_low=min(new_entry, new_target),
+        entry_zone_high=max(new_entry, new_target),
+        invalidation=new_invalidation,
+    )
 
 
 @dataclass
@@ -549,7 +713,17 @@ def detect_phase(result: dict, config: dict = None, df_15m=None) -> PhaseResult:
                 lookback=cfg.get('P3_SWEEP_LOOKBACK', SWEEP_LOOKBACK_BARS))
 
             if target_result['hit']:
-                # Both sweep AND target hit — thesis fully completed, nothing to trade
+                # Both sweep AND target hit — check if a secondary setup is forming
+                secondary = _detect_secondary_setup(
+                    price, key_level, reversal_target, target_result,
+                    highs_arr, lows_arr,
+                    len(df_15m) - 1 if df_15m is not None else 0,
+                    phase, confidence, key_level_name, impl_direction)
+
+                if secondary:
+                    return secondary
+
+                # No secondary setup — move is done
                 narrative = (f"Sweep at ${key_level:.0f} occurred {bars_ago} bars ago "
                              f"and reversal target ${reversal_target:.0f} was already reached "
                              f"{target_result['bars_ago']} bars ago. Move is done — no actionable setup.")
@@ -611,7 +785,17 @@ def detect_phase(result: dict, config: dict = None, df_15m=None) -> PhaseResult:
                 lookback=cfg.get('P3_SWEEP_LOOKBACK', SWEEP_LOOKBACK_BARS))
 
             if target_result['hit']:
-                # Target already hit even on a fresh sweep — move done
+                # Target already hit — check if secondary setup is forming
+                secondary = _detect_secondary_setup(
+                    price, key_level, reversal_target, target_result,
+                    highs_arr, lows_arr,
+                    len(df_15m) - 1 if df_15m is not None else 0,
+                    phase, confidence, key_level_name, impl_direction)
+
+                if secondary:
+                    return secondary
+
+                # No secondary — move done
                 narrative = (f"Sweep at ${key_level:.0f} completed {bars_ago} bars ago, "
                              f"but reversal target ${reversal_target:.0f} was already reached "
                              f"{target_result['bars_ago']} bars ago. Move is done.")
@@ -899,7 +1083,8 @@ def format_phase(pr: PhaseResult) -> str:
     # Sweep status
     if pr.sweep_status and pr.sweep_status != 'NONE':
         sweep_icons = {'COMPLETED': '✅', 'IN_PROGRESS': '⏳', 'PENDING': '🔄',
-                       'EXPIRED': '💀', 'STALE': '⚠️', 'TARGET_HIT': '🎯'}
+                       'EXPIRED': '💀', 'STALE': '⚠️', 'TARGET_HIT': '🎯',
+                       'SECONDARY': '🔄'}
         icon = sweep_icons.get(pr.sweep_status, '❓')
         lines.append(f'  Sweep: {icon} {pr.sweep_status}' +
                      (f' at ${pr.sweep_level:.0f}' if pr.sweep_level else ''))
@@ -924,13 +1109,15 @@ def format_phase(pr: PhaseResult) -> str:
     action_map = {
         'ENTER_LONG': '✅ Enter LONG — sweep completed, reversal target above',
         'ENTER_SHORT': '✅ Enter SHORT — sweep completed, reversal target below',
-        'WATCH': '⏳ Watch — stale sweep, target not yet reached. Reduced confidence.',
+        'WATCH': '⏳ Watch — secondary setup forming from target bounce. Reduced confidence.',
         'WAIT': f'⏳ Wait — let the sweep play out, then enter {pr.direction}',
         'AVOID': '🚫 Avoid — no actionable setup (sweep/target already completed)',
     }
     action = action_map.get(pr.trade_bias, '❓ Unknown')
     if pr.trade_bias.startswith('ENTER_') and pr.entry_zone_low:
         action += f'\n    Entry: ${pr.entry_zone_low:.0f}–${pr.entry_zone_high:.0f}  TP: ${pr.reversal_target:.0f}  SL: ${pr.invalidation:.0f}'
+    if pr.sweep_status == 'SECONDARY' and pr.invalidation:
+        action += f'\n    TP: ${pr.reversal_target:.0f}  SL: ${pr.invalidation:.0f}'
 
     lines.append(f'\n  Action: {action}')
 
