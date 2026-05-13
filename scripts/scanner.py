@@ -51,6 +51,7 @@ from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_ex
 from src.modules.taker_tracker import get_taker_summary, format_taker_summary
 from src.modules.cross_asset import score_cross_asset
 from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
+from src.modules.m22_inflation_regime import score_m22, format_m22
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
@@ -857,6 +858,33 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         except Exception as e:
             result['m21'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
+    # ── M22: Inflation Regime ──
+    m22_score = 0.5
+    m22_status = 'SKIP'
+    m22_details = {}
+    _ls_for_m22 = result.get('derivatives', {}).get('ls_ratio', None)
+    try:
+        m22_status, m22_score, m22_details = score_m22(
+            direction=direction, ls_ratio=_ls_for_m22, config=cfg)
+        if m22_details and m22_details.get('regime') not in ('DISABLED', 'NO_DATA'):
+            result['m22'] = {
+                'status': m22_status,
+                'score': round(float(m22_score), 3),
+                'regime': m22_details.get('regime', '?'),
+                'severity': m22_details.get('severity', '?'),
+                'ppi_yoy': m22_details.get('ppi_yoy'),
+                'ppi_direction': m22_details.get('ppi_direction'),
+                'fed_stance': m22_details.get('fed_stance'),
+                'size_mult': m22_details.get('size_mult', 1.0),
+                'details': m22_details,
+            }
+            # Apply size multiplier from inflation regime
+            _m22_size_mult = m22_details.get('size_mult', 1.0)
+            if _m22_size_mult < 1.0:
+                result['_m22_size_mult'] = _m22_size_mult
+    except Exception as e:
+        result['m22'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
     # ── Phase 4: Score all modules ──
     # M1 (now an ICS contributor, not the gate)
     m1_dir, m1_score, _m1_details = score_m1(df_1h, idx_1h, cfg, df_15m=df_15m, idx_15m=idx)
@@ -1145,6 +1173,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         m14_score=m14_score, use_m14=m14_status == 'PASS',
         m17_score=m17_score, use_m17=m17_status == 'PASS',
         m20_score=m20_score, use_m20=m20_status == 'PASS',
+        m22_score=m22_score, use_m22=m22_status != 'SKIP',
         taker_score=taker_score, use_taker=use_taker,
         config=cfg,
     )
@@ -1506,6 +1535,12 @@ def print_signal(result):
                   f"Zone: {m21.get('zone', '?')}  "
                   f"KillZone: {m21.get('kill_zone', '?')}  "
                   f"score={m21.get('score', 0):.3f}")
+
+    # M22 Inflation Regime
+    if 'm22' in result and result['m22'].get('status') != 'SKIP':
+        m22_out = format_m22(result['m22'].get('details', {}))
+        if m22_out:
+            print(m22_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -2079,6 +2114,25 @@ def print_summary(result):
         print(f"  {'  Kill Zone':<22} {kz_icon} {kz:>12}")
         if result.get('range_tp_override') or result.get('range_sl_override'):
             print(f"  {'  Range Override':<22} {'✅':>12}  TP/SL adjusted to range structure")
+
+    # M22 Inflation Regime summary
+    m22 = result.get('m22', {})
+    if m22 and m22.get('status') != 'SKIP':
+        m22_regime = m22.get('regime', '?')
+        m22_sev = m22.get('severity', '?')
+        m22_sc = m22.get('score', 0.5)
+        m22_ppi = m22.get('ppi_yoy', 0)
+        m22_dir = m22.get('ppi_direction', '?')
+        m22_fed = m22.get('fed_stance', '?')
+        m22_sm = m22.get('size_mult', 1.0)
+        sev_icons = {'LOW': '🟢', 'MEDIUM': '🟡', 'HIGH': '🟠', 'CRITICAL': '🔴'}
+        sev_icon = sev_icons.get(m22_sev, '⚪')
+        print(f"  {'M22 Inflation':<22} {sev_icon} {m22_regime:>16}  score={m22_sc:.3f}")
+        _ls_m22 = result.get('derivatives', {}).get('ls_ratio', 0)
+        if _ls_m22:
+            print(f"  {'  PPI/Fed/Pos':<22} {m22_ppi:.1f}% {m22_dir} / {m22_fed} / L/S={_ls_m22:.2f}")
+        if m22_sm < 1.0:
+            print(f"  {'  ⚠️ Size Reduce':<22} {m22_sm:.2f}x")
 
     # Breakout Confirmation summary
     bc = result.get('breakout_confirm')

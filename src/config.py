@@ -18,7 +18,11 @@ import yaml
 # ═══════════════════════════════════════════════════════════════
 
 # Keys that are set dynamically (scanner, engine) — not errors if absent
-_DYNAMIC_KEYS = {'_base_timeframe'}
+_DYNAMIC_KEYS = {'_base_timeframe', 'M22_ENABLED', 'M22_WEIGHT', 'M22_VETO_THRESHOLD',
+                  'M22_FAIL_THRESHOLD', 'M22_LS_CROWDED_THRESHOLD',
+                  'M22_SIZE_CRITICAL', 'M22_SIZE_HIGH', 'M22_SIZE_MEDIUM',
+                  'M22_CPI_HOT_THRESHOLD', 'M22_PPI_YOY', 'M22_PPI_PREV_YOY',
+                  'M22_PPI_MOM', 'M22_CPI_YOY', 'M22_FED_STANCE', 'M22_PPI_EXPECTED'}
 
 # Module → (enabled_key, weight_key, required_when_enabled)
 _MODULE_WEIGHT_PAIRS = [

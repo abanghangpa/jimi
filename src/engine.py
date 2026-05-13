@@ -183,6 +183,7 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
              m13_score=0.5, use_m13=False, m14_score=0.5, use_m14=False,
              m17_score=0.5, use_m17=False,
              m20_score=0.5, use_m20=False,
+             m22_score=0.5, use_m22=False,
              taker_score=0.5, use_taker=False,
              config=None):
     cfg = config or CONFIG
@@ -211,6 +212,8 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
         extra_modules.append(('M17', m17_score, cfg.get('M17_WEIGHT', 0.05)))
     if use_m20 and cfg.get('M20_ENABLED', False):
         extra_modules.append(('M20', m20_score, cfg.get('M20_WEIGHT', 0.10)))
+    if use_m22 and cfg.get('M22_ENABLED', False):
+        extra_modules.append(('M22', m22_score, cfg.get('M22_WEIGHT', 0.12)))
     if use_taker and cfg.get('TAKER_ENABLED', False):
         extra_modules.append(('TAKER', taker_score, cfg.get('TAKER_WEIGHT', 0.08)))
 
