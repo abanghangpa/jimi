@@ -2543,6 +2543,15 @@ def main():
         with open(scan_file, 'w') as f:
             json.dump(result, f, indent=2, default=str)
 
+    # ── Collect derivatives snapshot ──
+    try:
+        from scripts.collect_derivatives import collect, mark_ready
+        print()
+        collect()
+        mark_ready()
+    except Exception as e:
+        print(f"\n  ⚠️  Derivatives collection failed: {e}")
+
 
 if __name__ == '__main__':
     main()
