@@ -304,6 +304,112 @@ class PhaseResult:
     entry_zone_low: Optional[float] = None  # Actionable entry zone
     entry_zone_high: Optional[float] = None
     invalidation: Optional[float] = None  # Level that kills the thesis
+    # v3 additions — cascading reversal targets for Judas sweeps
+    target_tiers: List[Dict] = field(default_factory=list)  # [{price, type, strength, distance_pct, reasoning}]
+
+
+def _build_target_tiers(price, direction, magnets, sr_levels, liq, sweep_target, stats):
+    """Build cascading reversal targets for MANIPULATION/Judas sweep setups.
+
+    Returns list of dicts sorted by distance from price, each with:
+        price, type, strength, distance_pct, reasoning, is_primary
+    """
+    tiers = []
+    ref_price = sweep_target if sweep_target else price
+
+    # ── Stat-based targets from historical data ──
+    if stats:
+        median_drop = stats.get('median_drop', 1.18)
+        avg_drop = stats.get('avg_drop', 1.68)
+        tiers.append({
+            'price': ref_price * (1 - median_drop / 100),
+            'type': 'STAT_MEDIAN',
+            'strength': 0,
+            'distance_pct': -median_drop,
+            'reasoning': f'Historical median drop ({median_drop:.2f}% from sweep high)',
+            'is_primary': True,
+        })
+        tiers.append({
+            'price': ref_price * (1 - avg_drop / 100),
+            'type': 'STAT_AVERAGE',
+            'strength': 0,
+            'distance_pct': -avg_drop,
+            'reasoning': f'Historical avg drop ({avg_drop:.2f}% from sweep high)',
+            'is_primary': True,
+        })
+
+    # ── Support levels (S/R) ──
+    if sr_levels:
+        for entry in sr_levels:
+            if len(entry) >= 3:
+                p, s, t = entry[0], entry[1], entry[2]
+                if t == 'SUPPORT' and p < ref_price:
+                    dist = (p - ref_price) / ref_price * 100
+                    reasoning = f'Support ({s:.0f} touches)' if s > 0 else 'Support level'
+                    tiers.append({
+                        'price': p,
+                        'type': 'SUPPORT',
+                        'strength': s,
+                        'distance_pct': dist,
+                        'reasoning': reasoning,
+                        'is_primary': s >= 100,
+                    })
+
+    # ── Magnets (volume clusters) ──
+    if magnets:
+        for entry in magnets:
+            p = entry[0]
+            s = entry[1] if len(entry) > 1 else 1
+            if p < ref_price:
+                dist = (p - ref_price) / ref_price * 100
+                swept = entry[3] if len(entry) > 3 else False
+                status = 'SWEPT' if swept else 'UNSWEPT'
+                tiers.append({
+                    'price': p,
+                    'type': 'MAGNET',
+                    'strength': s,
+                    'distance_pct': dist,
+                    'reasoning': f'Volume cluster ({s:.1f}x) [{status}]',
+                    'is_primary': s >= 2.0 and not swept,
+                })
+
+    # ── Liquidity levels (stops/liqs below) ──
+    if liq:
+        below = liq.get('below', [])
+        for z in below:
+            if z.get('swept'):
+                continue
+            p = z.get('price', 0)
+            s = z.get('strength', 0)
+            cascade = z.get('cascade', 'LOW')
+            z_type = z.get('type', 'UNKNOWN')
+            dist = (p - ref_price) / ref_price * 100
+
+            label_map = {
+                'LONG_STOP': 'Long stops',
+                'LONG_LIQ': 'Long liquidations',
+                'BID_WALL': 'Bid wall',
+            }
+            label = label_map.get(z_type, z_type)
+            reasoning = f'{label} (str={s}, cascade={cascade})'
+            tiers.append({
+                'price': p,
+                'type': z_type,
+                'strength': s,
+                'distance_pct': dist,
+                'reasoning': reasoning,
+                'is_primary': cascade in ('MED', 'HIGH') and z_type in ('LONG_LIQ', 'LONG_STOP'),
+            })
+
+    # Deduplicate by price (within 0.1%)
+    seen = []
+    unique = []
+    for t in sorted(tiers, key=lambda x: x['price'], reverse=True):
+        if not any(abs(t['price'] - s) / s < 0.001 for s in seen):
+            seen.append(t['price'])
+            unique.append(t)
+
+    return unique
 
 
 def _check_sweep_completed(price, key_level, df_15m_highs, df_15m_lows,
@@ -989,6 +1095,16 @@ def detect_phase(result: dict, config: dict = None, df_15m=None) -> PhaseResult:
     signals_for = all_signals_for.get(phase, [])
     signals_against = _get_opposing_signals(phase, scores)
 
+    # ── Build target tiers for MANIPULATION phase ──
+    target_tiers = []
+    if phase == 'MANIPULATION' and key_level:
+        # Get judas stats for the estimated sweep depth
+        ref_for_stats = entry_zone_low if entry_zone_low else price
+        est_sweep_pct = abs(key_level - ref_for_stats) / ref_for_stats * 100 if ref_for_stats > 0 else 0.3
+        stats = get_judas_stats_for_sweep(est_sweep_pct)
+        target_tiers = _build_target_tiers(
+            price, impl_direction, magnets, sr_levels, liq, key_level, stats)
+
     return PhaseResult(
         phase=phase, confidence=round(confidence, 3),
         direction=impl_direction, narrative=narrative,
@@ -1000,6 +1116,7 @@ def detect_phase(result: dict, config: dict = None, df_15m=None) -> PhaseResult:
         timing_signal=timing,
         entry_zone_low=entry_zone_low, entry_zone_high=entry_zone_high,
         invalidation=invalidation,
+        target_tiers=target_tiers,
     )
 
 
@@ -1247,6 +1364,59 @@ def format_phase(pr: PhaseResult) -> str:
             if risk > 0:
                 lines.append(f"  R:R estimate:    {reward/risk:.2f}x  (reward={reward:.2f}% risk={risk:.2f}%)")
 
+    # ── Reversal Target Tiers (MANIPULATION only) ──
+    if pr.phase == 'MANIPULATION' and pr.target_tiers:
+        lines.append('')
+        lines.append('  🎯 REVERSAL TARGET TIERS (from sweep high)')
+        lines.append('  ─────────────────────────────────────────')
+
+        # Group by type
+        primary = [t for t in pr.target_tiers if t.get('is_primary')]
+        support = [t for t in pr.target_tiers if t['type'] == 'SUPPORT']
+        magnets = [t for t in pr.target_tiers if t['type'] == 'MAGNET']
+        liq_levels = [t for t in pr.target_tiers if t['type'] in ('LONG_STOP', 'LONG_LIQ', 'BID_WALL')]
+
+        if primary:
+            lines.append('  📐 Statistical targets:')
+            for t in primary[:3]:
+                marker = '◀ PRIMARY' if t == primary[0] else ''
+                lines.append(f"    ${t['price']:.2f}  {t['distance_pct']:+.2f}%  "
+                             f"{t['reasoning']}  {marker}")
+
+        if support:
+            lines.append('  🏗️ Support levels:')
+            for t in support[:4]:
+                marker = '◀ STRONG' if t.get('strength', 0) >= 100 else ''
+                lines.append(f"    ${t['price']:.2f}  {t['distance_pct']:+.2f}%  "
+                             f"{t['reasoning']}  {marker}")
+
+        if magnets:
+            lines.append('  🧲 Volume magnets:')
+            for t in magnets[:3]:
+                marker = '◀ HIGH' if t.get('strength', 0) >= 2.0 else ''
+                lines.append(f"    ${t['price']:.2f}  {t['distance_pct']:+.2f}%  "
+                             f"{t['reasoning']}  {marker}")
+
+        if liq_levels:
+            lines.append('  💧 Liquidity pools:')
+            for t in liq_levels[:4]:
+                cascade = '🔥' if 'HIGH' in t.get('reasoning', '') else ('⚡' if 'MED' in t.get('reasoning', '') else '')
+                lines.append(f"    ${t['price']:.2f}  {t['distance_pct']:+.2f}%  "
+                             f"{t['reasoning']}  {cascade}")
+
+        # Sweet spot recommendation
+        if primary and (support or magnets or liq_levels):
+            # Find the level closest to the stat average target
+            stat_avg = [t for t in pr.target_tiers if t['type'] == 'STAT_AVERAGE']
+            if stat_avg:
+                avg_price = stat_avg[0]['price']
+                all_levels = support + magnets + liq_levels
+                if all_levels:
+                    closest = min(all_levels, key=lambda t: abs(t['price'] - avg_price))
+                    if abs(closest['price'] - avg_price) / avg_price < 0.01:  # within 1%
+                        lines.append(f'  ⭐ Sweet spot: ${closest["price"]:.2f} '
+                                     f'(stat avg ${avg_price:.0f} + {closest["type"].lower()} confluence)')
+
     return '\n'.join(lines)
 
 
@@ -1267,4 +1437,5 @@ def phase_to_dict(pr: PhaseResult) -> dict:
             'time_to_reversal': JUDAS_SWEEP_STATS['time_to_reversal'],
             'recent': JUDAS_SWEEP_STATS['recent_2025_2026'],
         }
+        # target_tiers already included via asdict
     return d
