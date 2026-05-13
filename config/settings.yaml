@@ -163,6 +163,7 @@ SIZE_CAUTION: 3.5
 BAR_MOVE_ATR: 0.5
 ATR_FILTER_MAX: 0.035
 MIN_ENTRY_DIST_PCT: 0.002
+MIN_RR_RATIO: 0.50             # reject signals where TP1 R:R is below this (e.g. 0.50 = TP1 must be ≥50% of SL distance)
 
 # ─── RISK MANAGEMENT ────────────────────────────────────────
 MAX_TRADES_DAY: 5

@@ -1874,6 +1874,17 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             tp1_close_frac = cfg.get('CHOP_TP1_CLOSE', 0.90)
             tp2_close_frac = 0.0  # no remaining for TP2/TP3
 
+        # ── Minimum R:R filter ──
+        # Reject signals where TP1 risk-reward is below threshold
+        min_rr = cfg.get('MIN_RR_RATIO', 0.0)
+        if min_rr > 0 and entry_price > 0:
+            sl_pct_val = abs(sl - entry_price) / entry_price * 100
+            tp1_pct_val = abs(tp1 - entry_price) / entry_price * 100
+            rr1_val = abs(tp1_pct_val / sl_pct_val) if sl_pct_val > 0 else 0
+            if rr1_val < min_rr:
+                stats['ics_blocked'] = stats.get('ics_blocked', 0) + 1
+                continue
+
         trade = Trade(ts, direction, entry_price, sl, tp1, tp2, tp3, size,
                       m1_dir, m2_status, m3_score, m4_status, m5_status, m5_score,
                       ics, phase0_val,

@@ -1372,6 +1372,15 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
             result['reason'] = sweep_reason
             return result
 
+    # ── Minimum R:R filter ──
+    # Reject signals where TP1 risk-reward is below threshold
+    min_rr = cfg.get('MIN_RR_RATIO', 0.0)
+    rr1 = abs(levels['tp1_pct'] / levels['sl_pct']) if levels['sl_pct'] != 0 else 0
+    if min_rr > 0 and rr1 < min_rr:
+        result['status'] = 'NO_SIGNAL'
+        result['reason'] = f'R:R {rr1:.2f}x < min {min_rr:.2f}x (TP1 {levels["tp1_pct"]:.2f}% vs SL {levels["sl_pct"]:.2f}%)'
+        return result
+
     # ── Regime block override (all modules scored, but regime kills the signal) ──
     # M20 direct signals can override regime block (failed breakout = strong event)
     if result.get('regime_blocked') and not _m20_direct:
