@@ -146,8 +146,8 @@ def _classify_position(price, sr_levels, magnets, range_info=None):
 
     # Fallback: use magnets
     if magnets:
-        below = [(p, s) for p, v, s in magnets if p < price]
-        above = [(p, s) for p, v, s in magnets if p > price]
+        below = [(p, s) for p, s, *_ in magnets if p < price]
+        above = [(p, s) for p, s, *_ in magnets if p > price]
         if below and above:
             nearest_below = min(below, key=lambda x: price - x[0])
             nearest_above = min(above, key=lambda x: x[0] - price)
