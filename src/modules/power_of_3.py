@@ -25,6 +25,94 @@ from typing import List, Optional, Dict
 MIN_KEY_LEVEL_DIST_PCT = 0.005  # 0.5%
 # How many bars back to check for a completed sweep
 SWEEP_LOOKBACK_BARS = 96  # 24h on 15m
+
+# ── Judas Sweep Historical Performance Stats ─────────────────────────
+# Source: Backtested on ETH/USDT 15m (2017-08 → 2026-05), 305k+ bars
+# Detection: compressed range + near resistance + sweep above + reversal measure
+# These stats are embedded for instant lookup when MANIPULATION phase is detected.
+JUDAS_SWEEP_STATS = {
+    'source': 'ETH/USDT 15m historical (2017-2026), 3222 compressed sweeps',
+    'all_sweeps': {
+        'count': 3222,
+        'reversal_gt_03': 0.820,   # 82.0% reverse >0.3%
+        'reversal_gt_05': 0.716,   # 71.6% reverse >0.5%
+        'reversal_gt_10': 0.497,   # 49.7% reverse >1.0%
+        'avg_drop': 1.82,          # avg reversal drop %
+        'median_drop': 1.26,
+    },
+    'judas_context': {              # bull structure + bearish sellers
+        'count': 526,
+        'reversal_gt_03': 0.825,
+        'reversal_gt_05': 0.684,
+        'reversal_gt_10': 0.475,
+        'avg_drop': 1.68,
+        'median_drop': 1.18,
+        'avg_extension': 2.45,     # when it fails, avg continuation %
+    },
+    'recent_2025_2026': {
+        'count': 142,
+        'reversal_gt_03': 0.796,
+        'reversal_gt_05': 0.641,
+        'reversal_gt_10': 0.423,
+        'avg_drop': 1.96,
+        'median_drop': 1.15,
+    },
+    'by_sweep_depth': {
+        'shallow_01_02': {'count': 314, 'reversal_gt_03': 0.799, 'avg_drop': 1.68},
+        'medium_02_03':  {'count': 112, 'reversal_gt_03': 0.848, 'avg_drop': 1.88},
+        'deep_03_05':    {'count': 81,  'reversal_gt_03': 0.864, 'avg_drop': 1.43},
+        'extreme_05_10': {'count': 19,  'reversal_gt_03': 0.947, 'avg_drop': 1.50},
+    },
+    'time_to_reversal': {
+        'median_bars': 6,           # 90 min
+        'mean_bars': 10,            # 150 min
+        'p75_bars': 15,             # 225 min
+        'max_bars': 48,             # 720 min
+    },
+}
+
+
+def get_judas_stats_for_sweep(sweep_pct: float) -> dict:
+    """Get historical stats matching a given sweep depth.
+
+    Args:
+        sweep_pct: sweep depth as percentage (e.g. 0.3 = 0.3%)
+
+    Returns:
+        dict with reversal rate, avg drop, and time-to-reversal for the matching bucket.
+    """
+    depth_stats = JUDAS_SWEEP_STATS['by_sweep_depth']
+    if sweep_pct < 0.2:
+        bucket = depth_stats['shallow_01_02']
+        label = 'shallow (0.1-0.2%)'
+    elif sweep_pct < 0.3:
+        bucket = depth_stats['medium_02_03']
+        label = 'medium (0.2-0.3%)'
+    elif sweep_pct < 0.5:
+        bucket = depth_stats['deep_03_05']
+        label = 'deep (0.3-0.5%)'
+    else:
+        bucket = depth_stats['extreme_05_10']
+        label = 'extreme (0.5-1.0%)'
+
+    base = JUDAS_SWEEP_STATS['judas_context']
+    ttr = JUDAS_SWEEP_STATS['time_to_reversal']
+
+    return {
+        'depth_label': label,
+        'depth_count': bucket['count'],
+        'depth_reversal_rate': bucket['reversal_gt_03'],
+        'depth_avg_drop': bucket['avg_drop'],
+        'overall_reversal_rate': base['reversal_gt_03'],
+        'overall_avg_drop': base['avg_drop'],
+        'overall_median_drop': base['median_drop'],
+        'avg_extension': base['avg_extension'],
+        'median_time_bars': ttr['median_bars'],
+        'mean_time_bars': ttr['mean_bars'],
+        'p75_time_bars': ttr['p75_bars'],
+        'recent_reversal_rate': JUDAS_SWEEP_STATS['recent_2025_2026']['reversal_gt_03'],
+        'recent_avg_drop': JUDAS_SWEEP_STATS['recent_2025_2026']['avg_drop'],
+    }
 # Maximum age (in bars) for a sweep to still be considered actionable
 SWEEP_MAX_ACTIONABLE_AGE = 24  # 6h on 15m — older sweeps are stale
 # Minimum distance reversal target must have from current price to be actionable
@@ -1121,10 +1209,62 @@ def format_phase(pr: PhaseResult) -> str:
 
     lines.append(f'\n  Action: {action}')
 
+    # ── Judas Sweep Historical Performance (only for MANIPULATION phase) ──
+    if pr.phase == 'MANIPULATION' and pr.key_level:
+        # Estimate sweep depth from key level and entry zone
+        ref_price = pr.entry_zone_low if pr.entry_zone_low else pr.key_level
+        if ref_price and ref_price > 0:
+            # key_level is the sweep target, entry_zone_low is near current price
+            est_sweep_pct = abs(pr.key_level - ref_price) / ref_price * 100
+        else:
+            est_sweep_pct = 0.3  # default estimate
+
+        stats = get_judas_stats_for_sweep(est_sweep_pct)
+        ttr = JUDAS_SWEEP_STATS['time_to_reversal']
+
+        lines.append('')
+        lines.append('  📊 JUDAS SWEEP — HISTORICAL PERFORMANCE')
+        lines.append('  ─────────────────────────────────────────')
+        lines.append(f"  Source: {JUDAS_SWEEP_STATS['source']}")
+        lines.append(f"  Matching depth: {stats['depth_label']}  (n={stats['depth_count']})")
+        lines.append(f"  Reversal rate:  {stats['depth_reversal_rate']:.1%} (>0.3% drop)")
+        lines.append(f"  Avg drop:       {stats['depth_avg_drop']:.2f}%")
+        lines.append(f"  Overall (bull+sellers): {stats['overall_reversal_rate']:.1%}  "
+                     f"avg={stats['overall_avg_drop']:.2f}%  med={stats['overall_median_drop']:.2f}%")
+        lines.append(f"  Recent (2025-26):       {stats['recent_reversal_rate']:.1%}  "
+                     f"avg={stats['recent_avg_drop']:.2f}%")
+        lines.append(f"  Time to reversal:  med={ttr['median_bars']}bars ({ttr['median_bars']*15}min)  "
+                     f"mean={ttr['mean_bars']}bars ({ttr['mean_bars']*15}min)")
+        lines.append(f"  If fails: avg extension = {stats['avg_extension']:.2f}%")
+
+        # R:R estimate
+        est_entry = pr.entry_zone_low if pr.entry_zone_low else 0
+        est_sl = pr.invalidation if pr.invalidation else 0
+        est_tp = pr.reversal_target if pr.reversal_target else 0
+        if est_entry > 0 and est_sl > est_entry and est_tp < est_entry:
+            risk = (est_sl - est_entry) / est_entry * 100
+            reward = (est_entry - est_tp) / est_entry * 100
+            if risk > 0:
+                lines.append(f"  R:R estimate:    {reward/risk:.2f}x  (reward={reward:.2f}% risk={risk:.2f}%)")
+
     return '\n'.join(lines)
 
 
 def phase_to_dict(pr: PhaseResult) -> dict:
     """Serialize PhaseResult to dict for JSON output."""
     d = asdict(pr)
+    # Embed judas sweep stats when in MANIPULATION phase
+    if pr.phase == 'MANIPULATION' and pr.key_level:
+        ref_price = pr.entry_zone_low if pr.entry_zone_low else pr.key_level
+        if ref_price and ref_price > 0:
+            est_sweep_pct = abs(pr.key_level - ref_price) / ref_price * 100
+        else:
+            est_sweep_pct = 0.3
+        d['judas_sweep_stats'] = {
+            'estimated_sweep_pct': est_sweep_pct,
+            'depth_match': get_judas_stats_for_sweep(est_sweep_pct),
+            'historical': JUDAS_SWEEP_STATS['judas_context'],
+            'time_to_reversal': JUDAS_SWEEP_STATS['time_to_reversal'],
+            'recent': JUDAS_SWEEP_STATS['recent_2025_2026'],
+        }
     return d
