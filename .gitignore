@@ -34,7 +34,9 @@ regime_results.csv
 data/scans/
 venv/
 data/
+!data/derivatives_history/
 *.csv
+!data/derivatives_history/*.csv
 __pycache__/
 
 # Intrabar delta (pre-computed, shared)
