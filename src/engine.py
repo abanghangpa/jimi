@@ -37,6 +37,7 @@ from src.modules.cross_asset import score_cross_asset
 from src.modules.session import get_session
 from src.modules.coherence_liquidity import check_coherence, compute_liquidity_aware_tp, compute_stop_risk
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
+from src.adaptive_tp import create_adaptive_manager
 from src.modules.m14_sweep import score_m14
 from src.modules.m17_resistance_quality import score_resistance_quality
 from src.modules.entry_optimizer import detect_wick_reclaim
@@ -597,6 +598,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
     stats = {k: 0 for k in [
         'signals_checked', 'ics_blocked', 'filter_blocked', 'entries',
         'exits_sl', 'exits_tp1', 'exits_tp2', 'exits_tp3', 'exits_signal', 'exits_early',
+        'exits_adaptive',
         'm4_false_anchored', 'm5_pass', 'm5_fail', 'cascade_detected',
         'm1_neutral_skip', 'm3_fail', 'm2_neutral_long_skip', 'rolling_wr_skip',
         'dedup_skip', 'long_ics_skip', 'consec_pause',
@@ -636,6 +638,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             max_mult=cfg.get('ADAPTIVE_MAX_MULT', 2.0),
             warmup=cfg.get('ADAPTIVE_WARMUP_TRADES', 10),
         )
+
+    # Adaptive TP managers — one per open trade
+    adaptive_tp_managers = {}  # trade -> AdaptiveTPManager
 
     # Squeeze tracking state
     squeeze_enabled = cfg.get('SQUEEZE_ENABLED', True)
@@ -764,6 +769,31 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                     trade.close(trade.tp1, ts, 'TP1', tp1_close_frac); trade.tp1_hit = True; trade.update_sl_trail(); stats['exits_tp1'] += 1
                 elif trade.direction == 'SHORT' and low <= trade.tp1:
                     trade.close(trade.tp1, ts, 'TP1', tp1_close_frac); trade.tp1_hit = True; trade.update_sl_trail(); stats['exits_tp1'] += 1
+
+        # ── Adaptive TP exits ──
+        for trade in open_trades[:]:
+            if not trade.is_open:
+                continue
+            atm = adaptive_tp_managers.get(id(trade))
+            if atm is None:
+                continue
+            adaptive_exits = atm.check_exits(df_15m, idx)
+            for action, frac, reason in adaptive_exits:
+                if not trade.is_open:
+                    break
+                if action == 'CLOSE_PARTIAL' and frac and frac > 0:
+                    trade.close(row['Close'], ts, reason, frac)
+                    stats[f'exits_adaptive'] = stats.get('exits_adaptive', 0) + 1
+                elif action == 'CLOSE_FULL':
+                    trade.close(row['Close'], ts, reason, trade.remaining)
+                    stats[f'exits_adaptive'] = stats.get('exits_adaptive', 0) + 1
+                elif action == 'ADJUST_TP' and isinstance(reason, dict):
+                    if 'tp1' in reason:
+                        trade.tp1 = reason['tp1']
+                    if 'tp2' in reason:
+                        trade.tp2 = reason['tp2']
+                    if 'tp3' in reason:
+                        trade.tp3 = reason['tp3']
 
         if adaptive_tracker is not None:
             for t in open_trades:
@@ -1911,6 +1941,11 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         open_trades.append(trade); trades.append(trade)
         daily_trades[today] += 1; stats['entries'] += 1
         last_entry_bar = idx
+
+        # Create adaptive TP manager for this trade
+        atm = create_adaptive_manager(trade, df_15m, idx, config=cfg)
+        if atm is not None:
+            adaptive_tp_managers[id(trade)] = atm
 
         if verbose and stats['entries'] <= 50:
             _le_src = limit_entry.get('entry_source', 'MARKET')

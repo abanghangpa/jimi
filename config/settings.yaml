@@ -564,3 +564,23 @@ STRUCTURE_TP_MAX_RANGE_PCT: 6.0   # Max range width
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
+
+# ─── ADAPTIVE TP ─────────────────────────────────────────────
+# Dynamic exit management: R:R milestones, vol adaptation, momentum decay
+ADAPTIVE_TP_ENABLED: true
+# R:R milestone partials
+ADAPTIVE_RR_MILESTONE_1: 1.0       # close partial at 1:1 R:R
+ADAPTIVE_RR_MILESTONE_2: 2.0       # close partial at 1:2 R:R
+ADAPTIVE_RR_CLOSE_1: 0.40          # close 40% at milestone 1
+ADAPTIVE_RR_CLOSE_2: 0.30          # close 30% at milestone 2
+# Realized volatility adaptation
+ADAPTIVE_VOL_ENABLED: true
+ADAPTIVE_VOL_LOOKBACK: 16          # bars to recalc ATR (4h on 15m)
+ADAPTIVE_VOL_EXPAND_MULT: 1.3      # widen TP if ATR grows 30%+
+ADAPTIVE_VOL_COMPRESS_MULT: 0.7    # tighten TP if ATR shrinks 30%+
+ADAPTIVE_VOL_TIGHTEN_FRAC: 0.5     # tighten to 50% of original distance
+# Momentum decay
+ADAPTIVE_MOMENTUM_ENABLED: true
+ADAPTIVE_MOM_BARS: 12              # bars to check momentum (3h)
+ADAPTIVE_MOM_MIN_MOVE: 0.001       # min 0.1% progress required
+ADAPTIVE_MOM_EXIT_AFTER: 24        # exit after 24 bars (6h) no progress

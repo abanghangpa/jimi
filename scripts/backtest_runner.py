@@ -95,6 +95,11 @@ def print_report(trades, stats):
     time_stop_count = len([t for t in trades if t.exit_reason == 'TIME_STOP'])
     if time_stop_count:
         print(f"    TIME_STOP: {time_stop_count} ({time_stop_count/total*100:.1f}%)")
+    adaptive_count = len([t for t in trades if 'RR_' in str(t.exit_reason) or 'momentum_decay' in str(t.exit_reason) or 'opposing_signal' in str(t.exit_reason) or 'vol_expand' in str(t.exit_reason) or 'vol_compress' in str(t.exit_reason)])
+    if adaptive_count:
+        rr_exits = len([t for t in trades if 'RR_' in str(t.exit_reason)])
+        mom_exits = len([t for t in trades if 'momentum' in str(t.exit_reason)])
+        print(f"    ADAPTIVE: {adaptive_count} ({adaptive_count/total*100:.1f}%)  [R:R milestones={rr_exits}, momentum={mom_exits}]")
 
     # Squeeze stats
     squeeze_trades = [t for t in trades if t.squeeze_type != 'NONE']
