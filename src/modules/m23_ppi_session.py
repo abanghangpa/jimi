@@ -62,8 +62,8 @@ PPI_RELEASE_DATES = {
     '2025-01-14', '2025-02-13', '2025-03-13', '2025-04-10',
     '2025-05-15', '2025-06-12', '2025-07-16', '2025-08-14',
     '2025-09-11', '2025-10-15', '2025-11-13', '2025-12-11',
-    # 2026
-    '2026-01-14', '2026-02-13', '2026-03-13', '2026-04-10',
+    # 2026 (confirmed from BLS schedule: https://www.bls.gov/schedule/news_release/ppi.htm)
+    '2026-01-14', '2026-02-13', '2026-03-13', '2026-04-14',
     '2026-05-13', '2026-06-11', '2026-07-10', '2026-08-13',
     '2026-09-11', '2026-10-14', '2026-11-13', '2026-12-10',
 }
@@ -101,9 +101,9 @@ CPI_RELEASE_DATES = {
     '2025-01-15', '2025-02-12', '2025-03-12', '2025-04-10',
     '2025-05-13', '2025-06-11', '2025-07-15', '2025-08-12',
     '2025-09-10', '2025-10-14', '2025-11-12', '2025-12-10',
-    # 2026
-    '2026-01-14', '2026-02-11', '2026-03-11', '2026-04-14',
-    '2026-05-13', '2026-06-10', '2026-07-14', '2026-08-12',
+    # 2026 (confirmed from BLS schedule: https://www.bls.gov/schedule/news_release/cpi.htm)
+    '2026-01-14', '2026-02-11', '2026-03-11', '2026-04-10',
+    '2026-05-12', '2026-06-10', '2026-07-14', '2026-08-12',
     '2026-09-10', '2026-10-13', '2026-11-10', '2026-12-09',
 }
 
@@ -235,14 +235,50 @@ def get_release_type(date_str):
 def classify_market_regime(config=None):
     """Classify current market regime for fade/continuation bias.
 
+    Uses live BLS data from cache if available, falls back to config.
     Returns:
         regime: str
         fade_rate: float (0.0-1.0)
     """
     cfg = config or CONFIG
-    ppi_yoy = cfg.get('M22_PPI_YOY', None)
-    ppi_prev = cfg.get('M22_PPI_PREV_YOY', None)
+
+    # Try to load live BLS data from cache
+    ppi_yoy = None
+    ppi_prev = None
+    cpi_yoy = None
     fed = cfg.get('M22_FED_STANCE', 'HOLDING')
+
+    try:
+        import json as _json
+        import os as _os
+        cache_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))),
+                                    'data', 'macro_data.json')
+        if _os.path.exists(cache_path):
+            with open(cache_path) as _f:
+                cache = _json.load(_f)
+            latest = cache.get('latest', {})
+            yoy_data = cache.get('yoy', {})
+            ppi_latest = latest.get('PPI_FD', {})
+            ppi_date = ppi_latest.get('date', '')
+            ppi_yoy = ppi_latest.get('yoy')
+            cpi_latest = latest.get('CPI_ALL', {})
+            cpi_yoy = cpi_latest.get('yoy')
+            if ppi_date:
+                y, m = int(ppi_date[:4]), int(ppi_date[5:7])
+                prev_m = m - 1 if m > 1 else 12
+                prev_y = y if m > 1 else y - 1
+                prev_key = f"{prev_y:04d}-{prev_m:02d}"
+                ppi_prev = yoy_data.get('PPI_FD', {}).get(prev_key)
+    except Exception:
+        pass
+
+    # Fall back to config values
+    if ppi_yoy is None:
+        ppi_yoy = cfg.get('M22_PPI_YOY', None)
+    if ppi_prev is None:
+        ppi_prev = cfg.get('M22_PPI_PREV_YOY', None)
+    if cpi_yoy is None:
+        cpi_yoy = cfg.get('M22_CPI_YOY', None)
 
     if ppi_yoy is None:
         return 'UNKNOWN', 0.33
