@@ -6,7 +6,7 @@ import requests
 
 BASE_URL = "https://fapi.binance.com"
 PERIOD = "15m"
-HISTORY_BARS = 336  # 7 days of 15m data (was 96 = 24h — too short for stable z-scores)
+HISTORY_BARS = 288  # 3 days of 15m data (sweet spot: filters noise, doesn't absorb extremes)
 
 
 def fetch_oi_history(symbol="ETHUSDT", period=PERIOD, limit=HISTORY_BARS):
@@ -124,9 +124,10 @@ def compute_oi_signals(df_deriv, df_15m=None):
 def compute_positioning_signals(df_deriv):
     """Positioning-based signals: L/S ratio, whale divergence, taker flow."""
     df = df_deriv.copy()
-    # Use 7-day window (336 bars at 15m) for stable z-scores.
+    # Use 3-day window (288 bars at 15m) for z-scores.
+    # Long enough to filter 15m noise, short enough to not absorb extremes.
     # Fall back to expanding min_periods=24 when data is shorter.
-    window = min(336, len(df))
+    window = min(288, len(df))
     min_periods = min(24, len(df))
     ls_mean = df["ls_ratio"].rolling(window, min_periods=min_periods).mean()
     ls_std = df["ls_ratio"].rolling(window, min_periods=min_periods).std()
