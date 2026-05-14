@@ -465,6 +465,7 @@ _DEFAULTS = {
     # M14 Sweep-Retest-Reclaim
     "M14_ENABLED": True,
     "M14_WEIGHT": 0.08,
+    "M23_ENABLED": True,
     "M14_SWEEP_LOOKBACK": 20,
     "M14_SWEEP_DEPTH_MIN": 0.001,
     "M14_SWEEP_DEPTH_MAX": 0.020,

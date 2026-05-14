@@ -52,6 +52,7 @@ from src.modules.taker_tracker import get_taker_summary, format_taker_summary
 from src.modules.cross_asset import score_cross_asset
 from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
 from src.modules.m22_inflation_regime import score_m22, format_m22
+from src.modules.m23_ppi_session import score_m23_ppi_session, format_m23, is_ppi_release_day
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
@@ -889,6 +890,29 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m22'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
+    # ── M23: PPI Session Analysis ──
+    m23_score = 0.5
+    m23_status = 'SKIP'
+    m23_details = {}
+    try:
+        from datetime import datetime as _dt
+        _now_utc = _dt.utcnow()
+        m23_status, m23_score, m23_details = score_m23_ppi_session(
+            df_15m, current_time=_now_utc, config=cfg)
+        if m23_details and m23_details.get('regime') not in ('DISABLED', 'NO_PPI', 'NO_DATA'):
+            result['m23'] = {
+                'status': m23_status,
+                'score': round(float(m23_score), 3),
+                'regime': m23_details.get('regime', '?'),
+                'ppi_date': m23_details.get('ppi_date'),
+                'us_direction': m23_details.get('us_direction'),
+                'us_magnitude': m23_details.get('us_magnitude'),
+                'fade_rate': m23_details.get('fade_rate'),
+                'details': m23_details,
+            }
+    except Exception as e:
+        result['m23'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
     # ── Phase 4: Score all modules ──
     # M1 (now an ICS contributor, not the gate)
     m1_dir, m1_score, _m1_details = score_m1(df_1h, idx_1h, cfg, df_15m=df_15m, idx_15m=idx)
@@ -1546,6 +1570,12 @@ def print_signal(result):
         if m22_out:
             print(m22_out)
 
+    # M23 PPI Session
+    if 'm23' in result and result['m23'].get('status') not in ('SKIP', 'NO_PPI', 'NO_DATA'):
+        m23_out = format_m23(result['m23'].get('details', {}))
+        if m23_out:
+            print(m23_out)
+
     # Module Scores
     print(f"\n  Module Scores:")
     if 'm1' in result:
@@ -2138,6 +2168,34 @@ def print_summary(result):
         if m22_sm < 1.0:
             print(f"  {'  ⚠️ Size Reduce':<22} {m22_sm:.2f}x")
 
+    # M23 PPI Session summary
+    m23 = result.get('m23', {})
+    if m23 and m23.get('status') not in ('SKIP', 'NO_PPI', 'NO_DATA', 'ERROR'):
+        m23_regime = m23.get('regime', '?')
+        m23_fade = m23.get('fade_rate', 0)
+        m23_us_dir = m23.get('us_direction', '?')
+        m23_us_mag = m23.get('us_magnitude', '?')
+        m23_ppi_date = m23.get('ppi_date', '?')
+        us_icon = {'DUMP': '🔴', 'RALLY': '🟢', 'FLAT': '⚪'}.get(m23_us_dir, '⚪')
+        print(f"  {'M23 PPI Session':<22} {us_icon} {m23_us_dir:>8} {m23_us_mag}  fade={m23_fade:.0%}")
+        # Show prediction or analysis
+        m23_det = m23.get('details', {})
+        m23_pred = m23_det.get('asia_prediction', {})
+        m23_asia = m23_det.get('asia_analysis', {})
+        if m23_pred:
+            bias = m23_pred.get('regime_bias', '?')
+            conf = m23_pred.get('confidence', '?')
+            expected = m23_pred.get('expected_asia_move', 0)
+            conf_icon = {'HIGH': '🟢', 'MEDIUM': '🟡', 'LOW': '🔴'}.get(conf, '⚪')
+            print(f"  {'  Asia Predict':<22} {conf_icon} {bias:>8}  expected={expected:+.2f}%")
+        elif m23_asia:
+            asia_move = m23_asia.get('asia_move', 0)
+            gap_held = m23_asia.get('gap_held', False)
+            pattern = m23_asia.get('pattern', '?')
+            gap_icon = '✅' if gap_held else '❌'
+            asia_icon = '🟢' if asia_move > 0 else '🔴'
+            print(f"  {'  Asia Actual':<22} {asia_icon} {asia_move:+.2f}%  gap={gap_icon}  {pattern}")
+
     # Breakout Confirmation summary
     bc = result.get('breakout_confirm')
     if bc and bc.get('filters'):
@@ -2161,6 +2219,23 @@ def print_summary(result):
 
     # Key observations
     print(f"\n  Key observations:")
+
+    # PPI session context
+    m23 = result.get('m23', {})
+    if m23 and m23.get('status') not in ('SKIP', 'NO_PPI', 'NO_DATA', 'ERROR'):
+        m23_det = m23.get('details', {})
+        m23_pred = m23_det.get('asia_prediction', {})
+        m23_asia = m23_det.get('asia_analysis', {})
+        if m23_pred:
+            bias = m23_pred.get('regime_bias', '?')
+            conf = m23_pred.get('confidence', '?')
+            expected = m23_pred.get('expected_asia_move', 0)
+            us_dir = m23_pred.get('us_direction', '?')
+            print(f"  • PPI session: US {us_dir}, Asia bias={bias} ({conf}), expected {expected:+.2f}%")
+        elif m23_asia:
+            pattern = m23_asia.get('pattern', '?')
+            gap_held = m23_asia.get('gap_held', False)
+            print(f"  • PPI session: Asia {pattern} (gap {'held' if gap_held else 'failed'})")
 
     # Direction resolver
     dr = result.get('direction_resolver', {})

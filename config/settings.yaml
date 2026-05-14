@@ -435,6 +435,9 @@ TP1_MAGNET_MIN_DIST_PCT: 0.002     # min distance to magnet
 M14_ENTRY_GATE: false              # require M14 sweep before signaling
 SWEEP_PROXIMITY_PCT: 0.001         # 0.1% — near-miss tolerance for swept detection (price within X% of level counts as tested)
 
+# ─── M23: PPI SESSION ANALYSIS ──────────────────────────────
+M23_ENABLED: true
+
 # ─── POWER OF 3 PHASE DETECTOR ─────────────────────────────
 P3_MIN_KEY_LEVEL_DIST_PCT: 0.005   # min 0.5% distance for actionable key levels
 P3_SWEEP_LOOKBACK: 96              # bars to check for completed sweep (96 = 24h on 15m)
