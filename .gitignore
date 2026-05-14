@@ -41,3 +41,4 @@ __pycache__/
 
 # Intrabar delta (pre-computed, shared)
 !data/eth_15m_intrabar_delta.csv
+screenshot*.jpg
