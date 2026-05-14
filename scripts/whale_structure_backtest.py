@@ -140,16 +140,26 @@ def compute_positioning_signals(df):
     """Compute whale signal, positioning, taker flow from raw derivatives data."""
     df = df.copy()
 
-    # L/S z-score
+    # L/S z-score (3-day window + absolute bands + Δ1h velocity)
     if 'ls_ratio' in df.columns:
-        ls_mean = df['ls_ratio'].rolling(48, min_periods=1).mean()
-        ls_std = df['ls_ratio'].rolling(48, min_periods=1).std().replace(0, np.nan)
+        window = min(288, len(df))
+        min_periods = min(24, len(df))
+        ls_mean = df['ls_ratio'].rolling(window, min_periods=min_periods).mean()
+        ls_std = df['ls_ratio'].rolling(window, min_periods=min_periods).std().replace(0, np.nan)
         df['ls_zscore'] = (df['ls_ratio'] - ls_mean) / ls_std
         df['ls_zscore'] = df['ls_zscore'].fillna(0)
 
         df['positioning'] = 'NEUTRAL'
-        df.loc[df['ls_zscore'] > 1.5, 'positioning'] = 'CROWDED_LONG'
-        df.loc[df['ls_zscore'] < -1.5, 'positioning'] = 'CROWDED_SHORT'
+        # Z-score triggers
+        df.loc[(df['ls_zscore'] > 1.5) & (df['ls_ratio'] > 1.5), 'positioning'] = 'CROWDED_LONG'
+        df.loc[(df['ls_zscore'] < -1.5) & (df['ls_ratio'] < 0.67), 'positioning'] = 'CROWDED_SHORT'
+        # Absolute bands
+        df.loc[df['ls_ratio'] >= 3.0, 'positioning'] = 'CROWDED_LONG'
+        df.loc[df['ls_ratio'] <= 0.33, 'positioning'] = 'CROWDED_SHORT'
+        # Rate-of-change (Δ1h = 4 bars at 15m)
+        ls_delta_1h = df['ls_ratio'].diff(4)
+        df.loc[ls_delta_1h >= 0.15, 'positioning'] = 'CROWDED_LONG'
+        df.loc[ls_delta_1h <= -0.15, 'positioning'] = 'CROWDED_SHORT'
 
     # Whale signal
     if 'top_ls_ratio' in df.columns and 'ls_ratio' in df.columns:
