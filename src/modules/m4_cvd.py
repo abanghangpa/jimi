@@ -204,6 +204,44 @@ def detect_cvd_divergence_15m(df_15m, lookback=24, window=12):
                                     # CVD distributing while price basing near highs
                                     divergence[i] = 'BEARISH_BASE'
 
+        # Method 5: Retest of Recent Swing (v7.2)
+        # Detects when price retests a recent swing low/high and CVD holds up.
+        # This catches the second touch that Methods 1-4 miss — the retest
+        # after the initial reversal signal, confirming the move.
+        if divergence[i] == 'NONE' and i >= 24:
+            look = min(lookback, i)
+            retest_tolerance = 1.003  # within 0.3% of swing level
+
+            # Bullish retest: price retests a recent swing low, CVD improved
+            for j in range(max(0, i - look), i - 4):
+                if low[j] <= np.min(low[max(0, j-3):j+1]) * 1.0005:
+                    # Found a swing low — is current bar retesting it?
+                    if low[i] <= low[j] * retest_tolerance:
+                        # Has price bounced between the two touches?
+                        between_hi = np.max(high[j+1:i])
+                        if between_hi > low[j] * 1.005:
+                            # CVD check: is CVD at retest >= CVD at first touch?
+                            cvd_at_i = np.nanmean(cvd[max(0, i-1):i+1])
+                            cvd_at_j = np.nanmean(cvd[max(0, j-1):j+1])
+                            if not np.isnan(cvd_at_i) and not np.isnan(cvd_at_j):
+                                if cvd_at_i >= cvd_at_j * 0.995:
+                                    divergence[i] = 'BULLISH'
+                                    break
+
+            # Bearish retest: price retests a recent swing high, CVD weakened
+            if divergence[i] == 'NONE':
+                for j in range(max(0, i - look), i - 4):
+                    if high[j] >= np.max(high[max(0, j-3):j+1]) * 0.9995:
+                        if high[i] >= high[j] / retest_tolerance:
+                            between_lo = np.min(low[j+1:i])
+                            if between_lo < high[j] / 1.005:
+                                cvd_at_i = np.nanmean(cvd[max(0, i-1):i+1])
+                                cvd_at_j = np.nanmean(cvd[max(0, j-1):j+1])
+                                if not np.isnan(cvd_at_i) and not np.isnan(cvd_at_j):
+                                    if cvd_at_i <= cvd_at_j * 1.005:
+                                        divergence[i] = 'BEARISH'
+                                        break
+
         if divergence[i] != 'NONE':
             last_div_bar = i
 
@@ -441,6 +479,17 @@ def score_m4(df_15m, df_2h, idx_15m, idx_2h, direction, config):
         gate_center = config.get('M4_SIGMOID_CENTER', 0.65)
         gate_steepness = config.get('M4_SIGMOID_STEEPNESS', 12)
         sigmoid_gate = _sigmoid(raw_combined, center=gate_center, steepness=gate_steepness)
+
+        # v7.2: Layer A rescue — when 15m divergence is strong but 2H conflict
+        # drags combined below gate center, blend with Layer A-based gate.
+        # Example: Layer A=1.0, Layer B=0.2, combined=0.52 → sigmoid=0.17
+        #   But Layer A=1.0 is a REAL signal — don't kill it.
+        #   Rescue gate = sigmoid(layer_a_score) → 0.98
+        #   Blend: sigmoid_gate = 0.3 * rescue + 0.7 * standard = 0.74
+        if layer_a_score >= 0.70 and layer_a_status == 'PASS':
+            rescue_gate = _sigmoid(layer_a_score, center=0.55, steepness=10)
+            blend = config.get('M4_LAYER_A_RESCUE_BLEND', 0.40)
+            sigmoid_gate = sigmoid_gate * (1 - blend) + rescue_gate * blend
 
         # ATR scaling: dampen M4 in low-volatility sessions (spread noise dominates)
         atr_mult = 1.0  # default if ATR data unavailable
