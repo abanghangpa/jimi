@@ -132,22 +132,23 @@ def compute_positioning_signals(df_deriv):
     ls_std = df["ls_ratio"].rolling(window, min_periods=min_periods).std()
     df["ls_zscore"] = (df["ls_ratio"] - ls_mean) / ls_std.replace(0, np.nan)
 
-    # Positioning label combines TWO signals:
+    # Positioning label combines THREE signals:
     # 1. Z-score (relative): is L/S unusual vs 7-day baseline?
     # 2. Absolute band: is L/S objectively extreme regardless of baseline?
+    # 3. Rate-of-change: is L/S moving too fast? (catches velocity, not position)
     #
-    # The z-score alone has a blind spot: after sustained extreme readings,
-    # the rolling mean adapts and the signal disappears. Absolute bands
-    # catch this. But absolute bands alone fire during normal basing.
-    # So we combine both:
-    #   - z-score spike: fast-moving signal, catches the initial rush
-    #   - absolute extreme: persistent signal, catches the plateau
-    #   - NEUTRAL: L/S in normal range AND z-score calm
+    # The z-score alone has blind spots:
+    #   - After sustained extremes, rolling mean adapts → signal fades
+    #   - Can't detect fast moves that stay within the normal distribution
+    # Absolute bands catch #1 but fire during normal basing.
+    # Rate-of-change catches #2 — a 0.15+ move in 4 bars (1h) is abnormal.
     #
     # Absolute bands (high — only truly extreme, sustained crowding):
     #   L/S ≥ 3.0  (75%+ long)  = objectively extreme long-crowding
     #   L/S ≤ 0.33 (75%+ short) = objectively extreme short-crowding
-    # Note: L/S 2.0-2.5 is common during normal uptrends — not "crowded."
+    # Rate-of-change (4-bar delta = 1 hour on 15m):
+    #   Δ ≥ +0.15  = rapid long accumulation (potential squeeze loading)
+    #   Δ ≤ -0.15  = rapid long liquidation (potential cascade)
     df["positioning"] = "NEUTRAL"
     # Z-score triggers (relative to 7-day baseline)
     df.loc[(df["ls_zscore"] > 1.5) & (df["ls_ratio"] > 1.5), "positioning"] = "CROWDED_LONG"
@@ -155,6 +156,10 @@ def compute_positioning_signals(df_deriv):
     # Absolute triggers (override z-score decay — these levels are always crowded)
     df.loc[df["ls_ratio"] >= 3.0, "positioning"] = "CROWDED_LONG"
     df.loc[df["ls_ratio"] <= 0.33, "positioning"] = "CROWDED_SHORT"
+    # Rate-of-change triggers (velocity — catches fast moves z-score misses)
+    ls_delta_1h = df["ls_ratio"].diff(4)  # 4 bars × 15m = 1 hour
+    df.loc[ls_delta_1h >= 0.15, "positioning"] = "CROWDED_LONG"
+    df.loc[ls_delta_1h <= -0.15, "positioning"] = "CROWDED_SHORT"
 
     if "top_ls_ratio" in df.columns:
         df["whale_retail_gap"] = df["top_ls_ratio"] - df["ls_ratio"]
