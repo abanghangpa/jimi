@@ -59,6 +59,7 @@ _TYPE_MAP = {
     'M12_WEIGHT': (int, float),
     'M13_WEIGHT': (int, float),
     'M14_WEIGHT': (int, float),
+    'SWEEP_PROXIMITY_PCT': (int, float),
     'M17_WEIGHT': (int, float),
     'MACD_FAST': int, 'MACD_SLOW': int, 'MACD_SIGNAL': int,
     'EMA_FAST': int, 'EMA_SLOW': int, 'RSI_PERIOD': int, 'ATR_PERIOD': int,
@@ -582,6 +583,7 @@ _DEFAULTS = {
     "TP1_MAGNET_MIN_DIST_PCT": 0.002,
     # M14 entry gate
     "M14_ENTRY_GATE": False,
+    "SWEEP_PROXIMITY_PCT": 0.001,   # 0.1% near-miss tolerance for swept detection
     # Forensic recommendations (P0-P2)
     "PHASE0_MIN_BLOCK": 0.20,
     "M5_REGIME_GATE_ENABLED": True,

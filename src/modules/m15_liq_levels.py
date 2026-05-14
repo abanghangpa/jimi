@@ -17,6 +17,8 @@ import numpy as np
 import requests
 from collections import defaultdict
 
+from src.config import CONFIG
+
 # ═══════════════════════════════════════════════════════════════
 # Binance ETH/USDT leverage & maintenance margin tiers
 # ═══════════════════════════════════════════════════════════════
@@ -627,34 +629,40 @@ def estimate_liquidity_levels(df_15m, idx, sr_levels, oi_usd, ls_ratio,
 
         formed_at = zone.get('formed_at')
 
+        # Near-miss tolerance: price within X% of level counts as tested.
+        # Prevents stale levels from being marked "unswept" when price
+        # probed close but didn't breach the exact level.
+        proximity_pct = CONFIG.get('SWEEP_PROXIMITY_PCT', 0.001)  # default 0.1%
+        proximity_buf = zp * proximity_pct
+
         if formed_at is not None and formed_at < idx:
             # Check if swept AFTER formation (the correct way)
             check_start = formed_at + 1
             if check_start <= idx:
                 for i in range(check_start, idx + 1):
-                    if zp > current_price and all_highs[i] >= zp:
+                    if zp > current_price and all_highs[i] >= zp - proximity_buf:
                         swept = True
                         swept_at = str(all_times[i])
                         break
-                    elif zp < current_price and all_lows[i] <= zp:
+                    elif zp < current_price and all_lows[i] <= zp + proximity_buf:
                         swept = True
                         swept_at = str(all_times[i])
                         break
             zone['age_bars'] = idx - formed_at
         else:
             # Legacy fallback: fixed 4h lookback
-            if zp > current_price and recent_high >= zp:
+            if zp > current_price and recent_high >= zp - proximity_buf:
                 swept = True
                 highs_arr = df_15m['High'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)
                 for i in range(len(recent_times)):
-                    if highs_arr[i] >= zp:
+                    if highs_arr[i] >= zp - proximity_buf:
                         swept_at = str(recent_times[i])
                         break
-            elif zp < current_price and recent_low <= zp:
+            elif zp < current_price and recent_low <= zp + proximity_buf:
                 swept = True
                 lows_arr = df_15m['Low'].values[max(0, idx - sweep_lookback + 1):idx+1].astype(float)
                 for i in range(len(recent_times)):
-                    if lows_arr[i] <= zp:
+                    if lows_arr[i] <= zp + proximity_buf:
                         swept_at = str(recent_times[i])
                         break
             zone['age_bars'] = None

@@ -245,15 +245,18 @@ def load_daily_from_csv(csv_path):
 
 
 
-def _check_swept_magnets(df_15m, idx, magnets, lookback_bars=96):
+def _check_swept_magnets(df_15m, idx, magnets, lookback_bars=96, config=None):
     """Check if magnets have been swept by recent price action.
 
-    A magnet is 'swept' if price has already traded through it in the
-    last `lookback_bars` candles (default: 96 = 24h on 15m).
+    A magnet is 'swept' if price has already traded through it (or within
+    proximity tolerance) in the last `lookback_bars` candles (default: 96 = 24h on 15m).
     Returns list of (price, strength, swept: bool, swept_at) tuples.
     """
     if not magnets:
         return []
+
+    cfg = config or CONFIG
+    proximity_pct = cfg.get('SWEEP_PROXIMITY_PCT', 0.001)  # default 0.1%
 
     start = max(0, idx - lookback_bars + 1)
     recent_highs = df_15m['High'].values[start:idx+1].astype(float)
@@ -266,20 +269,21 @@ def _check_swept_magnets(df_15m, idx, magnets, lookback_bars=96):
     for price, vol, strength in magnets:
         swept = False
         swept_at = None
+        proximity_buf = price * proximity_pct
         # For magnets above current price: swept if recent high already passed it
         # For magnets below current price: swept if recent low already passed it
         current = df_15m['Close'].values[idx]
-        if price > current and session_high >= price:
+        if price > current and session_high >= price - proximity_buf:
             swept = True
             # Find the first candle that swept it
             for i in range(len(recent_highs)):
-                if recent_highs[i] >= price:
+                if recent_highs[i] >= price - proximity_buf:
                     swept_at = str(recent_times[i])
                     break
-        elif price < current and session_low <= price:
+        elif price < current and session_low <= price + proximity_buf:
             swept = True
             for i in range(len(recent_lows)):
-                if recent_lows[i] <= price:
+                if recent_lows[i] <= price + proximity_buf:
                     swept_at = str(recent_times[i])
                     break
 
@@ -547,7 +551,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         rsi_value=_rsi_val,
     )
     # ── Gather market data (always, regardless of signal status) ──
-    swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5])
+    swept_magnets = _check_swept_magnets(df_15m, idx, magnets[:5], config=cfg)
     result['magnets'] = swept_magnets
     result['gaps'] = [round(p, 2) for p, _ in gaps[:5]]
 
