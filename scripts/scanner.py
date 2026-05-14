@@ -52,7 +52,10 @@ from src.modules.taker_tracker import get_taker_summary, format_taker_summary
 from src.modules.cross_asset import score_cross_asset
 from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
 from src.modules.m22_inflation_regime import score_m22, format_m22
-from src.modules.m23_ppi_session import score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day, is_macro_release_day
+from src.modules.m23_ppi_session import (
+    score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
+    is_macro_release_day, is_claims_release_day, get_claims_trend, classify_macro_combo,
+)
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
@@ -899,7 +902,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         _now_utc = _dt.utcnow()
         m23_status, m23_score, m23_details = score_m23_ppi_session(
             df_15m, current_time=_now_utc, config=cfg)
-        if m23_details and m23_details.get('regime') not in ('DISABLED', 'NO_PPI', 'NO_RELEASE', 'NO_DATA'):
+        if m23_details and m23_details.get('regime') not in ('DISABLED', 'NO_PPI', 'NO_DATA'):
             result['m23'] = {
                 'status': m23_status,
                 'score': round(float(m23_score), 3),
@@ -910,6 +913,8 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
                 'us_magnitude': m23_details.get('us_magnitude'),
                 'fade_rate': m23_details.get('fade_rate'),
                 'spike_accuracy': m23_details.get('spike_accuracy'),
+                'claims_context': m23_details.get('claims_context'),
+                'claims_today': m23_details.get('claims_today', False),
                 'details': m23_details,
             }
     except Exception as e:
@@ -1573,7 +1578,7 @@ def print_signal(result):
             print(m22_out)
 
     # M23 PPI + CPI Session
-    if 'm23' in result and result['m23'].get('status') not in ('SKIP', 'NO_PPI', 'NO_RELEASE', 'NO_DATA'):
+    if 'm23' in result and result['m23'].get('status') not in ('SKIP', 'NO_PPI', 'NO_DATA'):
         m23_out = format_m23(result['m23'].get('details', {}))
         if m23_out:
             print(m23_out)
@@ -2170,19 +2175,54 @@ def print_summary(result):
         if m22_sm < 1.0:
             print(f"  {'  ⚠️ Size Reduce':<22} {m22_sm:.2f}x")
 
-    # M23 PPI + CPI Session summary
+    # M23 PPI + CPI + Claims Session summary
     m23 = result.get('m23', {})
-    if m23 and m23.get('status') not in ('SKIP', 'NO_PPI', 'NO_RELEASE', 'NO_DATA', 'ERROR'):
+    if m23 and m23.get('status') not in ('SKIP', 'NO_PPI', 'NO_DATA', 'ERROR'):
         m23_regime = m23.get('regime', '?')
         m23_fade = m23.get('fade_rate', 0)
         m23_us_dir = m23.get('us_direction', '?')
         m23_us_mag = m23.get('us_magnitude', '?')
         m23_rel_type = m23.get('release_type', 'PPI')
         m23_spike_acc = m23.get('spike_accuracy', 0.70)
-        us_icon = {'DUMP': '🔴', 'RALLY': '🟢', 'FLAT': '⚪'}.get(m23_us_dir, '⚪')
-        type_icons = {'PPI': '🏭', 'CPI': '🛒', 'BOTH': '📊'}
-        type_icon = type_icons.get(m23_rel_type, '📊')
-        print(f"  {'M23 ' + m23_rel_type + ' Release':<22} {us_icon} {m23_us_dir:>8} {m23_us_mag}  fade={m23_fade:.0%}  spike_acc={m23_spike_acc:.0%}")
+        claims_today = m23.get('claims_today', False)
+
+        if m23_regime == 'CLAIMS_RELEASE':
+            # Standalone claims release
+            claims = m23.get('claims', {})
+            combo = m23.get('combo', {})
+            cls_icons = {'LOW': '🟢', 'NORMAL': '⚪', 'ELEVATED': '🟡', 'SPIKE': '🟠', 'CRISIS': '🔴'}
+            cls_icon = cls_icons.get(claims.get('classification', ''), '⚪')
+            trend_icons = {'RISING': '📈', 'FALLING': '📉', 'STABLE': '➡️'}
+            trend_icon = trend_icons.get(claims.get('trend', ''), '➡️')
+            sig_icons = {'STRONG_BUY': '🟢🟢', 'BUY': '🟢', 'HOLD': '⚪', 'SELL': '🔴', 'STRONG_SELL': '🔴🔴'}
+            sig_icon = sig_icons.get(combo.get('signal', ''), '⚪')
+            print(f"  {'M23 Claims Release':<22} {cls_icon} {claims.get('current', 0)}K ({claims.get('classification', '?')})  {trend_icon} {claims.get('trend', '?')}")
+            print(f"  {'  Macro Combo':<22} {sig_icon} {combo.get('signal', '?')}  expected={combo.get('expected_eth_move', 0):+.1f}%  Fed={combo.get('fed_action', '?')}")
+            if claims.get('sahm_triggered'):
+                print(f"  {'  🚨 Sahm Rule':<22} TRIGGERED — recession indicator")
+        else:
+            # PPI/CPI release (with optional claims context)
+            us_icon = {'DUMP': '🔴', 'RALLY': '🟢', 'FLAT': '⚪'}.get(m23_us_dir, '⚪')
+            type_icons = {'PPI': '🏭', 'CPI': '🛒', 'BOTH': '📊'}
+            type_icon = type_icons.get(m23_rel_type, '📊')
+            claims_tag = ' + 📋' if claims_today else ''
+            print(f"  {'M23 ' + m23_rel_type + claims_tag + ' Release':<22} {us_icon} {m23_us_dir:>8} {m23_us_mag}  fade={m23_fade:.0%}  spike_acc={m23_spike_acc:.0%}")
+
+            # Claims context inline
+            claims_ctx = m23.get('claims_context')
+            if claims_ctx:
+                claims = claims_ctx.get('claims', {})
+                combo = claims_ctx.get('combo', {})
+                cls_icons = {'LOW': '🟢', 'NORMAL': '⚪', 'ELEVATED': '🟡', 'SPIKE': '🟠', 'CRISIS': '🔴'}
+                cls_icon = cls_icons.get(claims.get('classification', ''), '⚪')
+                sig_icons = {'STRONG_BUY': '🟢🟢', 'BUY': '🟢', 'HOLD': '⚪', 'SELL': '🔴', 'STRONG_SELL': '🔴🔴'}
+                sig_icon = sig_icons.get(combo.get('signal', ''), '⚪')
+                print(f"  {'  Claims Context':<22} {cls_icon} {claims.get('current', 0)}K ({claims.get('classification', '?')})  combo={sig_icon}{combo.get('signal', '?')}")
+                if combo.get('ppi_leading_cpi'):
+                    print(f"  {'  ⚠️ PPI→CPI lag':<22} PPI leads CPI by {combo.get('ppi_cpi_gap', 0):.1f}pp — CPI will follow UP")
+                if claims.get('sahm_triggered'):
+                    print(f"  {'  🚨 Sahm Rule':<22} TRIGGERED — recession indicator")
+
         # Show prediction or analysis
         m23_det = m23.get('details', {})
         m23_pred = m23_det.get('asia_prediction', {})

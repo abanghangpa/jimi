@@ -437,6 +437,9 @@ SWEEP_PROXIMITY_PCT: 0.001         # 0.1% — near-miss tolerance for swept dete
 
 # ─── M23: PPI SESSION ANALYSIS ──────────────────────────────
 M23_ENABLED: true
+M23_CLAIMS_ENABLED: true          # Include jobless claims in macro analysis
+M23_CLAIMS_WEIGHT: 0.08           # ICS weight for claims signal (when standalone release)
+M23_COMBO_ENABLED: true           # Enable CPI×PPI×Claims combo matrix
 
 # ─── POWER OF 3 PHASE DETECTOR ─────────────────────────────
 P3_MIN_KEY_LEVEL_DIST_PCT: 0.005   # min 0.5% distance for actionable key levels
