@@ -2,20 +2,96 @@
 M22: Inflation Regime Scorer
 
 Scores macro inflation environment based on PPI/CPI direction, Fed stance,
-and market positioning. Derived from 8-year historical study (2018-2026)
-of PPI prints and crypto reactions.
+market positioning, and labor market context (jobless claims).
 
-The Grand Unified PPI Matrix:
-    PPI Direction × Fed Stance × Positioning = Score
+The Grand Unified Matrix:
+    PPI Direction × Fed Stance × Positioning × Claims Context = Score
 
-Data sources (Phase 1: manual config overrides):
+Claims context modifies the regime:
+    - Claims LOW + CPI hot = Fed TRAPPED (can't cut, labor strong) → worst case
+    - Claims HIGH + CPI hot = Fed WILL CUT (recession > inflation) → less bad
+    - Claims LOW + CPI cool = GOLDILOCKS (Fed can cut, economy ok) → best case
+    - Claims HIGH + CPI cool = RECESSION FEAR (Fed cuts aggressively) → short-term pain
+
+Data sources:
     - M22_PPI_YOY, M22_PPI_MOM in settings.yaml
     - M22_CPI_YOY in settings.yaml
     - M22_FED_STANCE in settings.yaml
     - L/S ratio from live derivatives data
+    - Jobless claims from M23 (FRED cache or hardcoded)
 """
 
 from src.config import CONFIG
+
+
+# ═══════════════════════════════════════════════════════════════
+# CLAIMS MODIFIER — labor market context changes what inflation means
+# ═══════════════════════════════════════════════════════════════
+# Claims data is imported from M23's module-level cache.
+# The modifier adjusts the regime score based on whether the Fed
+# has room to act or is trapped by strong labor data.
+
+# Claims classification thresholds (same as M23)
+CLAIMS_LOW = 210        # Tight labor market
+CLAIMS_ELEVATED = 225   # Labor softening
+CLAIMS_SPIKE = 240      # Shock spike
+
+# Modifier: (score_adjustment, description)
+# Applied AFTER the base regime score is computed.
+# Positive = more bullish, Negative = more bearish.
+CLAIMS_REGIME_MODIFIER = {
+    # Claims LOW (<210K) — tight labor, Fed's hands tied
+    # Hot CPI + low claims = Fed TRAPPED (can't justify cuts)
+    # Cool CPI + low claims = Goldilocks (can cut if needed)
+    'LOW': {
+        'RISING':  (-0.08, 'Fed trapped: labor strong + inflation rising → can\'t cut'),
+        'FALLING': (+0.10, 'Goldilocks: labor strong + inflation falling → Fed can cut'),
+        'FLAT':    (+0.05, 'Stable labor + flat inflation → neutral-positive'),
+    },
+    # Claims NORMAL (210-225K) — no modifier
+    'NORMAL': {
+        'RISING':  (+0.00, 'Normal labor + inflation rising → status quo'),
+        'FALLING': (+0.00, 'Normal labor + inflation falling → status quo'),
+        'FLAT':    (+0.00, 'Normal labor + flat inflation → no change'),
+    },
+    # Claims ELEVATED (>225K) — labor softening, Fed has cover to cut
+    # Hot CPI + elevated claims = Fed will cut despite inflation (recession fear wins)
+    # Cool CPI + elevated claims = aggressive cuts coming (but recession = short-term pain)
+    'ELEVATED': {
+        'RISING':  (+0.05, 'Labor softening: Fed will cut despite inflation → less stagflation'),
+        'FALLING': (-0.05, 'Recession signal: labor weakening + deflation → risk-off short-term'),
+        'FLAT':    (+0.00, 'Labor softening + flat inflation → wait and see'),
+    },
+    # Claims SPIKE (>240K) — shock territory
+    # Overrides: Fed forced to cut regardless of inflation (2020 playbook)
+    'SPIKE': {
+        'RISING':  (+0.10, 'Claims spike: Fed forced to cut → inflation secondary'),
+        'FALLING': (-0.10, 'Claims spike + deflation → genuine recession, sell risk'),
+        'FLAT':    (+0.05, 'Claims spike: Fed will act → supportive eventually'),
+    },
+    # Claims CRISIS (>280K) — 2020 territory
+    'CRISIS': {
+        'RISING':  (+0.15, 'Crisis: Fed will do whatever it takes → expect emergency cuts'),
+        'FALLING': (-0.15, 'Crisis + deflation → liquidity crisis, sell everything'),
+        'FLAT':    (+0.10, 'Crisis: emergency response coming → eventual recovery'),
+    },
+}
+
+
+def _get_claims_classification():
+    """Get claims classification from M23's cached data.
+
+    Returns (classification, modifier_dict) or (None, None) if unavailable.
+    """
+    try:
+        from src.modules.m23_ppi_session import get_claims_trend
+        claims = get_claims_trend()
+        if claims is None:
+            return None, None
+        classification = claims.get('classification', 'NORMAL')
+        return classification, CLAIMS_REGIME_MODIFIER.get(classification, CLAIMS_REGIME_MODIFIER['NORMAL'])
+    except Exception:
+        return None, None
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -231,6 +307,14 @@ def score_m22_inflation(ppi_yoy, ppi_prev_yoy=None, ppi_mom=None,
     regime = regime_info['regime']
     severity = regime_info['severity']
 
+    # ── Claims modifier: labor market context changes what inflation means ──
+    claims_class, claims_mods = _get_claims_classification()
+    claims_adjust = 0.0
+    claims_desc = ''
+    if claims_mods is not None and ppi_dir in claims_mods:
+        claims_adjust, claims_desc = claims_mods[ppi_dir]
+        score_raw = max(0.05, min(0.95, score_raw + claims_adjust))
+
     # Direction adjustment: for SHORT trades, invert the score logic
     # A bad inflation regime for LONGs is good for SHORTs
     if direction == 'SHORT':
@@ -300,6 +384,10 @@ def score_m22_inflation(ppi_yoy, ppi_prev_yoy=None, ppi_mom=None,
         'analog': regime_info.get('analog', 'N/A'),
         'expected_move': regime_info.get('expected_move', 'N/A'),
         'description': regime_info.get('desc', ''),
+        # Claims context
+        'claims_classification': claims_class,
+        'claims_adjust': round(claims_adjust, 3),
+        'claims_description': claims_desc,
     }
 
     return status, score, details
@@ -373,6 +461,9 @@ def format_m22(details):
     desc = details.get('description', '')
     ls = details.get('ls_ratio', 0)
     size_mult = details.get('size_mult', 1.0)
+    claims_class = details.get('claims_classification')
+    claims_adjust = details.get('claims_adjust', 0)
+    claims_desc = details.get('claims_description', '')
 
     severity_icons = {
         'LOW': '🟢', 'MEDIUM': '🟡', 'HIGH': '🟠', 'CRITICAL': '🔴'
@@ -384,6 +475,17 @@ def format_m22(details):
     lines.append(f"    PPI YoY: {ppi:.1f}% ({ppi_dir})  |  CPI: {cpi:.1f}%{'  ⚠️ HOT' if cpi and cpi >= 3.5 else '' if cpi else ''}")
     lines.append(f"    Fed: {fed}  |  L/S: {ls:.2f} ({pos})  |  Score: {score:.3f}")
     lines.append(f"    Severity: {severity}  |  Size mult: {size_mult:.2f}x")
+    # Claims context
+    if claims_class:
+        claims_icons = {
+            'LOW': '🟢', 'NORMAL': '⚪', 'ELEVATED': '🟡',
+            'SPIKE': '🟠', 'CRISIS': '🔴'
+        }
+        c_icon = claims_icons.get(claims_class, '⚪')
+        adj_str = f'{claims_adjust:+.3f}' if claims_adjust != 0 else '—'
+        lines.append(f"    Claims: {c_icon} {claims_class}  (adj: {adj_str})")
+        if claims_desc:
+            lines.append(f"      • {claims_desc}")
     if desc:
         lines.append(f"    📖 {desc}")
     if analog and analog != 'N/A':
