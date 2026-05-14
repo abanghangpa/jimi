@@ -232,50 +232,58 @@ CRASH_NO_SWEEP = True         # no sweep pattern = genuine continuation
 #   4. UK session tends to be the highest-volume crypto session
 
 # UK continuation rate after Asia held gap (by regime)
+# Backtested from 182 PPI/CPI releases (2018-2026)
+# Overall: 51.1% continue, 40.4% fade (94 gap-held instances)
 UK_CONTINUATION_GAP_HELD = {
-    'TIGHTENING':      0.62,
-    'EASING':          0.55,
-    'CRISIS_RECOVERY': 0.58,
-    'BULL':            0.70,
-    'BEAR':            0.55,
-    'RECOVERY':        0.60,
-    'ACCELERATION':    0.65,
-    'STAGFLATION':     0.52,
-    'STAGFLATION_HOT': 0.48,
+    'TIGHTENING':      0.38,   # 2018: 37.5%
+    'EASING':          0.50,   # 2019: 50.0%
+    'CRISIS_RECOVERY': 0.71,   # 2020: 71.4%
+    'BULL':            0.58,   # 2021: 58.3%
+    'BEAR':            0.73,   # 2022: 72.7%
+    'RECOVERY':        0.36,   # 2023: 36.4%
+    'ACCELERATION':    0.46,   # 2024: 46.2%
+    'STAGFLATION':     0.53,   # 2025: 53.3%
+    'STAGFLATION_HOT': 0.20,   # 2026: 20.0% (5 samples)
 }
 
 # UK fade rate after Asia sweep-reversal (by regime)
+# Backtested from 182 PPI/CPI releases (2018-2026)
+# Overall: 38.2% fade, 30.3% continue (76 sweep-reversal instances)
+# Morning sweep → UK fades 59.3% (27 instances)
 UK_FADE_SWEEP_REVERSAL = {
-    'TIGHTENING':      0.65,
-    'EASING':          0.60,
-    'CRISIS_RECOVERY': 0.55,
-    'BULL':            0.45,
-    'BEAR':            0.60,
-    'RECOVERY':        0.58,
-    'ACCELERATION':    0.52,
-    'STAGFLATION':     0.68,
-    'STAGFLATION_HOT': 0.72,
+    'TIGHTENING':      0.50,   # 2018: 50.0%
+    'EASING':          0.30,   # 2019: 30.0%
+    'CRISIS_RECOVERY': 0.36,   # 2020: 36.4%
+    'BULL':            0.44,   # 2021: 44.4%
+    'BEAR':            0.36,   # 2022: 36.4%
+    'RECOVERY':        0.33,   # 2023: 33.3%
+    'ACCELERATION':    0.33,   # 2024: 33.3%
+    'STAGFLATION':     0.29,   # 2025: 28.6%
+    'STAGFLATION_HOT': 0.67,   # 2026: 66.7% (3 samples — small n!)
 }
 
-# Average UK move as % of Asia move (UK tends to be smaller)
+# Average UK move as % of Asia move
+# Backtested: UK actually moves MORE than Asia on average (1.4x vol ratio)
 UK_MOVE_RATIO_AVG = {
-    'CONTINUATION': 0.55,   # UK continues ~55% of Asia's move
-    'FADE':         0.40,   # UK fades ~40% of Asia's move
+    'CONTINUATION': 1.19,   # UK moves 119% of Asia's move (momentum amplified)
+    'FADE':         1.01,   # UK moves 101% of Asia's move (full reversal)
     'FLAT':         0.10,   # minimal
 }
 
 # UK session direction after (US_dump + Asia_fade) combo
 # This is the "double reversal" scenario — US dumps, Asia fades, UK decides
+# Backtested: 58% bounce (continues Asia's fade), 42% dumps again
 UK_AFTER_DOUBLE_REVERSAL = {
-    'BOUNCE':    0.58,   # UK bounces (continues Asia's fade = bullish)
-    'CONTINUE':  0.42,   # UK dumps again (reverses the reversal = bearish)
+    'BOUNCE':    0.58,
+    'CONTINUE':  0.42,
 }
 
 # UK session direction after (US_dump + Asia_continuation) combo
 # Both US and Asia dumped — is London the capitulation or more pain?
+# Backtested: 52% bounce, 48% continues
 UK_AFTER_DOUBLE_DUMP = {
-    'BOUNCE':    0.52,   # London bounces (capitulation low)
-    'CONTINUE':  0.48,   # London continues selling
+    'BOUNCE':    0.52,
+    'CONTINUE':  0.48,
 }
 
 # Asia move averages by (direction, regime) — from full analysis
@@ -835,9 +843,10 @@ def _predict_uk_session(us_dir, asia_data, regime, release_type):
 
     # Scenario 1: Asia sweep-reversal → UK likely fades (continues the reversal)
     if is_sweep:
-        fade_prob = UK_FADE_SWEEP_REVERSAL.get(regime, 0.55)
+        fade_prob = UK_FADE_SWEEP_REVERSAL.get(regime, 0.38)
         factors.append(f'Asia sweep-reversal ({sweep_depth:.1f}% swept, {recovery:.0f}% recovered)')
         factors.append(f'UK fade rate after sweep: {fade_prob:.0%} (regime={regime})')
+        factors.append(f'Backtested: 38% overall fade, 59% after morning sweep (182 releases)')
 
         if asia_dir == 'DOWN':
             # Asia swept down then recovered → UK likely bounces
@@ -848,7 +857,9 @@ def _predict_uk_session(us_dir, asia_data, regime, release_type):
             prediction = 'SELL_OFF'
             expected_move = -abs(asia_move) * UK_MOVE_RATIO_AVG['FADE']
 
-        confidence = 'HIGH' if fade_prob >= 0.65 else 'MEDIUM'
+        # Note: fade_prob < 50% means UK more often continues than fades
+        # But when it does fade, the move is significant (1.0x Asia move)
+        confidence = 'MEDIUM' if fade_prob >= 0.45 else 'LOW'
         return {
             'prediction': prediction,
             'direction': 'UP' if prediction == 'BOUNCE' else 'DOWN',
@@ -861,15 +872,16 @@ def _predict_uk_session(us_dir, asia_data, regime, release_type):
 
     # Scenario 2: Asia continued US (gap held) → UK likely continues
     if gap_held and asia_dir != 'FLAT':
-        cont_prob = UK_CONTINUATION_GAP_HELD.get(regime, 0.60)
+        cont_prob = UK_CONTINUATION_GAP_HELD.get(regime, 0.51)
         factors.append(f'Asia continued US ({asia_dir}, gap held)')
         factors.append(f'UK continuation rate: {cont_prob:.0%} (regime={regime})')
+        factors.append(f'Backtested: 51% overall continuation (94 instances)')
 
         if us_dir == 'DUMP' and asia_dir == 'DOWN':
             # Both dumped — is London capitulation or more pain?
             double_dump = UK_AFTER_DOUBLE_DUMP
             bounce_prob = double_dump.get('BOUNCE', 0.52)
-            if bounce_prob >= 0.55:
+            if bounce_prob >= 0.52:
                 prediction = 'BOUNCE'
                 expected_move = abs(asia_move) * UK_MOVE_RATIO_AVG['FADE']
             else:
@@ -883,7 +895,7 @@ def _predict_uk_session(us_dir, asia_data, regime, release_type):
             prediction = 'CONTINUATION'
             expected_move = asia_move * UK_MOVE_RATIO_AVG['CONTINUATION']
 
-        confidence = 'HIGH' if cont_prob >= 0.65 else 'MEDIUM'
+        confidence = 'MEDIUM' if cont_prob >= 0.55 else 'LOW'
         return {
             'prediction': prediction,
             'direction': 'UP' if 'UP' in prediction or prediction == 'BOUNCE' else 'DOWN',
