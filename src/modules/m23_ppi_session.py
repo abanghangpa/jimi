@@ -64,7 +64,7 @@ PPI_RELEASE_DATES = {
     '2025-09-11', '2025-10-15', '2025-11-13', '2025-12-11',
     # 2026
     '2026-01-14', '2026-02-13', '2026-03-13', '2026-04-10',
-    '2026-05-14', '2026-06-11', '2026-07-10', '2026-08-13',
+    '2026-05-13', '2026-06-11', '2026-07-10', '2026-08-13',
     '2026-09-11', '2026-10-14', '2026-11-13', '2026-12-10',
 }
 
@@ -454,6 +454,9 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             release_type = today_rtype
             is_release_day = True
             is_post_release = False
+
+    # If yesterday was 'BOTH' (PPI+CPI same day), use combined stats
+    # The type_strength modifier already handles BOTH = stronger signal
 
     if release_date is None:
         return 'SKIP', 0.5, {'regime': 'NO_RELEASE', 'reason': 'No PPI/CPI release today or yesterday'}
