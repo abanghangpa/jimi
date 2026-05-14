@@ -197,6 +197,40 @@ UNEMPLOYMENT_RATE_MONTHLY = {
     '2026-01': 4.3, '2026-02': 4.3, '2026-03': 4.3, '2026-04': 4.3,
 }
 
+# ── FRED Cache Override ──────────────────────────────────────
+# If data/fred/claims_cache.json exists (from fetch_fred_claims.py),
+# override the hardcoded dicts with live FRED data.
+def _load_fred_cache():
+    """Override hardcoded claims/unemployment dicts with FRED cache if available."""
+    import json as _json
+    import os as _os
+    cache_path = _os.path.join(
+        _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))),
+        "data", "fred", "claims_cache.json")
+    if not _os.path.exists(cache_path):
+        return
+    try:
+        with open(cache_path) as f:
+            cache = _json.load(f)
+        icsa = cache.get("icsa", {}).get("monthly_avg", {})
+        unrate = cache.get("unrate", {}).get("monthly", {})
+        if icsa:
+            # Merge: cache overrides hardcoded, but keep older hardcoded months
+            # that cache doesn't have (cache may start at 2021-01)
+            merged_claims = dict(JOBLESS_CLAIMS_MONTHLY_AVG)
+            merged_claims.update(icsa)
+            JOBLESS_CLAIMS_MONTHLY_AVG.clear()
+            JOBLESS_CLAIMS_MONTHLY_AVG.update(merged_claims)
+        if unrate:
+            merged_unemp = dict(UNEMPLOYMENT_RATE_MONTHLY)
+            merged_unemp.update(unrate)
+            UNEMPLOYMENT_RATE_MONTHLY.clear()
+            UNEMPLOYMENT_RATE_MONTHLY.update(merged_unemp)
+    except Exception:
+        pass  # silently fall back to hardcoded
+
+_load_fred_cache()
+
 # Jobless claims thresholds for signal classification
 CLAIMS_LOW_THRESHOLD = 210       # Below this = tight labor market
 CLAIMS_ELEVATED_THRESHOLD = 225  # Above this = labor softening
