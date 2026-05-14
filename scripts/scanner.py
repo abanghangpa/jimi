@@ -2628,6 +2628,19 @@ def main():
     # Step 1: Ensure historical CSV is fresh (fetch gap if stale)
     csv_path = ensure_csv_fresh()
 
+    # Step 1b: Fetch live FRED claims/unemployment data (no API key needed)
+    try:
+        import subprocess as _sp
+        _fred_script = os.path.join(os.path.dirname(__file__), 'fetch_fred_claims.py')
+        _r = _sp.run([sys.executable, _fred_script], capture_output=True, text=True, timeout=30)
+        if _r.returncode == 0:
+            for line in _r.stdout.strip().split('\n'):
+                print(f"  {line.strip()}")
+        else:
+            print(f"  ⚠️  FRED claims fetch failed (using cached/hardcoded data)")
+    except Exception as e:
+        print(f"  ⚠️  FRED claims fetch failed: {e} (using cached/hardcoded data)")
+
     # Step 2: Load daily data from CSV for reliable EMA55 bias
     df_1d_hist = load_daily_from_csv(csv_path)
     if df_1d_hist is not None:
