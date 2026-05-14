@@ -418,6 +418,35 @@ def compute_asia_session(df_15m, release_date):
     asia_gap = (asia_open - us_close) / us_close * 100
     asia_range = (asia_high - asia_low) / us_close * 100
 
+    # ── Intra-session path analysis ──
+    # Track the price path to detect sweep-and-reverse patterns
+    # that open→close analysis misses.
+    gap_dir = 'UP' if asia_gap > 0.2 else 'DOWN' if asia_gap < -0.2 else 'FLAT'
+
+    # Max extension against gap direction (sweep depth)
+    if gap_dir == 'DOWN':
+        # Gap down: how far did price extend below the gap?
+        sweep_low_pct = (asia_low - us_close) / us_close * 100
+        # Recovery from low: how much did it bounce back?
+        recovery_pct = (asia_close - asia_low) / (us_close - asia_low) * 100 if (us_close - asia_low) > 0 else 0
+        # Did price reclaim the gap (trade back above US close)?
+        reclaimed_gap = asia_high >= us_close
+        # Sweep-and-reverse: price went significantly lower then recovered most of it
+        sweep_depth_pct = abs(sweep_low_pct)
+        is_sweep_reversal = sweep_depth_pct > 0.5 and recovery_pct > 50
+    elif gap_dir == 'UP':
+        # Gap up: how far did price extend above the gap?
+        sweep_high_pct = (asia_high - us_close) / us_close * 100
+        recovery_pct = (asia_high - asia_close) / (asia_high - us_close) * 100 if (asia_high - us_close) > 0 else 0
+        reclaimed_gap = asia_low <= us_close
+        sweep_depth_pct = abs(sweep_high_pct)
+        is_sweep_reversal = sweep_depth_pct > 0.5 and recovery_pct > 50
+    else:
+        sweep_depth_pct = 0
+        recovery_pct = 0
+        reclaimed_gap = False
+        is_sweep_reversal = False
+
     return {
         'asia_move': round(asia_move, 3),
         'asia_gap': round(asia_gap, 3),
@@ -427,6 +456,12 @@ def compute_asia_session(df_15m, release_date):
         'asia_low': round(asia_low, 2),
         'asia_range': round(asia_range, 3),
         'us_close_ref': round(us_close, 2),
+        # Path analysis
+        'gap_dir': gap_dir,
+        'sweep_depth_pct': round(sweep_depth_pct, 3),
+        'recovery_pct': round(recovery_pct, 1),
+        'reclaimed_gap': reclaimed_gap,
+        'is_sweep_reversal': is_sweep_reversal,
     }
 
 
@@ -555,12 +590,31 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
         asia_move = asia_data['asia_move']
         asia_gap = asia_data['asia_gap']
 
-        gap_dir = 'UP' if asia_gap > 0.2 else 'DOWN' if asia_gap < -0.2 else 'FLAT'
+        gap_dir = asia_data.get('gap_dir', 'UP' if asia_gap > 0.2 else 'DOWN' if asia_gap < -0.2 else 'FLAT')
         asia_dir = 'UP' if asia_move > 0.3 else 'DOWN' if asia_move < -0.3 else 'FLAT'
         gap_held = (gap_dir == asia_dir) or gap_dir == 'FLAT'
 
         asia_faded = (us_dir == 'RALLY' and asia_dir == 'DOWN') or \
                      (us_dir == 'DUMP' and asia_dir == 'UP')
+
+        # Path analysis: detect sweep-and-reverse patterns
+        is_sweep_reversal = asia_data.get('is_sweep_reversal', False)
+        sweep_depth = asia_data.get('sweep_depth_pct', 0)
+        recovery_pct = asia_data.get('recovery_pct', 0)
+        reclaimed_gap = asia_data.get('reclaimed_gap', False)
+
+        # Classify the actual pattern
+        if is_sweep_reversal:
+            # Price swept hard in gap direction then reversed — the gap
+            # "held" on paper but the move was rejected. This is the most
+            # important signal: liquidity was grabbed and reversed.
+            pattern = 'SWEEP_REVERSAL'
+        elif asia_faded:
+            pattern = 'FADE'
+        elif asia_dir != 'FLAT':
+            pattern = 'CONTINUATION'
+        else:
+            pattern = 'FLAT'
 
         details['asia_analysis'] = {
             'asia_move': asia_move,
@@ -569,11 +623,22 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             'asia_direction': asia_dir,
             'gap_held': gap_held,
             'asia_faded_us': asia_faded,
-            'pattern': 'FADE' if asia_faded else 'CONTINUATION' if asia_dir != 'FLAT' else 'FLAT',
+            'pattern': pattern,
+            # Path data
+            'sweep_depth_pct': sweep_depth,
+            'recovery_pct': recovery_pct,
+            'reclaimed_gap': reclaimed_gap,
+            'is_sweep_reversal': is_sweep_reversal,
         }
 
-        # Score: gap held + type strength
-        if gap_held:
+        # Score: pattern-aware
+        if is_sweep_reversal:
+            # Sweep-and-reverse is contrarian: the move that "should"
+            # continue (gap held) actually reversed. Reduce confidence
+            # in continuation and flag the reversal risk.
+            score = max(0.30, 0.45 - 0.10 * type_strength)
+            status = 'PASS'
+        elif gap_held:
             score = min(0.80, 0.65 + 0.10 * type_strength)
             status = 'PASS'
         else:
@@ -581,8 +646,9 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             status = 'PASS'
 
         details['score_reason'] = (
-            f'{release_type} {release_date}: gap {"held" if gap_held else "failed"} '
+            f'{release_type} {release_date}: {pattern.lower()} '
             f'({gap_dir}→{asia_dir}), US was {us_dir} {us_move:+.2f}%'
+            + (f', sweep {sweep_depth:.1f}% reversed {recovery_pct:.0f}%' if is_sweep_reversal else '')
         )
 
     # ── Release day: predict Asia ──
@@ -735,7 +801,15 @@ def format_m23(details):
         lines.append(f"    Asia Session: {asia_icon} {asia_move:+.2f}%  (gap {asia_gap:+.2f}%)")
         lines.append(f"    Gap Held: {gap_icon}  Pattern: {pattern}")
 
-        if asia_analysis.get('asia_faded_us'):
+        # Show sweep reversal detail
+        if pattern == 'SWEEP_REVERSAL':
+            sweep_depth = asia_analysis.get('sweep_depth_pct', 0)
+            recovery = asia_analysis.get('recovery_pct', 0)
+            reclaimed = asia_analysis.get('reclaimed_gap', False)
+            lines.append(f"    ⚠️ SWEEP-AND-REVERSE: swept {sweep_depth:.1f}% then recovered {recovery:.0f}%")
+            if reclaimed:
+                lines.append(f"    ↩️ Reclaimed gap level — continuation unreliable")
+        elif asia_analysis.get('asia_faded_us'):
             lines.append(f"    ↩️ Asia FADED US (mean-reversion)")
         else:
             lines.append(f"    ✅ Asia CONTINUED US (momentum)")
