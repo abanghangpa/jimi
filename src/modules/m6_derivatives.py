@@ -6,7 +6,7 @@ import requests
 
 BASE_URL = "https://fapi.binance.com"
 PERIOD = "15m"
-HISTORY_BARS = 96
+HISTORY_BARS = 336  # 7 days of 15m data (was 96 = 24h — too short for stable z-scores)
 
 
 def fetch_oi_history(symbol="ETHUSDT", period=PERIOD, limit=HISTORY_BARS):
@@ -124,13 +124,37 @@ def compute_oi_signals(df_deriv, df_15m=None):
 def compute_positioning_signals(df_deriv):
     """Positioning-based signals: L/S ratio, whale divergence, taker flow."""
     df = df_deriv.copy()
-    ls_mean = df["ls_ratio"].rolling(48).mean()
-    ls_std = df["ls_ratio"].rolling(48).std()
+    # Use 7-day window (336 bars at 15m) for stable z-scores.
+    # Fall back to expanding min_periods=24 when data is shorter.
+    window = min(336, len(df))
+    min_periods = min(24, len(df))
+    ls_mean = df["ls_ratio"].rolling(window, min_periods=min_periods).mean()
+    ls_std = df["ls_ratio"].rolling(window, min_periods=min_periods).std()
     df["ls_zscore"] = (df["ls_ratio"] - ls_mean) / ls_std.replace(0, np.nan)
 
+    # Positioning label combines TWO signals:
+    # 1. Z-score (relative): is L/S unusual vs 7-day baseline?
+    # 2. Absolute band: is L/S objectively extreme regardless of baseline?
+    #
+    # The z-score alone has a blind spot: after sustained extreme readings,
+    # the rolling mean adapts and the signal disappears. Absolute bands
+    # catch this. But absolute bands alone fire during normal basing.
+    # So we combine both:
+    #   - z-score spike: fast-moving signal, catches the initial rush
+    #   - absolute extreme: persistent signal, catches the plateau
+    #   - NEUTRAL: L/S in normal range AND z-score calm
+    #
+    # Absolute bands (high — only truly extreme, sustained crowding):
+    #   L/S ≥ 3.0  (75%+ long)  = objectively extreme long-crowding
+    #   L/S ≤ 0.33 (75%+ short) = objectively extreme short-crowding
+    # Note: L/S 2.0-2.5 is common during normal uptrends — not "crowded."
     df["positioning"] = "NEUTRAL"
-    df.loc[df["ls_zscore"] > 1.5, "positioning"] = "CROWDED_LONG"
-    df.loc[df["ls_zscore"] < -1.5, "positioning"] = "CROWDED_SHORT"
+    # Z-score triggers (relative to 7-day baseline)
+    df.loc[(df["ls_zscore"] > 1.5) & (df["ls_ratio"] > 1.5), "positioning"] = "CROWDED_LONG"
+    df.loc[(df["ls_zscore"] < -1.5) & (df["ls_ratio"] < 0.67), "positioning"] = "CROWDED_SHORT"
+    # Absolute triggers (override z-score decay — these levels are always crowded)
+    df.loc[df["ls_ratio"] >= 3.0, "positioning"] = "CROWDED_LONG"
+    df.loc[df["ls_ratio"] <= 0.33, "positioning"] = "CROWDED_SHORT"
 
     if "top_ls_ratio" in df.columns:
         df["whale_retail_gap"] = df["top_ls_ratio"] - df["ls_ratio"]
