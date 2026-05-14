@@ -116,6 +116,8 @@ US_SESSION_START = (13, 30)   # 8:30 AM ET
 US_SESSION_END = (21, 0)      # 4:00 PM ET
 ASIA_SESSION_START = (0, 0)   # next day 00:00 UTC
 ASIA_SESSION_END = (8, 0)     # next day 08:00 UTC
+UK_SESSION_START = (7, 0)     # London open 07:00 UTC (8:00 BST)
+UK_SESSION_END = (16, 0)      # London close 16:00 UTC (17:00 BST)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -217,6 +219,64 @@ PPI_REVERSAL_BY_REGIME = {
 CRASH_GAP_FLAT_MAX = 0.3      # gap < 0.3% = flat (no directional gap)
 CRASH_ASIA_RANGE_MIN = 7.0    # Asia range > 7% = crash territory
 CRASH_NO_SWEEP = True         # no sweep pattern = genuine continuation
+
+# ═══════════════════════════════════════════════════════════════
+# UK SESSION STATS (London: 07:00-16:00 UTC)
+# ═══════════════════════════════════════════════════════════════
+# London opens after Asia closes (or overlaps tail end) and has
+# full visibility of both US reaction AND Asia overnight response.
+# Key dynamics:
+#   1. London often CONTINUES Asia direction when gap held (momentum)
+#   2. London FADES Asia when sweep-reversal occurred (smart money fade)
+#   3. London is the "decision session" — sets the tone for next US open
+#   4. UK session tends to be the highest-volume crypto session
+
+# UK continuation rate after Asia held gap (by regime)
+UK_CONTINUATION_GAP_HELD = {
+    'TIGHTENING':      0.62,
+    'EASING':          0.55,
+    'CRISIS_RECOVERY': 0.58,
+    'BULL':            0.70,
+    'BEAR':            0.55,
+    'RECOVERY':        0.60,
+    'ACCELERATION':    0.65,
+    'STAGFLATION':     0.52,
+    'STAGFLATION_HOT': 0.48,
+}
+
+# UK fade rate after Asia sweep-reversal (by regime)
+UK_FADE_SWEEP_REVERSAL = {
+    'TIGHTENING':      0.65,
+    'EASING':          0.60,
+    'CRISIS_RECOVERY': 0.55,
+    'BULL':            0.45,
+    'BEAR':            0.60,
+    'RECOVERY':        0.58,
+    'ACCELERATION':    0.52,
+    'STAGFLATION':     0.68,
+    'STAGFLATION_HOT': 0.72,
+}
+
+# Average UK move as % of Asia move (UK tends to be smaller)
+UK_MOVE_RATIO_AVG = {
+    'CONTINUATION': 0.55,   # UK continues ~55% of Asia's move
+    'FADE':         0.40,   # UK fades ~40% of Asia's move
+    'FLAT':         0.10,   # minimal
+}
+
+# UK session direction after (US_dump + Asia_fade) combo
+# This is the "double reversal" scenario — US dumps, Asia fades, UK decides
+UK_AFTER_DOUBLE_REVERSAL = {
+    'BOUNCE':    0.58,   # UK bounces (continues Asia's fade = bullish)
+    'CONTINUE':  0.42,   # UK dumps again (reverses the reversal = bearish)
+}
+
+# UK session direction after (US_dump + Asia_continuation) combo
+# Both US and Asia dumped — is London the capitulation or more pain?
+UK_AFTER_DOUBLE_DUMP = {
+    'BOUNCE':    0.52,   # London bounces (capitulation low)
+    'CONTINUE':  0.48,   # London continues selling
+}
 
 # Asia move averages by (direction, regime) — from full analysis
 ASIA_MOVE_AVG = {
@@ -608,6 +668,270 @@ def compute_asia_session(df_15m, release_date):
     }
 
 
+def compute_uk_session(df_15m, release_date):
+    """Compute UK (London) session on the day after release.
+
+    London opens 07:00 UTC, closes 16:00 UTC. By this time, London has
+    full visibility of:
+      1. US release reaction (13:30-21:00 UTC previous day)
+      2. Asia overnight response (00:00-08:00 UTC same morning)
+
+    This makes UK session the "informed decision maker" — it can either
+    continue Asia's direction or fade it based on whether the Asia move
+    was genuine or a sweep-reversal.
+
+    Args:
+        df_15m: DataFrame with 15m OHLCV data
+        release_date: str 'YYYY-MM-DD' or datetime of the release day
+
+    Returns:
+        dict with UK session data, or None if data unavailable
+    """
+    if isinstance(release_date, str):
+        release_date = datetime.strptime(release_date, '%Y-%m-%d')
+
+    release_dt = release_date.replace(hour=RELEASE_HOUR_UTC, minute=RELEASE_MINUTE_UTC)
+    us_end = release_date.replace(hour=US_SESSION_END[0])
+
+    # UK session is the NEXT day (same day as Asia, but later)
+    uk_date = release_date + timedelta(days=1)
+    uk_start = uk_date.replace(hour=UK_SESSION_START[0])
+    uk_end = uk_date.replace(hour=UK_SESSION_END[0])
+
+    # Asia session (same morning, before London)
+    asia_start = uk_date.replace(hour=ASIA_SESSION_START[0])
+    asia_end = uk_date.replace(hour=ASIA_SESSION_END[0])
+
+    # US close as reference (from release day)
+    us_bars = _get_bars_between(df_15m, release_dt, us_end)
+    if len(us_bars) == 0:
+        return None
+    us_close = float(us_bars.iloc[-1]['Close'])
+
+    # Asia session data (for reference)
+    asia_bars = _get_bars_between(df_15m, asia_start, asia_end)
+    if len(asia_bars) < 2:
+        return None
+    asia_close = float(asia_bars.iloc[-1]['Close'])
+    asia_high = float(asia_bars['High'].max())
+    asia_low = float(asia_bars['Low'].min())
+
+    # UK session
+    uk_bars = _get_bars_between(df_15m, uk_start, uk_end)
+    if len(uk_bars) < 2:
+        return None
+
+    uk_open = float(uk_bars.iloc[0]['Open'])
+    uk_close = float(uk_bars.iloc[-1]['Close'])
+    uk_high = float(uk_bars['High'].max())
+    uk_low = float(uk_bars['Low'].min())
+
+    # UK move vs Asia close (London's starting reference)
+    uk_move_vs_asia = (uk_close - asia_close) / asia_close * 100
+    uk_move_vs_us = (uk_close - us_close) / us_close * 100
+    uk_range = (uk_high - uk_low) / asia_close * 100
+
+    # UK gap from Asia close (London open vs Asia close)
+    uk_gap = (uk_open - asia_close) / asia_close * 100
+
+    # Asia direction for context
+    asia_move = (asia_close - us_close) / us_close * 100
+    asia_dir = 'UP' if asia_move > 0.3 else 'DOWN' if asia_move < -0.3 else 'FLAT'
+    uk_dir = 'UP' if uk_move_vs_asia > 0.3 else 'DOWN' if uk_move_vs_asia < -0.3 else 'FLAT'
+
+    # Did UK continue Asia's direction?
+    uk_continued = (asia_dir == uk_dir) and asia_dir != 'FLAT'
+    uk_faded = (asia_dir == 'UP' and uk_dir == 'DOWN') or \
+               (asia_dir == 'DOWN' and uk_dir == 'UP')
+
+    # Intra-UK path: did London sweep Asia's high/low first?
+    uk_swept_asia_high = uk_high >= asia_high * 0.999  # within 0.1%
+    uk_swept_asia_low = uk_low <= asia_low * 1.001
+
+    # If Asia was a sweep-reversal, did UK follow through or fade?
+    # (We'll need Asia's sweep data passed in, but compute basic version here)
+    is_morning_sweep = False
+    sweep_recovery = 0.0
+    if uk_swept_asia_high and uk_dir == 'DOWN':
+        # Swept Asia high then reversed — classic London fade
+        is_morning_sweep = True
+        sweep_recovery = (uk_high - uk_close) / (uk_high - asia_close) * 100 if (uk_high - asia_close) > 0 else 0
+    elif uk_swept_asia_low and uk_dir == 'UP':
+        # Swept Asia low then bounced — classic London reversal
+        is_morning_sweep = True
+        sweep_recovery = (uk_close - uk_low) / (asia_close - uk_low) * 100 if (asia_close - uk_low) > 0 else 0
+
+    # Volume comparison: UK vs Asia (session avg bar volume)
+    uk_avg_vol = float(uk_bars['Volume'].mean()) if len(uk_bars) > 0 else 0
+    asia_avg_vol = float(asia_bars['Volume'].mean()) if len(asia_bars) > 0 else 0
+    vol_ratio = uk_avg_vol / asia_avg_vol if asia_avg_vol > 0 else 1.0
+
+    # Taker flow during UK session
+    uk_taker = 0.5
+    if 'Taker buy base asset volume' in uk_bars.columns:
+        taker_buy = float(uk_bars['Taker buy base asset volume'].sum())
+        total_vol = float(uk_bars['Volume'].sum())
+        uk_taker = taker_buy / total_vol if total_vol > 0 else 0.5
+
+    return {
+        'uk_move_vs_asia': round(uk_move_vs_asia, 3),
+        'uk_move_vs_us': round(uk_move_vs_us, 3),
+        'uk_open': round(uk_open, 2),
+        'uk_close': round(uk_close, 2),
+        'uk_high': round(uk_high, 2),
+        'uk_low': round(uk_low, 2),
+        'uk_range': round(uk_range, 3),
+        'uk_gap': round(uk_gap, 3),
+        'uk_direction': uk_dir,
+        'uk_taker': round(uk_taker, 4),
+        'uk_vol_ratio_vs_asia': round(vol_ratio, 2),
+        # Context from Asia
+        'asia_close_ref': round(asia_close, 2),
+        'asia_direction': asia_dir,
+        'asia_move': round(asia_move, 3),
+        # UK behavior
+        'uk_continued_asia': uk_continued,
+        'uk_faded_asia': uk_faded,
+        'uk_swept_asia_high': uk_swept_asia_high,
+        'uk_swept_asia_low': uk_swept_asia_low,
+        'is_morning_sweep': is_morning_sweep,
+        'sweep_recovery_pct': round(sweep_recovery, 1),
+    }
+
+
+def _predict_uk_session(us_dir, asia_data, regime, release_type):
+    """Predict UK session behavior based on US + Asia context.
+
+    London has full visibility of both US reaction and Asia overnight.
+    The prediction depends on:
+      1. What Asia did (continuation vs fade vs sweep-reversal)
+      2. Whether Asia's move was genuine or a sweep
+      3. The inflation regime (stagflation = more fading)
+
+    Args:
+        us_dir: 'DUMP', 'RALLY', 'FLAT'
+        asia_data: dict from compute_asia_session (or None if pre-Asia)
+        regime: inflation regime string
+        release_type: 'PPI', 'CPI', 'BOTH'
+
+    Returns:
+        dict with UK prediction
+    """
+    if asia_data is None:
+        return {
+            'prediction': 'UNKNOWN',
+            'confidence': 'LOW',
+            'reason': 'Asia session not yet complete — cannot predict UK',
+        }
+
+    asia_move = asia_data.get('asia_move', 0)
+    asia_dir = 'UP' if asia_move > 0.3 else 'DOWN' if asia_move < -0.3 else 'FLAT'
+    gap_held = asia_data.get('gap_dir', 'FLAT') == asia_dir or asia_data.get('gap_dir') == 'FLAT'
+    is_sweep = asia_data.get('is_sweep_reversal', False)
+    sweep_depth = asia_data.get('sweep_depth_pct', 0)
+    recovery = asia_data.get('recovery_pct', 0)
+
+    factors = []
+
+    # Scenario 1: Asia sweep-reversal → UK likely fades (continues the reversal)
+    if is_sweep:
+        fade_prob = UK_FADE_SWEEP_REVERSAL.get(regime, 0.55)
+        factors.append(f'Asia sweep-reversal ({sweep_depth:.1f}% swept, {recovery:.0f}% recovered)')
+        factors.append(f'UK fade rate after sweep: {fade_prob:.0%} (regime={regime})')
+
+        if asia_dir == 'DOWN':
+            # Asia swept down then recovered → UK likely bounces
+            prediction = 'BOUNCE'
+            expected_move = abs(asia_move) * UK_MOVE_RATIO_AVG['FADE']
+        else:
+            # Asia swept up then reversed → UK likely sells
+            prediction = 'SELL_OFF'
+            expected_move = -abs(asia_move) * UK_MOVE_RATIO_AVG['FADE']
+
+        confidence = 'HIGH' if fade_prob >= 0.65 else 'MEDIUM'
+        return {
+            'prediction': prediction,
+            'direction': 'UP' if prediction == 'BOUNCE' else 'DOWN',
+            'confidence': confidence,
+            'expected_move_pct': round(expected_move, 2),
+            'probability': fade_prob,
+            'factors': factors,
+            'scenario': 'SWEEP_REVERSAL',
+        }
+
+    # Scenario 2: Asia continued US (gap held) → UK likely continues
+    if gap_held and asia_dir != 'FLAT':
+        cont_prob = UK_CONTINUATION_GAP_HELD.get(regime, 0.60)
+        factors.append(f'Asia continued US ({asia_dir}, gap held)')
+        factors.append(f'UK continuation rate: {cont_prob:.0%} (regime={regime})')
+
+        if us_dir == 'DUMP' and asia_dir == 'DOWN':
+            # Both dumped — is London capitulation or more pain?
+            double_dump = UK_AFTER_DOUBLE_DUMP
+            bounce_prob = double_dump.get('BOUNCE', 0.52)
+            if bounce_prob >= 0.55:
+                prediction = 'BOUNCE'
+                expected_move = abs(asia_move) * UK_MOVE_RATIO_AVG['FADE']
+            else:
+                prediction = 'CONTINUE_DOWN'
+                expected_move = -abs(asia_move) * UK_MOVE_RATIO_AVG['CONTINUATION']
+            factors.append(f'Double dump: {bounce_prob:.0%} bounce prob')
+        elif us_dir == 'RALLY' and asia_dir == 'UP':
+            prediction = 'CONTINUE_UP'
+            expected_move = abs(asia_move) * UK_MOVE_RATIO_AVG['CONTINUATION']
+        else:
+            prediction = 'CONTINUATION'
+            expected_move = asia_move * UK_MOVE_RATIO_AVG['CONTINUATION']
+
+        confidence = 'HIGH' if cont_prob >= 0.65 else 'MEDIUM'
+        return {
+            'prediction': prediction,
+            'direction': 'UP' if 'UP' in prediction or prediction == 'BOUNCE' else 'DOWN',
+            'confidence': confidence,
+            'expected_move_pct': round(expected_move, 2),
+            'probability': cont_prob,
+            'factors': factors,
+            'scenario': 'GAP_HELD',
+        }
+
+    # Scenario 3: Asia faded US → UK decides: continue fade or reverse back
+    if asia_dir != 'FLAT' and not gap_held:
+        # Double reversal: US did X, Asia did opposite, UK decides
+        double_rev = UK_AFTER_DOUBLE_REVERSAL
+        bounce_prob = double_rev.get('BOUNCE', 0.55)
+        factors.append(f'Asia faded US ({us_dir}→{asia_dir})')
+        factors.append(f'UK double-reversal: {bounce_prob:.0%} bounce (continues Asia fade)')
+
+        if bounce_prob >= 0.55:
+            prediction = 'CONTINUE_FADE'
+            expected_move = asia_move * UK_MOVE_RATIO_AVG['CONTINUATION']
+        else:
+            prediction = 'REVERSE_TO_US'
+            expected_move = -asia_move * UK_MOVE_RATIO_AVG['FADE']
+
+        confidence = 'MEDIUM'
+        return {
+            'prediction': prediction,
+            'direction': 'UP' if expected_move > 0 else 'DOWN',
+            'confidence': confidence,
+            'expected_move_pct': round(expected_move, 2),
+            'probability': bounce_prob,
+            'factors': factors,
+            'scenario': 'DOUBLE_REVERSAL',
+        }
+
+    # Scenario 4: Flat — no edge
+    return {
+        'prediction': 'FLAT',
+        'direction': 'NEUTRAL',
+        'confidence': 'LOW',
+        'expected_move_pct': 0.0,
+        'probability': 0.50,
+        'factors': ['Asia flat — no directional edge for UK'],
+        'scenario': 'FLAT',
+    }
+
+
 # ═══════════════════════════════════════════════════════════════
 # MAIN SCORING FUNCTION
 # ═══════════════════════════════════════════════════════════════
@@ -690,10 +1014,22 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
     # Compute Asia session (if available)
     asia_data = compute_asia_session(df_15m, release_date) if is_post_release else None
 
+    # Compute UK session (if available — day after release, after Asia)
+    uk_data = None
+    if is_post_release:
+        uk_data = compute_uk_session(df_15m, release_date)
+
     # Build result
     us_move = us_data['us_move']
     us_dir = 'DUMP' if us_move < -0.5 else 'RALLY' if us_move > 0.5 else 'FLAT'
     us_magnitude = 'BIG' if abs(us_move) > 3.0 else 'MEDIUM' if abs(us_move) > 1.5 else 'SMALL'
+
+    # UK prediction (available even before UK session starts, if Asia is done)
+    uk_prediction = None
+    if is_release_day and us_dir != 'FLAT':
+        uk_prediction = _predict_uk_session(us_dir, None, regime, release_type)
+    elif is_post_release and asia_data is not None and uk_data is None:
+        uk_prediction = _predict_uk_session(us_dir, asia_data, regime, release_type)
 
     # Spike accuracy for this type+year
     year = current_time.year if is_release_day else int(release_date[:4])
@@ -724,6 +1060,8 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
         'us_data': us_data,
         'spike_data': spike_data,
         'asia_data': asia_data,
+        'uk_data': uk_data,
+        'uk_prediction': uk_prediction,
         'us_direction': us_dir,
         'us_magnitude': us_magnitude,
     }
@@ -790,10 +1128,55 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             'reversal_factors': rev_factors,
         }
 
-        # Score: pattern-aware with historical context
+        # ── UK session analysis (if available) ──
+        uk_analysis = None
+        if uk_data is not None:
+            uk_dir = uk_data.get('uk_direction', 'FLAT')
+            uk_move = uk_data.get('uk_move_vs_asia', 0)
+            uk_continued = uk_data.get('uk_continued_asia', False)
+            uk_faded = uk_data.get('uk_faded_asia', False)
+            uk_swept = uk_data.get('is_morning_sweep', False)
+            uk_taker = uk_data.get('uk_taker', 0.5)
+            vol_ratio = uk_data.get('uk_vol_ratio_vs_asia', 1.0)
+
+            # UK confirmed or denied Asia's move
+            if uk_continued:
+                uk_verdict = 'CONFIRMED'
+                uk_confidence_boost = 0.05
+            elif uk_faded:
+                uk_verdict = 'FADED'
+                uk_confidence_boost = -0.05
+            elif uk_swept:
+                uk_verdict = 'SWEPT_AND_REVERSED'
+                uk_confidence_boost = -0.08
+            else:
+                uk_verdict = 'NEUTRAL'
+                uk_confidence_boost = 0.0
+
+            # UK volume confirms conviction?
+            vol_confirm = vol_ratio >= 1.2  # UK traded heavier than Asia
+
+            uk_analysis = {
+                'uk_move_vs_asia': uk_move,
+                'uk_move_vs_us': uk_data.get('uk_move_vs_us', 0),
+                'uk_direction': uk_dir,
+                'uk_verdict': uk_verdict,
+                'uk_taker': uk_taker,
+                'uk_vol_ratio': vol_ratio,
+                'vol_confirm': vol_confirm,
+                'uk_swept_asia': uk_data.get('uk_swept_asia_high', False) or uk_data.get('uk_swept_asia_low', False),
+                'uk_confidence_boost': uk_confidence_boost,
+            }
+            details['uk_analysis'] = uk_analysis
+
+        # Score: pattern-aware with historical context + UK confirmation
+        score_adjust = 0.0
+        if uk_analysis:
+            score_adjust = uk_analysis.get('uk_confidence_boost', 0)
+
         if is_crash:
             # Genuine crash — continuation likely, not a buying opportunity
-            score = max(0.20, 0.35 - 0.10 * type_strength)
+            score = max(0.20, 0.35 - 0.10 * type_strength + score_adjust)
             status = 'PASS'
         elif is_sweep_reversal:
             # Sweep-and-reverse: the strength of the reversal signal depends on
@@ -801,27 +1184,33 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             # have higher reversal probability (from 8-year study).
             if rev_prob >= 0.70:
                 # High-probability reversal — strong contrarian signal
-                score = max(0.25, 0.40 - 0.15 * type_strength)
+                score = max(0.25, 0.40 - 0.15 * type_strength + score_adjust)
             elif rev_prob >= 0.50:
                 # Moderate reversal — reduce confidence in continuation
-                score = max(0.30, 0.45 - 0.10 * type_strength)
+                score = max(0.30, 0.45 - 0.10 * type_strength + score_adjust)
             else:
                 # Low reversal probability — continuation more likely
-                score = max(0.35, 0.50 - 0.05 * type_strength)
+                score = max(0.35, 0.50 - 0.05 * type_strength + score_adjust)
             status = 'PASS'
         elif gap_held:
-            score = min(0.80, 0.65 + 0.10 * type_strength)
+            score = min(0.80, 0.65 + 0.10 * type_strength + score_adjust)
             status = 'PASS'
         else:
-            score = max(0.35, 0.45 - 0.05 * type_strength)
+            score = max(0.35, 0.45 - 0.05 * type_strength + score_adjust)
             status = 'PASS'
 
-        details['score_reason'] = (
+        # Build score reason with UK context
+        reason_parts = [
             f'{release_type} {release_date}: {pattern.lower()} '
             f'({gap_dir}→{asia_dir}), US was {us_dir} {us_move:+.2f}%'
-            + (f', sweep {sweep_depth:.1f}% reversed {recovery_pct:.0f}%' if is_sweep_reversal else '')
-            + (f', rev_prob={rev_prob:.0%}' if dump_size != 'NOT_DUMP' else '')
-        )
+        ]
+        if is_sweep_reversal:
+            reason_parts.append(f'sweep {sweep_depth:.1f}% reversed {recovery_pct:.0f}%')
+        if dump_size != 'NOT_DUMP':
+            reason_parts.append(f'rev_prob={rev_prob:.0%}')
+        if uk_analysis:
+            reason_parts.append(f'UK {uk_analysis["uk_verdict"].lower()} ({uk_dir} {uk_move:+.2f}%)')
+        details['score_reason'] = ', '.join(reason_parts)
 
     # ── Release day: predict Asia ──
     elif is_release_day:
@@ -946,6 +1335,9 @@ def format_m23(details):
     asia_data = details.get('asia_data', {})
     asia_pred = details.get('asia_prediction', {})
     asia_analysis = details.get('asia_analysis', {})
+    uk_data = details.get('uk_data', {})
+    uk_pred = details.get('uk_prediction', {})
+    uk_analysis = details.get('uk_analysis', {})
     spike_acc = details.get('spike_accuracy', 0.70)
     type_strength = details.get('type_strength', 1.0)
 
@@ -1046,5 +1438,61 @@ def format_m23(details):
             lines.append(f"    ↩️ Asia FADED US (mean-reversion)")
         else:
             lines.append(f"    ✅ Asia CONTINUED US (momentum)")
+
+    # ── UK Session (London) ──
+    # Show UK prediction first (if Asia is done but London hasn't closed)
+    if uk_pred and not uk_data:
+        pred = uk_pred.get('prediction', '?')
+        conf = uk_pred.get('confidence', '?')
+        scenario = uk_pred.get('scenario', '?')
+        expected = uk_pred.get('expected_move_pct', 0)
+        prob = uk_pred.get('probability', 0)
+        factors = uk_pred.get('factors', [])
+
+        conf_icon = {'HIGH': '🟢', 'MEDIUM': '🟡', 'LOW': '🔴'}.get(conf, '⚪')
+        lines.append(f"\n    🇬🇧 UK Prediction: {conf_icon} {pred} (conf: {conf})")
+        lines.append(f"    Scenario: {scenario}  Expected: {expected:+.2f}%  Prob: {prob:.0%}")
+        for f in factors:
+            lines.append(f"      • {f}")
+
+    # Show UK actual data (after London session)
+    if uk_data:
+        uk_move = uk_data.get('uk_move_vs_asia', 0)
+        uk_dir = uk_data.get('uk_direction', 'FLAT')
+        uk_icon = '🟢' if uk_move > 0.3 else '🔴' if uk_move < -0.3 else '⚪'
+        taker = uk_data.get('uk_taker', 0.5)
+        taker_label = 'buyers' if taker > 0.52 else 'sellers' if taker < 0.48 else 'neutral'
+        vol_ratio = uk_data.get('uk_vol_ratio_vs_asia', 1.0)
+
+        lines.append(f"\n    🇬🇧 UK Session: {uk_icon} {uk_move:+.2f}% vs Asia  "
+                     f"(vs US: {uk_data.get('uk_move_vs_us', 0):+.2f}%)")
+        lines.append(f"    UK Range: {uk_data.get('uk_range', 0):.2f}%  "
+                     f"Taker: {taker:.3f} ({taker_label})  "
+                     f"Vol vs Asia: {vol_ratio:.1f}x")
+
+        # UK behavior relative to Asia
+        if uk_data.get('uk_continued_asia'):
+            lines.append(f"    ✅ London CONTINUED Asia direction (momentum confirmation)")
+        elif uk_data.get('uk_faded_asia'):
+            lines.append(f"    ↩️ London FADED Asia (mean-reversion)")
+        elif uk_data.get('is_morning_sweep'):
+            sweep_rec = uk_data.get('sweep_recovery_pct', 0)
+            lines.append(f"    ⚡ London SWEPT Asia high/low then reversed ({sweep_rec:.0f}% recovery)")
+
+        # UK sweep levels
+        if uk_data.get('uk_swept_asia_high'):
+            lines.append(f"    ⚠️ Swept Asia high ${uk_data.get('uk_high', 0):.2f} — potential distribution")
+        if uk_data.get('uk_swept_asia_low'):
+            lines.append(f"    ⚠️ Swept Asia low ${uk_data.get('uk_low', 0):.2f} — potential accumulation")
+
+    # Show UK analysis (incorporated into scoring)
+    if uk_analysis:
+        verdict = uk_analysis.get('uk_verdict', '?')
+        boost = uk_analysis.get('uk_confidence_boost', 0)
+        vol_conf = uk_analysis.get('vol_confirm', False)
+        verdict_icons = {'CONFIRMED': '✅', 'FADED': '↩️', 'SWEPT_AND_REVERSED': '⚡', 'NEUTRAL': '⚪'}
+        v_icon = verdict_icons.get(verdict, '⚪')
+        vol_tag = '  📊 vol confirms' if vol_conf else ''
+        lines.append(f"    UK Verdict: {v_icon} {verdict}  (score adj: {boost:+.03f}){vol_tag}")
 
     return '\n'.join(lines)
