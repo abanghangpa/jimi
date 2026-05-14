@@ -140,6 +140,12 @@ def engine_score(tf, df_base, df_1h, df_2h, df_4h, df_1d, config=None):
     m2_status, m2_score = score_m2(df_1h, df_2h, df_4h, df_1d, idx_1h, idx_2h, idx_4h, idx_1d)
     m3_status, m3_score, _ = score_m3(df_base, idx, direction, cfg)
     m4_status, m4_score, m4_div = score_m4(df_base, df_2h, idx, idx_2h, direction, cfg)
+    # v7.2: Extract and normalize divergence string
+    m4_div_str = 'NONE'
+    if isinstance(m4_div, dict):
+        m4_div_str = m4_div.get('layer_a_div', 'NONE')
+    if m4_div_str.endswith('_BASE'):
+        m4_div_str = m4_div_str.replace('_BASE', '')
     m5_status, m5_score, m5_details = score_m5(df_base, idx, direction, cfg)
 
     m8_score = 0.5; m8_status = 'SKIP'
@@ -184,7 +190,7 @@ def engine_score(tf, df_base, df_1h, df_2h, df_4h, df_1d, config=None):
     # Veto
     veto_penalty = 0.0
     if cfg.get('VETO_ENABLED', False):
-        m4_disagree = (direction == 'LONG' and m4_div == 'BEARISH') or (direction == 'SHORT' and m4_div == 'BULLISH')
+        m4_disagree = (direction == 'LONG' and m4_div_str == 'BEARISH') or (direction == 'SHORT' and m4_div_str == 'BULLISH')
         m5_disagree = (m5_status == 'FAIL')
         dir_veto = m4_disagree and m5_disagree
         veto = evaluate_vetoes(cfg, vol_regime=vol_regime, dir_veto=dir_veto,

@@ -121,6 +121,9 @@ def scan_bar(df_15m, df_1h, df_2h, df_4h, df_1d, idx, cfg):
     m4_div_str = 'NONE'
     if isinstance(m4_div, dict):
         m4_div_str = m4_div.get('layer_a_div', 'NONE')
+    # v7.2: Normalize _BASE variants
+    if m4_div_str.endswith('_BASE'):
+        m4_div_str = m4_div_str.replace('_BASE', '')
     m5_status, m5_score, m5_details = score_m5(df_15m, idx, direction, cfg,
         n_bins=cfg['M5_VP_BINS'], lookback=cfg['M5_VP_LOOKBACK'])
     m9_status, m9_score, _ = score_vol_regime(vol_regime, m9_raw, direction, trend_dir)

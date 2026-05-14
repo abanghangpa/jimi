@@ -28,6 +28,10 @@ def check_coherence(direction, m4_div, m5_details, m13_bias, m9_regime,
     conflicts = []
     penalty = 0.0
 
+    # v7.2: Normalize _BASE variants (BULLISH_BASE → BULLISH, etc.)
+    if isinstance(m4_div, str) and m4_div.endswith('_BASE'):
+        m4_div = m4_div.replace('_BASE', '')
+
     # M4 divergence vs direction
     if m4_div == 'BEARISH' and direction == 'LONG':
         conflicts.append('M4 bearish divergence on LONG')

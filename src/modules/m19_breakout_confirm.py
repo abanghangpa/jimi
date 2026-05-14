@@ -161,6 +161,9 @@ def _check_cvd_flip(result, df_15m, direction, cfg):
     m4_div_str = 'NONE'
     if isinstance(m4_div, dict):
         m4_div_str = m4_div.get('layer_a_div', 'NONE')
+    # v7.2: Normalize _BASE variants
+    if m4_div_str.endswith('_BASE'):
+        m4_div_str = m4_div_str.replace('_BASE', '')
 
     m4b_div = m4b.get('divergence', 'NONE')
 

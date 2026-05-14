@@ -454,7 +454,7 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
 
     df_15m['cvd_15m'] = calc_cvd_15m(df_15m)
     df_15m['cvd_divergence_15m'] = detect_cvd_divergence_15m(df_15m, cfg['CVD_LOOKBACK'], cfg['CVD_DIVERGENCE_WINDOW'])
-    print(f"  CVD divergences (15m): {(df_15m['cvd_divergence_15m']=='BULLISH').sum()} bullish, {(df_15m['cvd_divergence_15m']=='BEARISH').sum()} bearish")
+    print(f"  CVD divergences (15m): {(df_15m['cvd_divergence_15m']=='BULLISH').sum()} bullish, {(df_15m['cvd_divergence_15m']=='BEARISH').sum()} bearish, {(df_15m['cvd_divergence_15m']=='BULLISH_BASE').sum()} bullish_base, {(df_15m['cvd_divergence_15m']=='BEARISH_BASE').sum()} bearish_base")
 
     # M4b: Intrabar CVD (LucF-style)
     # Try loading pre-computed 1m delta file first (built by build_intrabar_delta.py).
@@ -1418,6 +1418,9 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         # Extract M4 divergence string early — needed by both veto and coherence
         # Include M4b intrabar divergence when M4 has no divergence (aligned with scanner)
         m4_div_str_veto = m4_div.get('layer_a_div', 'NONE') if isinstance(m4_div, dict) else ('NONE' if m4_div is None else str(m4_div))
+        # v7.2: Normalize _BASE variants (BULLISH_BASE → BULLISH, etc.)
+        if m4_div_str_veto.endswith('_BASE'):
+            m4_div_str_veto = m4_div_str_veto.replace('_BASE', '')
         if m4_div_str_veto == 'NONE' and m4b_divergence != 'NONE':
             m4_div_str_veto = m4b_divergence
 

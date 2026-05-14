@@ -1242,6 +1242,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
             m4_div_str = m4_div.get('layer_a_div', 'NONE')
         elif isinstance(m4_div, str):
             m4_div_str = m4_div
+        # v7.2: Normalize _BASE variants (BULLISH_BASE → BULLISH, etc.)
+        if m4_div_str.endswith('_BASE'):
+            m4_div_str = m4_div_str.replace('_BASE', '')
         # Also consider intrabar divergence
         if m4_div_str == 'NONE' and m4b_divergence != 'NONE':
             m4_div_str = m4b_divergence
@@ -1385,6 +1388,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     m4_div_str = 'NONE'
     if isinstance(m4_div, dict):
         m4_div_str = m4_div.get('layer_a_div', 'NONE')
+    # v7.2: Normalize _BASE variants
+    if m4_div_str.endswith('_BASE'):
+        m4_div_str = m4_div_str.replace('_BASE', '')
     if m4_div_str == 'NONE' and m4b_divergence != 'NONE':
         m4_div_str = m4b_divergence
     if (direction == 'LONG' and m4_div_str == 'BEARISH') or \
