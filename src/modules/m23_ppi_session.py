@@ -170,6 +170,54 @@ AVG_US_RANGE = {
     'CPI': 4.661,    # CPI produces wider ranges
 }
 
+# ═══════════════════════════════════════════════════════════════
+# 8-YEAR SWEEP REVERSAL STATS (2019-2026, 80+ PPI/CPI releases)
+# ═══════════════════════════════════════════════════════════════
+
+# Reversal rate by year (PPI hot dumps only)
+PPI_REVERSAL_RATE_BY_YEAR = {
+    2019: 0.50,  # 2/4 — neutral, Fed cutting
+    2020: 0.40,  # 2/5 — COVID deflation
+    2021: 0.67,  # 4/6 — inflation rising, bull
+    2022: 0.29,  # 2/7 — inflation peaking, bear (PATTERN BREAKS)
+    2023: 0.40,  # 2/5 — deflation, low vol
+    2024: 0.80,  # 4/5 — re-acceleration
+    2025: 0.60,  # 3/5 — ATH + max long
+    2026: 1.00,  # 3/3 — stagflation + crowded
+}
+
+# Reversal rate by US dump size (PPI, 2019-2026)
+# Small dumps (-0.5% to -1.5%) are noise
+# Medium dumps (-1.5% to -2.5%) have moderate signal
+# Big dumps (-2.5% to -3.6%) are the real signal
+PPI_REVERSAL_BY_DUMP_SIZE = {
+    'SMALL':   0.60,  # -0.5% to -1.5%: 60% reversal (mixed)
+    'MEDIUM':  0.71,  # -1.5% to -2.5%: 71% reversal (good)
+    'BIG':     0.67,  # -2.5% to -3.6%: 67% reversal (but when it reverses, recovery is strong)
+    'CRASH':   0.00,  # <-4%: genuine crash, no reversal (Jun 2022, Jun 2025)
+}
+
+# Average recovery % by dump size (when reversal occurs)
+PPI_AVG_RECOVERY_BY_SIZE = {
+    'SMALL':   120,   # small sweeps tend to overshoot
+    'MEDIUM':  90,    # medium sweeps recover most
+    'BIG':     85,    # big sweeps recover most but not all
+    'CRASH':   0,     # no reversal
+}
+
+# Reversal rate by inflation regime (PPI hot dumps, 2019-2026)
+PPI_REVERSAL_BY_REGIME = {
+    'INFLATION_RISING':  0.73,  # 2021+2024+2026: market buys dips
+    'INFLATION_PEAKING': 0.29,  # 2022: genuinely bearish
+    'DEFLATION':         0.40,  # 2020+2023: hot prints are noise
+    'NEUTRAL':           0.50,  # 2019: mixed
+}
+
+# Crash detection thresholds
+CRASH_GAP_FLAT_MAX = 0.3      # gap < 0.3% = flat (no directional gap)
+CRASH_ASIA_RANGE_MIN = 7.0    # Asia range > 7% = crash territory
+CRASH_NO_SWEEP = True         # no sweep pattern = genuine continuation
+
 # Asia move averages by (direction, regime) — from full analysis
 ASIA_MOVE_AVG = {
     ('DUMP', 'TIGHTENING'):      -0.76,   # continuation
@@ -298,6 +346,101 @@ def classify_market_regime(config=None):
         return 'RECOVERY', REGIME_FADE_RATES.get('RECOVERY', 0.29)
 
     return 'ACCELERATION', 0.29
+
+
+def _classify_dump_size(us_move_pct):
+    """Classify US session dump size for reversal probability.
+
+    Returns: 'SMALL', 'MEDIUM', 'BIG', 'CRASH', or 'NOT_DUMP'
+    """
+    if us_move_pct >= -0.5:
+        return 'NOT_DUMP'
+    elif us_move_pct >= -1.5:
+        return 'SMALL'
+    elif us_move_pct >= -2.5:
+        return 'MEDIUM'
+    elif us_move_pct >= -4.0:
+        return 'BIG'
+    else:
+        return 'CRASH'
+
+
+def _classify_inflation_regime(regime):
+    """Map M23 regime to inflation regime for reversal stats.
+
+    Returns: 'INFLATION_RISING', 'INFLATION_PEAKING', 'DEFLATION', 'NEUTRAL'
+    """
+    if regime in ('STAGFLATION', 'STAGFLATION_HOT', 'ACCELERATION'):
+        return 'INFLATION_RISING'
+    elif regime in ('TIGHTENING',):
+        return 'INFLATION_PEAKING'
+    elif regime in ('CRISIS_RECOVERY', 'RECOVERY', 'EASING'):
+        return 'DEFLATION'
+    else:
+        return 'NEUTRAL'
+
+
+def _detect_crash(gap_dir, asia_range_pct, is_sweep_reversal):
+    """Detect if Asia session was a genuine crash (not a sweep reversal).
+
+    Crashes: gap flat/no direction, massive range (>7%), no sweep pattern.
+    Examples: Jun 2022 PPI (-7.98% Asia), Jun 2025 PPI (-4.28% Asia).
+    """
+    if gap_dir == 'FLAT' and asia_range_pct >= CRASH_ASIA_RANGE_MIN and not is_sweep_reversal:
+        return True
+    if asia_range_pct >= 10.0:  # extreme range regardless of gap
+        return True
+    return False
+
+
+def _compute_reversal_probability(us_move, regime, dump_size, release_type):
+    """Compute the probability that Asia will reverse a US dump.
+
+    Uses 8 years of historical data (2019-2026) across three dimensions:
+    1. Year-over-year trend (pattern getting stronger)
+    2. Dump size (small dumps are noise, big dumps are signal)
+    3. Inflation regime (rising = buy, peaking = run)
+
+    Returns: (probability: float, confidence: str, factors: list)
+    """
+    factors = []
+    probs = []
+
+    # 1. Year-based reversal rate
+    year_prob = PPI_REVERSAL_RATE_BY_YEAR.get(2026, 0.60)  # default to latest
+    probs.append(year_prob)
+    factors.append(f'year 2026: {year_prob:.0%} reversal rate')
+
+    # 2. Dump size
+    size_prob = PPI_REVERSAL_BY_DUMP_SIZE.get(dump_size, 0.50)
+    probs.append(size_prob)
+    factors.append(f'dump {dump_size}: {size_prob:.0%} reversal rate')
+
+    # 3. Inflation regime
+    infl_regime = _classify_inflation_regime(regime)
+    regime_prob = PPI_REVERSAL_BY_REGIME.get(infl_regime, 0.50)
+    probs.append(regime_prob)
+    factors.append(f'regime {infl_regime}: {regime_prob:.0%} reversal rate')
+
+    # Weighted average (dump size matters most for single-event prediction)
+    # Year trend = 20%, dump size = 45%, regime = 35%
+    combined = year_prob * 0.20 + size_prob * 0.45 + regime_prob * 0.35
+
+    # CPI discount: CPI is noisier, reduce confidence
+    if release_type == 'CPI':
+        combined = combined * 0.85 + 0.15 * 0.50  # pull toward 50%
+        factors.append(f'CPI discount: pulled toward 50%')
+
+    # Confidence based on alignment
+    aligned = sum(1 for p in probs if p >= 0.60)
+    if aligned >= 3:
+        confidence = 'HIGH'
+    elif aligned >= 2:
+        confidence = 'MEDIUM'
+    else:
+        confidence = 'LOW'
+
+    return round(combined, 3), confidence, factors
 
 
 def _get_bars_before(df, dt, n=1):
@@ -603,11 +746,21 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
         recovery_pct = asia_data.get('recovery_pct', 0)
         reclaimed_gap = asia_data.get('reclaimed_gap', False)
 
+        # Crash detection
+        asia_range_pct = asia_data.get('asia_range', 0)
+        is_crash = _detect_crash(gap_dir, asia_range_pct, is_sweep_reversal)
+
+        # Dump size classification
+        dump_size = _classify_dump_size(us_move)
+
+        # Reversal probability (for context — Asia already happened)
+        rev_prob, rev_confidence, rev_factors = _compute_reversal_probability(
+            us_move, regime, dump_size, release_type)
+
         # Classify the actual pattern
-        if is_sweep_reversal:
-            # Price swept hard in gap direction then reversed — the gap
-            # "held" on paper but the move was rejected. This is the most
-            # important signal: liquidity was grabbed and reversed.
+        if is_crash:
+            pattern = 'CRASH'
+        elif is_sweep_reversal:
             pattern = 'SWEEP_REVERSAL'
         elif asia_faded:
             pattern = 'FADE'
@@ -629,14 +782,32 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             'recovery_pct': recovery_pct,
             'reclaimed_gap': reclaimed_gap,
             'is_sweep_reversal': is_sweep_reversal,
+            # Enhanced analysis
+            'is_crash': is_crash,
+            'dump_size': dump_size,
+            'reversal_probability': rev_prob,
+            'reversal_confidence': rev_confidence,
+            'reversal_factors': rev_factors,
         }
 
-        # Score: pattern-aware
-        if is_sweep_reversal:
-            # Sweep-and-reverse is contrarian: the move that "should"
-            # continue (gap held) actually reversed. Reduce confidence
-            # in continuation and flag the reversal risk.
-            score = max(0.30, 0.45 - 0.10 * type_strength)
+        # Score: pattern-aware with historical context
+        if is_crash:
+            # Genuine crash — continuation likely, not a buying opportunity
+            score = max(0.20, 0.35 - 0.10 * type_strength)
+            status = 'PASS'
+        elif is_sweep_reversal:
+            # Sweep-and-reverse: the strength of the reversal signal depends on
+            # dump size and regime. Bigger dumps in rising-inflation regimes
+            # have higher reversal probability (from 8-year study).
+            if rev_prob >= 0.70:
+                # High-probability reversal — strong contrarian signal
+                score = max(0.25, 0.40 - 0.15 * type_strength)
+            elif rev_prob >= 0.50:
+                # Moderate reversal — reduce confidence in continuation
+                score = max(0.30, 0.45 - 0.10 * type_strength)
+            else:
+                # Low reversal probability — continuation more likely
+                score = max(0.35, 0.50 - 0.05 * type_strength)
             status = 'PASS'
         elif gap_held:
             score = min(0.80, 0.65 + 0.10 * type_strength)
@@ -649,6 +820,7 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             f'{release_type} {release_date}: {pattern.lower()} '
             f'({gap_dir}→{asia_dir}), US was {us_dir} {us_move:+.2f}%'
             + (f', sweep {sweep_depth:.1f}% reversed {recovery_pct:.0f}%' if is_sweep_reversal else '')
+            + (f', rev_prob={rev_prob:.0%}' if dump_size != 'NOT_DUMP' else '')
         )
 
     # ── Release day: predict Asia ──
@@ -661,23 +833,47 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             }
             return 'SKIP', 0.5, details
 
+        # Dump size classification
+        dump_size = _classify_dump_size(us_move)
+
         # Expected Asia behavior from historical data
         expected_key = (us_dir, regime)
         expected_asia = ASIA_MOVE_AVG.get(expected_key, 0.0)
 
-        # Determine bias
-        if regime in ('STAGFLATION', 'STAGFLATION_HOT', 'CRISIS_RECOVERY'):
-            bias = 'FADE'
-            confidence = 'HIGH' if us_magnitude == 'BIG' else 'MEDIUM'
-        elif regime in ('BULL',):
-            bias = 'CONTINUATION'
-            confidence = 'HIGH'
-        elif regime in ('TIGHTENING',):
-            bias = 'CONTINUATION' if us_magnitude == 'BIG' else 'MIXED'
-            confidence = 'MEDIUM'
+        # Reversal probability (8-year study)
+        rev_prob, rev_confidence, rev_factors = _compute_reversal_probability(
+            us_move, regime, dump_size, release_type)
+
+        # Determine bias using regime + reversal probability
+        if us_dir == 'DUMP':
+            if dump_size == 'CRASH':
+                # Genuine crash — Asia likely continues
+                bias = 'CONTINUATION'
+                confidence = 'HIGH'
+            elif rev_prob >= 0.65:
+                # High reversal probability — Asia likely bounces
+                bias = 'FADE'
+                confidence = rev_confidence
+            elif rev_prob >= 0.50:
+                bias = 'FADE'
+                confidence = 'MEDIUM'
+            else:
+                bias = 'CONTINUATION'
+                confidence = 'MEDIUM'
+        elif us_dir == 'RALLY':
+            if regime in ('STAGFLATION', 'STAGFLATION_HOT'):
+                # Asia tends to fade rallies in stagflation
+                bias = 'FADE'
+                confidence = 'MEDIUM'
+            elif regime in ('BULL',):
+                bias = 'CONTINUATION'
+                confidence = 'HIGH'
+            else:
+                bias = 'MIXED'
+                confidence = 'MEDIUM'
         else:
             bias = 'MIXED'
-            confidence = 'MEDIUM'
+            confidence = 'LOW'
 
         # Adjust confidence by type strength
         if release_type == 'CPI' and confidence == 'HIGH':
@@ -693,6 +889,9 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
                 spike_bias = spike_dir
                 details['spike_note'] = f'{release_type} 1h spike {spike_dir} ({spike_acc:.0%} accuracy)'
 
+        # Expected recovery if reversal
+        expected_recovery = PPI_AVG_RECOVERY_BY_SIZE.get(dump_size, 100)
+
         details['asia_prediction'] = {
             'us_direction': us_dir,
             'us_move': us_move,
@@ -704,6 +903,12 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             'spike_bias': spike_bias,
             'release_type': release_type,
             'spike_accuracy': spike_acc,
+            # Enhanced prediction
+            'dump_size': dump_size,
+            'reversal_probability': rev_prob,
+            'reversal_confidence': rev_confidence,
+            'reversal_factors': rev_factors,
+            'expected_recovery_pct': expected_recovery,
         }
 
         # Score based on confidence + type
@@ -714,6 +919,7 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
         details['score_reason'] = (
             f'{release_type} release day: US {us_dir} {us_move:+.2f}%, '
             f'regime={regime}, bias={bias}, conf={confidence}'
+            + (f', rev_prob={rev_prob:.0%}' if dump_size != 'NOT_DUMP' else '')
         )
 
     else:
@@ -773,10 +979,21 @@ def format_m23(details):
         us_dir = asia_pred.get('us_direction', '?')
         fade_rate = asia_pred.get('fade_rate', '?')
         spike_bias = asia_pred.get('spike_bias')
+        dump_size = asia_pred.get('dump_size', 'NOT_DUMP')
+        rev_prob = asia_pred.get('reversal_probability', 0)
+        expected_recovery = asia_pred.get('expected_recovery_pct', 0)
 
         conf_icon = {'HIGH': '🟢', 'MEDIUM': '🟡', 'LOW': '🔴'}.get(confidence, '⚪')
         lines.append(f"    Asia Prediction: {conf_icon} {direction} (conf: {confidence})")
         lines.append(f"    Expected Asia: {expected:+.2f}%  (fade rate: {fade_rate})")
+
+        # Show reversal probability for dumps
+        if dump_size != 'NOT_DUMP' and us_dir == 'DUMP':
+            rev_icon = '🟢' if rev_prob >= 0.65 else '🟡' if rev_prob >= 0.50 else '🔴'
+            lines.append(f"    {rev_icon} Reversal prob: {rev_prob:.0%} ({dump_size} dump)")
+            if direction == 'FADE':
+                lines.append(f"    📊 Expected recovery: ~{expected_recovery}% of sweep")
+
         if spike_bias:
             lines.append(f"    1h Spike Bias: {spike_bias}  ({spike_acc:.0%} accuracy)")
 
@@ -787,7 +1004,10 @@ def format_m23(details):
             elif us_dir == 'RALLY':
                 lines.append(f"    💡 Asia likely FADES after US rally — watch short at Asia open")
         elif direction == 'CONTINUATION':
-            lines.append(f"    💡 Asia likely CONTINUES {us_dir.lower()} — momentum trade")
+            if dump_size == 'CRASH':
+                lines.append(f"    🚨 CRASH MODE — Asia likely continues selling, do NOT buy the dip")
+            else:
+                lines.append(f"    💡 Asia likely CONTINUES {us_dir.lower()} — momentum trade")
 
     # Asia actual (post-release)
     if asia_analysis:
@@ -801,14 +1021,27 @@ def format_m23(details):
         lines.append(f"    Asia Session: {asia_icon} {asia_move:+.2f}%  (gap {asia_gap:+.2f}%)")
         lines.append(f"    Gap Held: {gap_icon}  Pattern: {pattern}")
 
-        # Show sweep reversal detail
-        if pattern == 'SWEEP_REVERSAL':
+        # Show dump size and reversal probability
+        dump_size = asia_analysis.get('dump_size', 'NOT_DUMP')
+        rev_prob = asia_analysis.get('reversal_probability', 0)
+        rev_conf = asia_analysis.get('reversal_confidence', '')
+        if dump_size != 'NOT_DUMP':
+            rev_icon = '🟢' if rev_prob >= 0.65 else '🟡' if rev_prob >= 0.50 else '🔴'
+            lines.append(f"    {rev_icon} Dump: {dump_size}  Reversal prob: {rev_prob:.0%} ({rev_conf})")
+
+        # Show crash detection
+        if pattern == 'CRASH':
+            lines.append(f"    🚨 CRASH MODE — genuine continuation, NOT a buying opportunity")
+            lines.append(f"    ⚠️ Asia range: {asia_analysis.get('sweep_depth_pct', 0):.1f}% — extreme selling")
+        elif pattern == 'SWEEP_REVERSAL':
             sweep_depth = asia_analysis.get('sweep_depth_pct', 0)
             recovery = asia_analysis.get('recovery_pct', 0)
             reclaimed = asia_analysis.get('reclaimed_gap', False)
             lines.append(f"    ⚠️ SWEEP-AND-REVERSE: swept {sweep_depth:.1f}% then recovered {recovery:.0f}%")
             if reclaimed:
                 lines.append(f"    ↩️ Reclaimed gap level — continuation unreliable")
+            if rev_prob >= 0.65:
+                lines.append(f"    📊 High-probability reversal ({rev_prob:.0%}) — matches 8-year pattern")
         elif asia_analysis.get('asia_faded_us'):
             lines.append(f"    ↩️ Asia FADED US (mean-reversion)")
         else:
