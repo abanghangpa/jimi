@@ -22,7 +22,15 @@ _DYNAMIC_KEYS = {'_base_timeframe', 'M22_ENABLED', 'M22_WEIGHT', 'M22_VETO_THRES
                   'M22_FAIL_THRESHOLD', 'M22_LS_CROWDED_THRESHOLD',
                   'M22_SIZE_CRITICAL', 'M22_SIZE_HIGH', 'M22_SIZE_MEDIUM',
                   'M22_CPI_HOT_THRESHOLD', 'M22_PPI_YOY', 'M22_PPI_PREV_YOY',
-                  'M22_PPI_MOM', 'M22_CPI_YOY', 'M22_FED_STANCE', 'M22_PPI_EXPECTED'}
+                  'M22_PPI_PREV_PREV_YOY', 'M22_PPI_MOM', 'M22_CPI_YOY',
+                  'M22_CPI_PREV_YOY', 'M22_CPI_EXPECTED', 'M22_PPI_EXPECTED',
+                  'M22_FED_STANCE', 'M22_FED_FUNDS_RATE',
+                  'M22_CLAIMS_CLASSIFICATION', 'M22_CLAIMS_TREND',
+                  'M22_UNEMPLOYMENT_RATE', 'M22_SAHM_TRIGGERED',
+                  'TAKER_ENABLED', 'TAKER_WEIGHT', 'TAKER_DEVIATION_THRESHOLD',
+                  'TAKER_MOMENTUM_BONUS', 'TAKER_12H_AGREE_BONUS',
+                  'TAKER_DIVERGENCE_PENALTY', 'MIN_RR_RATIO',
+                  'M23_CLAIMS_ENABLED', 'M23_CLAIMS_WEIGHT', 'M23_COMBO_ENABLED'}
 
 # Module → (enabled_key, weight_key, required_when_enabled)
 _MODULE_WEIGHT_PAIRS = [
