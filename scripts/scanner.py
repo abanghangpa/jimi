@@ -57,6 +57,7 @@ from src.modules.m23_ppi_session import (
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
     get_claims_trend, classify_macro_combo,
 )
+from src.modules.macro_lifecycle import evaluate_macro_lifecycle, format_lifecycle
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
@@ -933,6 +934,31 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
             }
     except Exception as e:
         result['m23'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # ── Macro Lifecycle (event cascade tracking) ──
+    try:
+        lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
+        if lifecycle_state:
+            result['macro_lifecycle'] = {
+                'phase': lifecycle_state.get('phase'),
+                'release_type': lifecycle_state.get('release_type'),
+                'release_date': lifecycle_state.get('release_date'),
+                'hours_since': lifecycle_state.get('hours_since_release'),
+                'trade_action': lifecycle_state.get('trade_action'),
+                'size_multiplier': lifecycle_state.get('size_multiplier', 1.0),
+                'session_data': {
+                    'regime': lifecycle_state.get('session_data', {}).get('regime'),
+                    'us_direction': lifecycle_state.get('session_data', {}).get('us_direction'),
+                    'asia_pattern': lifecycle_state.get('session_data', {}).get('asia_pattern'),
+                },
+            }
+            # Apply lifecycle size multiplier if not in normal mode
+            _lc_action = lifecycle_state.get('trade_action', 'NORMAL')
+            _lc_size = lifecycle_state.get('size_multiplier', 1.0)
+            if _lc_action == 'REDUCE_SIZE' and _lc_size < 1.0:
+                result['_lifecycle_size_mult'] = _lc_size
+    except Exception:
+        pass
 
     # ── Phase 4: Score all modules ──
     # M1 (now an ICS contributor, not the gate)
@@ -2744,6 +2770,16 @@ def main():
         print_signal(result)
         print_summary(result)
         print_dual_strategy(result)
+
+        # ── Macro Lifecycle ──
+        _lc = result.get('macro_lifecycle')
+        if _lc and _lc.get('phase') not in ('NO_RELEASE', 'RESOLVED', None):
+            try:
+                _lc_state = evaluate_macro_lifecycle(df_base, config=scaled_config)
+                if _lc_state:
+                    print(format_lifecycle(_lc_state))
+            except Exception:
+                pass
 
         # ── Power of 3 Phase Detection ──
         p3 = detect_phase(result, config=scaled_config, df_15m=df_base)
