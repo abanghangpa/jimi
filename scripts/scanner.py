@@ -51,7 +51,7 @@ from src.modules.m16_exchange_activity import get_exchange_summary, fetch_all_ex
 from src.modules.taker_tracker import get_taker_summary, format_taker_summary
 from src.modules.cross_asset import score_cross_asset
 from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
-from src.modules.m22_inflation_regime import score_m22, format_m22
+from src.modules.m22_inflation_regime_v2 import score_m22, format_m22
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -883,8 +883,16 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
                 'severity': m22_details.get('severity', '?'),
                 'ppi_yoy': m22_details.get('ppi_yoy'),
                 'ppi_direction': m22_details.get('ppi_direction'),
+                'ppi_acceleration': m22_details.get('ppi_acceleration'),
+                'cpi_confirmation': m22_details.get('cpi_confirmation'),
+                'cpi_yoy': m22_details.get('cpi_yoy'),
                 'fed_stance': m22_details.get('fed_stance'),
+                'labor_context': m22_details.get('labor_context'),
+                'real_rate': m22_details.get('real_rate'),
+                'real_rate_label': m22_details.get('real_rate_label'),
+                'positioning': m22_details.get('positioning'),
                 'size_mult': m22_details.get('size_mult', 1.0),
+                'factors': m22_details.get('factors', []),
                 'details': m22_details,
             }
             # Apply size multiplier from inflation regime
@@ -2176,14 +2184,32 @@ def print_summary(result):
         m22_sc = m22.get('score', 0.5)
         m22_ppi = m22.get('ppi_yoy', 0)
         m22_dir = m22.get('ppi_direction', '?')
+        m22_accel = m22.get('ppi_acceleration', '?')
+        m22_cpi = m22.get('cpi_confirmation', '?')
+        m22_cpi_yoy = m22.get('cpi_yoy')
         m22_fed = m22.get('fed_stance', '?')
+        m22_labor = m22.get('labor_context', '?')
+        m22_real = m22.get('real_rate')
+        m22_real_label = m22.get('real_rate_label', '?')
+        m22_pos = m22.get('positioning', '?')
         m22_sm = m22.get('size_mult', 1.0)
         sev_icons = {'LOW': '🟢', 'MEDIUM': '🟡', 'HIGH': '🟠', 'CRITICAL': '🔴'}
         sev_icon = sev_icons.get(m22_sev, '⚪')
-        print(f"  {'M22 Inflation':<22} {sev_icon} {m22_regime:>16}  score={m22_sc:.3f}")
+        print(f"  {'M22 Inflation v2':<22} {sev_icon} {m22_regime:>16}  score={m22_sc:.3f}")
+        # PPI + acceleration + CPI
+        accel_icons = {'ACCELERATING': '📈', 'DECELERATING': '📉', 'STABLE': '➡️'}
+        a_icon = accel_icons.get(m22_accel, '—')
+        cpi_icons = {'COOL': '🟢', 'WARM': '⚪', 'HOT': '🔴'}
+        c_icon = cpi_icons.get(m22_cpi, '⚪')
+        cpi_str = f"CPI={m22_cpi_yoy:.1f}%{c_icon}" if m22_cpi_yoy else ""
+        print(f"  {'  PPI/CPI':<22} {m22_ppi:.1f}% {m22_dir} {a_icon}  {cpi_str}")
+        # Fed + Labor + Real rate
+        labor_icons = {'GOLDILOCKS': '🟢', 'NORMAL': '⚪', 'SOFTENING': '🟡', 'CRISIS': '🔴'}
+        l_icon = labor_icons.get(m22_labor, '⚪')
+        rr_str = f"rr={m22_real:+.1f}%" if m22_real is not None else ""
         _ls_m22 = result.get('derivatives', {}).get('ls_ratio', 0)
-        if _ls_m22:
-            print(f"  {'  PPI/Fed/Pos':<22} {m22_ppi:.1f}% {m22_dir} / {m22_fed} / L/S={_ls_m22:.2f}")
+        pos_str = f"L/S={_ls_m22:.2f}" if _ls_m22 else ""
+        print(f"  {'  Fed/Labor/Pos':<22} {m22_fed} / {l_icon}{m22_labor} / {m22_pos} {pos_str}  {rr_str}")
         if m22_sm < 1.0:
             print(f"  {'  ⚠️ Size Reduce':<22} {m22_sm:.2f}x")
 

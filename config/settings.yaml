@@ -574,10 +574,10 @@ STRUCTURE_TP_ENABLED: true
 STRUCTURE_TP_MIN_RANGE_PCT: 1.5   # Min range width to use structure TPs
 STRUCTURE_TP_MAX_RANGE_PCT: 6.0   # Max range width
 
-# ─── M22: INFLATION REGIME ───────────────────────────────────
-# Scores macro inflation environment based on PPI/CPI × Fed stance × positioning.
-# Derived from 8-year historical study (2018-2026) of PPI prints and crypto reactions.
-# Phase 1: manual config overrides (update monthly when data releases)
+# ─── M22: INFLATION REGIME v2 ────────────────────────────────
+# 5D macro regime: PPI_dir × CPI × Fed × Labor × Positioning
+# Plus: real rates, PPI acceleration, surprise factors.
+# v2: Labor is co-equal (in the matrix, not a modifier). CPI is co-equal.
 M22_ENABLED: true
 M22_WEIGHT: 0.12              # ICS weight — moderate, macro backdrop modifier
 M22_VETO_THRESHOLD: 0.20      # hard veto when score_raw < this (for LONG)
@@ -589,19 +589,20 @@ M22_SIZE_CRITICAL: 0.30       # CRITICAL severity → 30% size
 M22_SIZE_HIGH: 0.50           # HIGH severity → 50% size
 M22_SIZE_MEDIUM: 0.75         # MEDIUM severity → 75% size
 
-# CPI hot threshold (supplementary — extra penalty when CPI also hot)
-M22_CPI_HOT_THRESHOLD: 3.5
-
 # ── LIVE DATA (update monthly after BLS releases) ──
 # PPI: https://www.bls.gov/ppi/  (released mid-month)
 # CPI: https://www.bls.gov/cpi/  (released mid-month)
 # Fed: https://www.federalreserve.gov/  (8x/year, FOMC)
 M22_PPI_YOY: 4.9              # Apr 2026 PPI YoY (released May 13)
 M22_PPI_PREV_YOY: 3.5         # Mar 2026 PPI YoY (for direction calc)
+M22_PPI_PREV_PREV_YOY: 2.4    # Feb 2026 PPI YoY (for acceleration calc)
 M22_PPI_MOM: 0.5              # Apr 2026 PPI MoM
 M22_CPI_YOY: 3.8              # Apr 2026 CPI YoY (released May 12)
+M22_CPI_PREV_YOY: 3.5         # Mar 2026 CPI YoY (for CPI direction)
+M22_CPI_EXPECTED: 3.6         # CPI consensus expectation (for surprise calc)
 M22_FED_STANCE: "HOLDING"     # CUTTING | HOLDING | HIKING
-M22_PPI_EXPECTED: 4.0         # consensus expectation (for surprise calc)
+M22_FED_FUNDS_RATE: 4.50      # Current Fed funds rate (for real rate calc)
+M22_PPI_EXPECTED: 4.0         # PPI consensus expectation (for surprise calc)
 
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
