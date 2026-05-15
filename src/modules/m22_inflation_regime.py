@@ -22,6 +22,111 @@ Data sources:
 """
 
 from src.config import CONFIG
+from datetime import datetime
+
+
+# ═══════════════════════════════════════════════════════════════
+# TIME DECAY — macro data loses relevance between releases
+# ═══════════════════════════════════════════════════════════════
+# PPI/CPI are released mid-month. The regime assessment is most
+# impactful on release day and fades as the market digests.
+# Decay schedule (days since release → multiplier):
+#   0-3:   1.00  (full — fresh data, market still reacting)
+#   4-7:   0.85  (digesting)
+#   8-14:  0.60  (halfway to next release)
+#   15-21: 0.40  (stale)
+#   22+:   0.30  (floor — regime still matters, but heavily discounted)
+
+M22_PPI_RELEASE_DATES = {
+    '2026-01-14', '2026-02-13', '2026-03-13', '2026-04-14',
+    '2026-05-13', '2026-06-11', '2026-07-10', '2026-08-13',
+    '2026-09-11', '2026-10-14', '2026-11-13', '2026-12-10',
+    # 2025
+    '2025-01-14', '2025-02-13', '2025-03-13', '2025-04-10',
+    '2025-05-15', '2025-06-12', '2025-07-16', '2025-08-14',
+    '2025-09-11', '2025-10-15', '2025-11-13', '2025-12-11',
+}
+
+M22_CPI_RELEASE_DATES = {
+    '2026-01-14', '2026-02-11', '2026-03-11', '2026-04-10',
+    '2026-05-12', '2026-06-10', '2026-07-14', '2026-08-12',
+    '2026-09-10', '2026-10-13', '2026-11-10', '2026-12-09',
+    # 2025
+    '2025-01-15', '2025-02-12', '2025-03-12', '2025-04-10',
+    '2025-05-13', '2025-06-11', '2025-07-15', '2025-08-12',
+    '2025-09-10', '2025-10-14', '2025-11-12', '2025-12-10',
+}
+
+
+def _compute_release_decay(release_dates, today_str=None):
+    """Compute decay multiplier based on days since last release.
+
+    Returns:
+        (multiplier: float, days_since: int, last_release: str or None)
+    """
+    if today_str is None:
+        today_str = datetime.utcnow().strftime('%Y-%m-%d')
+
+    today = datetime.strptime(today_str, '%Y-%m-%d')
+
+    # Find the most recent release on or before today
+    past_releases = sorted(d for d in release_dates if d <= today_str)
+    if not past_releases:
+        return 1.0, 0, None  # no data, assume fresh
+
+    last_release = past_releases[-1]
+    last_dt = datetime.strptime(last_release, '%Y-%m-%d')
+    days_since = (today - last_dt).days
+
+    # Decay schedule
+    if days_since <= 3:
+        mult = 1.00
+    elif days_since <= 7:
+        mult = 0.85
+    elif days_since <= 14:
+        mult = 0.60
+    elif days_since <= 21:
+        mult = 0.40
+    else:
+        mult = 0.30
+
+    return mult, days_since, last_release
+
+
+def compute_m22_decay(config=None, today_str=None):
+    """Compute M22 time decay from PPI/CPI release schedule.
+
+    Uses the MORE RECENT of PPI and CPI to determine freshness.
+    The regime is based on the latest data point — whichever released last.
+
+    Returns:
+        dict with decay multiplier, days_since, last_release info
+    """
+    cfg = config or CONFIG
+
+    ppi_mult, ppi_days, ppi_date = _compute_release_decay(M22_PPI_RELEASE_DATES, today_str)
+    cpi_mult, cpi_days, cpi_date = _compute_release_decay(M22_CPI_RELEASE_DATES, today_str)
+
+    # Use the more recent (higher multiplier = more fresh)
+    if ppi_mult >= cpi_mult:
+        best_mult, best_days, best_date, best_type = ppi_mult, ppi_days, ppi_date, 'PPI'
+    else:
+        best_mult, best_days, best_date, best_type = cpi_mult, cpi_days, cpi_date, 'CPI'
+
+    # If both are stale (>14 days), extra penalty
+    both_stale = ppi_days > 14 and cpi_days > 14
+    if both_stale:
+        best_mult = min(best_mult, 0.25)
+
+    return {
+        'decay_mult': round(best_mult, 2),
+        'days_since': best_days,
+        'last_release': best_date,
+        'last_type': best_type,
+        'ppi_days': ppi_days,
+        'cpi_days': cpi_days,
+        'both_stale': both_stale,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -315,6 +420,15 @@ def score_m22_inflation(ppi_yoy, ppi_prev_yoy=None, ppi_mom=None,
         claims_adjust, claims_desc = claims_mods[ppi_dir]
         score_raw = max(0.05, min(0.95, score_raw + claims_adjust))
 
+    # ── Time decay: macro data loses relevance between releases ──
+    decay = compute_m22_decay(cfg)
+    decay_mult = decay['decay_mult']
+
+    # Apply decay to score_raw: pull it toward neutral (0.5) based on freshness
+    # At full freshness (1.0): score_raw unchanged
+    # At decay (0.3): score_raw pulled 70% toward neutral
+    score_raw = score_raw * decay_mult + 0.5 * (1.0 - decay_mult)
+
     # Direction adjustment: for SHORT trades, invert the score logic
     # A bad inflation regime for LONGs is good for SHORTs
     if direction == 'SHORT':
@@ -388,6 +502,13 @@ def score_m22_inflation(ppi_yoy, ppi_prev_yoy=None, ppi_mom=None,
         'claims_classification': claims_class,
         'claims_adjust': round(claims_adjust, 3),
         'claims_description': claims_desc,
+        # Time decay
+        'decay_mult': decay['decay_mult'],
+        'days_since_release': decay['days_since'],
+        'last_release_date': decay['last_release'],
+        'last_release_type': decay['last_type'],
+        'ppi_days_since': decay['ppi_days'],
+        'cpi_days_since': decay['cpi_days'],
     }
 
     return status, score, details
@@ -475,6 +596,14 @@ def format_m22(details):
     lines.append(f"    PPI YoY: {ppi:.1f}% ({ppi_dir})  |  CPI: {cpi:.1f}%{'  ⚠️ HOT' if cpi and cpi >= 3.5 else '' if cpi else ''}")
     lines.append(f"    Fed: {fed}  |  L/S: {ls:.2f} ({pos})  |  Score: {score:.3f}")
     lines.append(f"    Severity: {severity}  |  Size mult: {size_mult:.2f}x")
+    # Time decay
+    decay_mult = details.get('decay_mult', 1.0)
+    days_since = details.get('days_since_release', 0)
+    last_rel = details.get('last_release_date', '')
+    last_type = details.get('last_release_type', '')
+    if decay_mult < 1.0:
+        decay_icon = '🟢' if decay_mult >= 0.85 else '🟡' if decay_mult >= 0.60 else '🟠' if decay_mult >= 0.40 else '🔴'
+        lines.append(f"    {decay_icon} Decay: {decay_mult:.2f}x  ({days_since}d since {last_type} {last_rel})")
     # Claims context
     if claims_class:
         claims_icons = {

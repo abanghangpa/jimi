@@ -793,6 +793,85 @@ def is_claims_release_day(date_str=None):
     return False
 
 
+# ═══════════════════════════════════════════════════════════════
+# TIME DECAY — macro data loses relevance between releases
+# ═══════════════════════════════════════════════════════════════
+# PPI/CPI impact decays over the week following release.
+# Claims are weekly — decay over 7 days.
+#
+# PPI/CPI decay (days since release → multiplier):
+#   0-1:   1.00  (release day + next day — full impact)
+#   2-3:   0.70  (market digesting)
+#   4-7:   0.40  (fading)
+#   8-14:  0.20  (stale — next release approaching)
+#   15+:   0.10  (floor)
+#
+# Claims decay (days since Thursday release → multiplier):
+#   0-1:   1.00  (Thu-Fri)
+#   2-3:   0.60  (Sat-Sun)
+#   4-6:   0.30  (Mon-Wed)
+#   7+:    0.10  (stale, new claims Thursday)
+
+def _compute_m23_release_decay(release_date_str, today_str=None):
+    """Compute decay multiplier for PPI/CPI post-release scoring.
+
+    Args:
+        release_date_str: 'YYYY-MM-DD' of the release
+        today_str: 'YYYY-MM-DD' of today (default: now UTC)
+
+    Returns:
+        (multiplier: float, days_since: int)
+    """
+    if today_str is None:
+        today_str = datetime.utcnow().strftime('%Y-%m-%d')
+
+    release_dt = datetime.strptime(release_date_str, '%Y-%m-%d')
+    today_dt = datetime.strptime(today_str, '%Y-%m-%d')
+    days = (today_dt - release_dt).days
+
+    if days <= 1:
+        mult = 1.00
+    elif days <= 3:
+        mult = 0.70
+    elif days <= 7:
+        mult = 0.40
+    elif days <= 14:
+        mult = 0.20
+    else:
+        mult = 0.10
+
+    return mult, days
+
+
+def _compute_claims_decay(today_str=None):
+    """Compute decay multiplier based on days since last Thursday (claims release).
+
+    Returns:
+        (multiplier: float, days_since_thursday: int)
+    """
+    if today_str is None:
+        today_str = datetime.utcnow().strftime('%Y-%m-%d')
+
+    today = datetime.strptime(today_str, '%Y-%m-%d')
+    # Find last Thursday (weekday=3)
+    days_since_thu = (today.weekday() - 3) % 7
+    if days_since_thu == 0 and today.weekday() == 3:
+        days_since_thu = 0  # today is Thursday
+    elif days_since_thu == 0 and today.weekday() != 3:
+        days_since_thu = 7  # last Thursday was a week ago
+
+    if days_since_thu <= 1:
+        mult = 1.00
+    elif days_since_thu <= 3:
+        mult = 0.60
+    elif days_since_thu <= 6:
+        mult = 0.30
+    else:
+        mult = 0.10
+
+    return mult, days_since_thu
+
+
 def is_macro_release_day(date_str=None):
     """Check if today is any macro data release day (PPI, CPI, or Claims)."""
     if date_str is None:
@@ -1616,10 +1695,13 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
     # Check today and yesterday for both PPI and CPI
     # Priority: post-release (yesterday) first — it has actual data.
     # Then today's release day (prediction only).
+    # v2: Extended window — check up to 7 days back with time decay
     release_date = None
     release_type = None
     is_release_day = False
     is_post_release = False
+    release_decay_mult = 1.0
+    release_days_since = 0
 
     # First pass: check yesterday for post-release analysis (has actual data)
     yesterday_rtype = get_release_type(yesterday_str)
@@ -1633,6 +1715,7 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             release_type = yesterday_rtype
             is_release_day = False
             is_post_release = True
+            release_decay_mult, release_days_since = _compute_m23_release_decay(release_date, today_str)
 
     # Second pass: check today for prediction (if no yesterday data found)
     if release_date is None:
@@ -1642,6 +1725,29 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             release_type = today_rtype
             is_release_day = True
             is_post_release = False
+            release_decay_mult, release_days_since = _compute_m23_release_decay(release_date, today_str)
+
+    # Third pass: extended window — check up to 7 days back with decay
+    # Only triggers if no release today/yesterday, and decay > minimum threshold
+    if release_date is None:
+        for lookback_days in range(2, 8):
+            check_date = (current_time - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
+            check_rtype = get_release_type(check_date)
+            if check_rtype is not None:
+                decay_mult_check, _ = _compute_m23_release_decay(check_date, today_str)
+                if decay_mult_check > 0.10:
+                    # Verify data exists
+                    test_date = datetime.strptime(check_date, '%Y-%m-%d')
+                    test_dt = test_date.replace(hour=RELEASE_HOUR_UTC, minute=RELEASE_MINUTE_UTC)
+                    test_us = _get_bars_between(df_15m, test_dt, test_date.replace(hour=US_SESSION_END[0]))
+                    if len(test_us) >= 2:
+                        release_date = check_date
+                        release_type = check_rtype
+                        is_release_day = False
+                        is_post_release = True
+                        release_decay_mult = decay_mult_check
+                        release_days_since = lookback_days
+                        break
 
     # If yesterday was 'BOTH' (PPI+CPI same day), use combined stats
     # The type_strength modifier already handles BOTH = stronger signal
@@ -1653,14 +1759,17 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
 
         claims_ctx = get_claims_context_for_release(None, cfg)
         if claims_ctx and is_claims_release_day(today_str):
-            # Standalone jobless claims release day
+            # Standalone jobless claims release day — apply claims decay
             claims = claims_ctx.get('claims', {})
             combo = claims_ctx.get('combo', {})
             signal = combo.get('signal', 'HOLD')
             expected = combo.get('expected_eth_move', 0)
             conf = combo.get('confidence', 'LOW')
 
+            claims_decay_mult, claims_days = _compute_claims_decay(today_str)
             base_score = {'HIGH': 0.65, 'MEDIUM': 0.55, 'LOW': 0.50}.get(conf, 0.50)
+            # Apply claims decay: pull toward neutral
+            base_score = base_score * claims_decay_mult + 0.5 * (1.0 - claims_decay_mult)
             details = {
                 'regime': 'CLAIMS_RELEASE',
                 'release_type': 'CLAIMS',
@@ -1668,9 +1777,12 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
                 'claims_context': claims_ctx,
                 'claims': claims,
                 'combo': combo,
+                'decay_mult': claims_decay_mult,
+                'days_since_release': claims_days,
                 'score_reason': (
                     f'Jobless claims release: {claims.get("current", 0)}K ({claims.get("classification", "?")}), '
-                    f'trend={claims.get("trend", "?")}, signal={signal}, expected={expected:+.1f}%'
+                    f'trend={claims.get("trend", "?")}, signal={signal}, expected={expected:+.1f}%, '
+                    f'decay={claims_decay_mult:.2f}x ({claims_days}d)'
                 ),
             }
             return 'PASS', base_score, details
@@ -1763,6 +1875,9 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
         # Jobless claims context
         'claims_context': claims_ctx,
         'claims_today': claims_today,
+        # Time decay
+        'decay_mult': release_decay_mult,
+        'days_since_release': release_days_since,
     }
 
     # ── Post-release: Asia already happened ──
@@ -1892,6 +2007,10 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
         # the macro signal matters more. In low-sensitivity (2018, 2024), it's noise.
         score = base_pattern_score * regime_sensitivity + (1 - regime_sensitivity) * 0.50
         score = max(0.20, min(0.85, score + score_adjust))
+
+        # Apply time decay: PPI/CPI impact fades over days since release
+        score = score * release_decay_mult + 0.5 * (1.0 - release_decay_mult)
+        score = max(0.20, min(0.85, score))
         status = 'PASS'
 
         # Build score reason with UK context
@@ -1905,6 +2024,8 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             reason_parts.append(f'rev_prob={rev_prob:.0%}')
         if uk_analysis:
             reason_parts.append(f'UK {uk_analysis["uk_verdict"].lower()} ({uk_dir} {uk_move:+.2f}%)')
+        if release_decay_mult < 1.0:
+            reason_parts.append(f'decay={release_decay_mult:.2f}x ({release_days_since}d)')
         details['score_reason'] = ', '.join(reason_parts)
 
     # ── Release day: predict Asia ──
@@ -2002,6 +2123,8 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
         base_score = {'HIGH': 0.75, 'MEDIUM': 0.60, 'LOW': 0.50}.get(confidence, 0.50)
         # Apply regime sensitivity and type strength
         score = base_score * type_strength * regime_sensitivity + (1 - regime_sensitivity) * 0.50
+        # Apply time decay (should be 1.0 on release day, but included for consistency)
+        score = score * release_decay_mult + 0.5 * (1.0 - release_decay_mult)
         score = max(0.30, min(0.90, score))
         status = 'PASS'
 
@@ -2009,6 +2132,7 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             f'{release_type} release day: US {us_dir} {us_move:+.2f}%, '
             f'regime={regime} (sens={regime_sensitivity:.2f}), bias={bias}, conf={confidence}'
             + (f', rev_prob={rev_prob:.0%}' if dump_size != 'NOT_DUMP' else '')
+            + (f', decay={release_decay_mult:.2f}x' if release_decay_mult < 1.0 else '')
         )
 
     else:
@@ -2065,6 +2189,12 @@ def format_m23(details):
     lines.append(f"\n  {type_icon} M23 {release_type}{claims_tag} CASCADE: {release_date}")
     lines.append(f"    Regime: {regime}  fade={details.get('fade_rate', 0):.0%}  "
                  f"sensitivity={regime_sensitivity:.2f}  spike_acc={spike_acc:.0%}")
+    # Time decay
+    decay_mult = details.get('decay_mult', 1.0)
+    days_since = details.get('days_since_release', 0)
+    if decay_mult < 1.0:
+        decay_icon = '🟢' if decay_mult >= 0.70 else '🟡' if decay_mult >= 0.40 else '🟠' if decay_mult >= 0.20 else '🔴'
+        lines.append(f"    {decay_icon} Decay: {decay_mult:.2f}x  ({days_since}d since release)")
 
     # Show cascade sequence
     if release_type == 'CPI':
