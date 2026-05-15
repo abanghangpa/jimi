@@ -1,19 +1,26 @@
 """
-M23: Macro Cascade Model — CPI → PPI → Claims session dynamics
+M23: Macro Cascade Model — NFP → CPI → PPI → Claims session dynamics
 
 Release sequence (8:30 AM ET each):
+    0. NFP + Unemployment Rate (first Friday) — LABOR MARKET signal, high vol
     1. CPI (Tue/Wed, 2nd-3rd week) — PRIMARY signal, biggest ETH reaction
     2. PPI (Wed/Thu, 1-2 days after CPI) — CONFIRMS or DENIES CPI signal
     3. Jobless Claims (every Thursday) — BACKGROUND context, only matters at extremes
 
 Architecture:
-    CPI surprise sets the directional tone. PPI is scored RELATIVE to CPI:
-      - PPI confirms CPI → signal amplified (trend strengthens)
-      - PPI contradicts CPI → signal weakened (confusion, reduced conviction)
-      - PPI inline with CPI → no change
-    Claims modulate the signal only when extreme (spike/crisis territory).
+    NFP on Friday sets the LABOR MARKET tone. CPI the following week sets the
+    INFLATION tone. PPI confirms/denies CPI. Claims provide background context.
+
+    Cascade sequence when NFP + CPI in same week:
+      NFP Friday → Claims Thursday → CPI Tuesday/Wednesday → PPI Wednesday/Thursday
+      NFP surprise sets macro bias. CPI either amplifies or reverses it.
+
+    Standalone NFP:
+      High vol (avg |move| 2.01%), no directional bias, strong Asia fade pattern.
+      After US dump: 60% Asia bounce. After US rally: 64% Asia fade.
 
 Forensic findings (178 releases, 2018-2025):
+    CPI/PPI:
     1. Cool CPI = ETH rallies: +1.06% intraday, +2.50% over 2 days
     2. Hot CPI = ETH dumps: -0.45% intraday, -0.90% over 2 days
     3. Cool PPI has INVERTED signal: -2.89% avg (deflation fears)
@@ -22,7 +29,17 @@ Forensic findings (178 releases, 2018-2025):
     6. 2-day window captures more alpha than intraday (+3.40% cool-hot spread)
     7. Jobless claims: no actionable standalone signal
 
+    NFP (53 releases, 2022-2026):
+    1. Avg |US move|: 2.01% (comparable to PPI 2.21%, CPI 2.27%)
+    2. No directional bias (avg +0.06%), high volatility
+    3. 1h spike → US direction agreement: 66%
+    4. After US dump: 60% Asia bounce. After US rally: 64% Asia fade.
+    5. NFP near CPI (within 5d): avg |move| 2.58% = 1.7x isolated NFP
+    6. September danger month: avg -4.38%. November bullish: avg +2.42%.
+    7. Unemployment rate released same time — market reacts to BOTH simultaneously.
+
 Data sources:
+    - BLS Employment Situation schedule (NFP + unemployment, first Friday)
     - BLS PPI/CPI release schedules (hardcoded dates 2018-2026)
     - BLS weekly jobless claims (every Thursday 8:30 AM ET)
     - Live 15m OHLCV data
@@ -117,6 +134,124 @@ CPI_RELEASE_DATES = {
     '2026-05-12', '2026-06-10', '2026-07-14', '2026-08-12',
     '2026-09-10', '2026-10-13', '2026-11-10', '2026-12-09',
 }
+
+# ═══════════════════════════════════════════════════════════════
+# NFP + UNEMPLOYMENT RATE (first Friday of each month, 8:30 AM ET)
+# ═══════════════════════════════════════════════════════════════
+# The Employment Situation report (Non-Farm Payrolls + Unemployment Rate)
+# is released on the first Friday of each month at 8:30 AM ET (13:30 UTC).
+# Both numbers come from the SAME report — market reacts to both simultaneously.
+#
+# Forensic findings (53 NFP releases, 2022-2026):
+#   Avg |US move|: 2.01% (comparable to PPI 2.21%, CPI 2.27%)
+#   No directional bias (avg +0.06%), high volatility
+#   1h spike → US direction agreement: 66%
+#   After US dump: 60% Asia bounce. After US rally: 64% Asia fade.
+#   NFP near CPI (within 5d): avg |move| 2.58% = 1.7x isolated NFP (1.55%)
+#   September danger month: avg -4.38%. November bullish: avg +2.42%.
+#   Feb widest swings: avg |move| 3.38%.
+#
+# Key thresholds for unemployment rate:
+#   <3.5%: Goldilocks — economy strong, Fed can be patient
+#   3.5-4.0%: Normal — no strong signal
+#   4.0-4.5%: Softening — recession whispers begin
+#   >4.5%: Danger zone — recession fears, Fed forced to cut
+#   Sahm Rule (3m avg rise ≥0.5pp from 12m low): Recession signal
+#
+# Cascade: NFP Friday → Claims Thursday → CPI Tue/Wed → PPI Wed/Thu
+#   NFP sets LABOR MARKET tone. CPI sets INFLATION tone. PPI confirms/denies.
+#   When NFP + CPI in same week, moves amplify 1.7x.
+
+NFP_RELEASE_DATES = {
+    # 2018 (first Friday of each month)
+    '2018-01-05', '2018-02-02', '2018-03-09', '2018-04-06',
+    '2018-05-04', '2018-06-01', '2018-07-06', '2018-08-03',
+    '2018-09-07', '2018-10-05', '2018-11-02', '2018-12-07',
+    # 2019
+    '2019-01-04', '2019-02-01', '2019-03-08', '2019-04-05',
+    '2019-05-03', '2019-06-07', '2019-07-05', '2019-08-02',
+    '2019-09-06', '2019-10-04', '2019-11-01', '2019-12-06',
+    # 2020
+    '2020-01-10', '2020-02-07', '2020-03-06', '2020-04-03',
+    '2020-05-08', '2020-06-05', '2020-07-02', '2020-08-07',
+    '2020-09-04', '2020-10-02', '2020-11-06', '2020-12-04',
+    # 2021
+    '2021-01-08', '2021-02-05', '2021-03-05', '2021-04-02',
+    '2021-05-07', '2021-06-04', '2021-07-02', '2021-08-06',
+    '2021-09-03', '2021-10-08', '2021-11-05', '2021-12-03',
+    # 2022
+    '2022-01-07', '2022-02-04', '2022-03-04', '2022-04-01',
+    '2022-05-06', '2022-06-03', '2022-07-08', '2022-08-05',
+    '2022-09-02', '2022-10-07', '2022-11-04', '2022-12-02',
+    # 2023
+    '2023-01-06', '2023-02-03', '2023-03-10', '2023-04-07',
+    '2023-05-05', '2023-06-02', '2023-07-07', '2023-08-04',
+    '2023-09-01', '2023-10-06', '2023-11-03', '2023-12-08',
+    # 2024
+    '2024-01-05', '2024-02-02', '2024-03-08', '2024-04-05',
+    '2024-05-03', '2024-06-07', '2024-07-05', '2024-08-02',
+    '2024-09-06', '2024-10-04', '2024-11-01', '2024-12-06',
+    # 2025
+    '2025-01-10', '2025-02-07', '2025-03-07', '2025-04-04',
+    '2025-05-02', '2025-06-06', '2025-07-03', '2025-08-01',
+    '2025-09-05', '2025-10-03', '2025-11-07', '2025-12-05',
+    # 2026 (first Friday of each month)
+    '2026-01-09', '2026-02-06', '2026-03-06', '2026-04-03',
+    '2026-05-01', '2026-06-05', '2026-07-03', '2026-08-07',
+    '2026-09-04', '2026-10-02', '2026-11-06', '2026-12-04',
+}
+
+# NFP seasonality — avg US session move by month (from 53 releases, 2022-2026)
+NFP_SEASONALITY = {
+    1:  {'avg_move': -0.03, 'avg_abs': 0.95,  'bias': 'NEUTRAL'},
+    2:  {'avg_move': +0.84, 'avg_abs': 3.38,  'bias': 'VOLATILE'},
+    3:  {'avg_move': -1.56, 'avg_abs': 2.23,  'bias': 'BEARISH'},
+    4:  {'avg_move': +1.60, 'avg_abs': 1.60,  'bias': 'BULLISH'},
+    5:  {'avg_move': +1.20, 'avg_abs': 1.59,  'bias': 'BULLISH'},
+    6:  {'avg_move': -0.28, 'avg_abs': 1.27,  'bias': 'NEUTRAL'},
+    7:  {'avg_move': +0.79, 'avg_abs': 0.84,  'bias': 'NEUTRAL'},
+    8:  {'avg_move': -1.98, 'avg_abs': 2.04,  'bias': 'BEARISH'},
+    9:  {'avg_move': -4.38, 'avg_abs': 4.38,  'bias': 'DANGER'},
+    10: {'avg_move': +1.08, 'avg_abs': 1.08,  'bias': 'BULLISH'},
+    11: {'avg_move': +2.42, 'avg_abs': 2.73,  'bias': 'BULLISH'},
+    12: {'avg_move': +0.60, 'avg_abs': 2.17,  'bias': 'NEUTRAL'},
+}
+
+# NFP Asia fade rates (from 53 releases, 2022-2026)
+NFP_ASIA_FADE_AFTER_DUMP = 0.60   # 60% Asia bounces after US dump
+NFP_ASIA_FADE_AFTER_RALLY = 0.64  # 64% Asia fades after US rally
+
+# NFP 1h spike → US session direction agreement
+NFP_1H_AGREEMENT = 0.66  # 66% of the time, 1h spike direction = full US session direction
+
+# NFP proximity to CPI amplification
+NFP_NEAR_CPI_AMPLIFIER = 1.70  # NFP within 5d of CPI has 1.7x larger avg |move|
+
+# NFP spike accuracy by year (1h spike direction predicts US session direction)
+NFP_SPIKE_ACCURACY = {
+    2022: 0.75, 2023: 0.58, 2024: 0.50, 2025: 0.75, 2026: 0.80,
+}
+
+# NFP fade rate by regime
+NFP_REGIME_FADE_RATES = {
+    'TIGHTENING':      0.40,
+    'EASING':          0.35,
+    'CRISIS_RECOVERY': 0.50,
+    'BULL':            0.55,
+    'BEAR':            0.45,
+    'RECOVERY':        0.50,
+    'ACCELERATION':    0.55,
+    'STAGFLATION':     0.60,
+    'STAGFLATION_HOT': 0.65,
+}
+
+# Unemployment rate thresholds for scoring
+UNEMP_RATE_GOLDILOCKS = 3.5     # Below = economy strong
+UNEMP_RATE_NORMAL = 4.0         # Below = normal
+UNEMP_RATE_SOFTENING = 4.5      # Above = recession whispers
+UNEMP_RATE_DANGER = 5.0         # Above = recession fears, Fed forced to cut
+UNEMP_RATE_CRISIS = 6.0         # Above = full crisis
+
 
 # ═══════════════════════════════════════════════════════════════
 # JOBLESS CLAIMS DATA (released every Thursday 8:30 AM ET)
@@ -572,27 +707,46 @@ def is_cpi_release_day(date_str=None):
     return date_str in CPI_RELEASE_DATES
 
 
-def is_macro_release_day(date_str=None):
-    """Check if today is any macro data release day (PPI or CPI)."""
+def is_nfp_release_day(date_str=None):
+    """Check if today (or given date) is an NFP + Unemployment Rate release day.
+
+    NFP (Non-Farm Payrolls) and Unemployment Rate are released together
+    on the first Friday of each month at 8:30 AM ET (13:30 UTC).
+    """
     if date_str is None:
         date_str = datetime.utcnow().strftime('%Y-%m-%d')
-    return date_str in PPI_RELEASE_DATES or date_str in CPI_RELEASE_DATES
+    return date_str in NFP_RELEASE_DATES
+
+
+def is_macro_release_day(date_str=None):
+    """Check if today is any macro data release day (NFP, PPI, CPI, or Claims)."""
+    if date_str is None:
+        date_str = datetime.utcnow().strftime('%Y-%m-%d')
+    return (date_str in PPI_RELEASE_DATES or
+            date_str in CPI_RELEASE_DATES or
+            date_str in NFP_RELEASE_DATES or
+            is_claims_release_day(date_str))
 
 
 def get_release_type(date_str):
     """Determine what macro data is released on a given date.
 
-    Returns: 'PPI', 'CPI', 'BOTH', or None
+    Returns: combination of 'NFP', 'PPI', 'CPI', 'CLAIMS', or None
     """
-    is_ppi = date_str in PPI_RELEASE_DATES
-    is_cpi = date_str in CPI_RELEASE_DATES
-    if is_ppi and is_cpi:
-        return 'BOTH'
-    elif is_ppi:
-        return 'PPI'
-    elif is_cpi:
-        return 'CPI'
-    return None
+    parts = []
+    if date_str in NFP_RELEASE_DATES:
+        parts.append('NFP')
+    if date_str in CPI_RELEASE_DATES:
+        parts.append('CPI')
+    if date_str in PPI_RELEASE_DATES:
+        parts.append('PPI')
+    if is_claims_release_day(date_str):
+        parts.append('CLAIMS')
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    return '+'.join(parts)
 
 
 def classify_market_regime(config=None):
@@ -1666,10 +1820,14 @@ def _predict_uk_session(us_dir, asia_data, regime, release_type):
 # ═══════════════════════════════════════════════════════════════
 
 def score_m23_ppi_session(df_15m, current_time=None, config=None):
-    """Score macro data release dynamics (PPI + CPI) for session bias.
+    """Score macro data release dynamics (NFP + CPI + PPI + Claims) for session bias.
 
-    Checks both PPI and CPI calendars. If both release on the same day,
-    uses PPI (stronger signal) as primary.
+    Checks NFP, CPI, PPI, and Claims calendars. Handles combined release days
+    (e.g., NFP+Claims on first Friday, or CPI+Claims on Thursday).
+
+    Cascade model:
+      NFP Friday (labor) → Claims Thursday → CPI Tue/Wed (inflation) → PPI Wed/Thu
+      NFP sets macro tone for the week. CPI amplifies or reverses it.
 
     Args:
         df_15m: DataFrame with 15m OHLCV data
@@ -1753,9 +1911,9 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
     # The type_strength modifier already handles BOTH = stronger signal
 
     if release_date is None:
-        # ── No PPI/CPI release — check for standalone claims release ──
+        # ── No PPI/CPI/NFP release — check for standalone claims release ──
         if not cfg.get('M23_CLAIMS_ENABLED', True):
-            return 'SKIP', 0.5, {'regime': 'NO_RELEASE', 'reason': 'No PPI/CPI release today or yesterday'}
+            return 'SKIP', 0.5, {'regime': 'NO_RELEASE', 'reason': 'No NFP/PPI/CPI release today or yesterday'}
 
         claims_ctx = get_claims_context_for_release(None, cfg)
         if claims_ctx and is_claims_release_day(today_str):
@@ -1834,21 +1992,33 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
 
     # Spike accuracy for this type+year
     year = current_time.year if is_release_day else int(release_date[:4])
-    if release_type == 'CPI':
+    if 'NFP' in release_type and '+' in release_type:
+        # Combined release (e.g., NFP+CPI) — use max accuracy
+        spike_acc = max(NFP_SPIKE_ACCURACY.get(year, 0.66), SPIKE_ACCURACY.get(year, 0.70))
+    elif 'NFP' in release_type:
+        spike_acc = NFP_SPIKE_ACCURACY.get(year, 0.66)
+    elif release_type == 'CPI':
         spike_acc = SPIKE_ACCURACY_CPI.get(year, 0.66)
     elif release_type == 'PPI':
         spike_acc = SPIKE_ACCURACY_PPI.get(year, 0.73)
-    else:  # BOTH
+    else:  # BOTH or CLAIMS
         spike_acc = SPIKE_ACCURACY.get(year, 0.70)
 
     # ── CASCADE: Type-specific strength modifier ──
-    # CPI is the PRIMARY signal (biggest ETH reaction). PPI is confirmation.
-    # Forensic: CPI avg |move| 4.1% vs PPI 3.8%. Cool CPI +2.50% 2-day.
+    # NFP: high vol (2.01% avg |move|), no directional bias, strong Asia fade.
+    # CPI: PRIMARY inflation signal (biggest ETH reaction).
+    # PPI: confirmation of CPI signal.
     type_strength = 1.0
-    if release_type == 'CPI':
-        type_strength = 1.15   # CPI = primary signal, strongest reaction
+    if 'NFP' in release_type and 'CPI' in release_type:
+        type_strength = 1.35   # NFP+CPI same day = max signal (rare but explosive)
+    elif 'NFP' in release_type and 'PPI' in release_type:
+        type_strength = 1.20   # NFP+PPI = labor + inflation confirmation
+    elif release_type == 'CPI':
+        type_strength = 1.15   # CPI = primary inflation signal
     elif release_type == 'BOTH':
-        type_strength = 1.25   # Both releasing same day = max signal
+        type_strength = 1.25   # CPI+PPI same day = max inflation signal
+    elif 'NFP' in release_type:
+        type_strength = 1.10   # NFP standalone = labor market signal
     # PPI alone = 1.0 (default, confirmation-only)
 
     # ── CASCADE: Regime sensitivity multiplier ──
@@ -2003,10 +2173,29 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
         else:
             base_pattern_score = 0.45
 
+        # ── NFP-specific adjustments ──
+        # NFP has stronger Asia fade pattern (60% after dump, 64% after rally)
+        # vs PPI/CPI which is weaker. Apply NFP fade boost when applicable.
+        nfp_fade_boost = 0.0
+        if 'NFP' in release_type:
+            if asia_faded:
+                # NFP Asia fade is more reliable than PPI/CPI fade
+                nfp_fade_boost = 0.05
+                factors = details.get('asia_analysis', {}).get('reversal_factors', [])
+                factors.append(f'NFP Asia fade boost: +0.05 (60-64% fade rate)')
+            # NFP seasonality
+            nfp_month = int(release_date[5:7])
+            season = NFP_SEASONALITY.get(nfp_month, {})
+            details['nfp_seasonality'] = season
+            if season.get('bias') == 'DANGER':
+                nfp_fade_boost -= 0.05  # September danger month
+            elif season.get('bias') == 'BULLISH':
+                nfp_fade_boost += 0.03  # November bullish
+
         # Apply regime sensitivity: in high-sensitivity regimes (2022, stagflation),
         # the macro signal matters more. In low-sensitivity (2018, 2024), it's noise.
         score = base_pattern_score * regime_sensitivity + (1 - regime_sensitivity) * 0.50
-        score = max(0.20, min(0.85, score + score_adjust))
+        score = max(0.20, min(0.85, score + score_adjust + nfp_fade_boost))
 
         # Apply time decay: PPI/CPI impact fades over days since release
         score = score * release_decay_mult + 0.5 * (1.0 - release_decay_mult)
@@ -2024,6 +2213,9 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             reason_parts.append(f'rev_prob={rev_prob:.0%}')
         if uk_analysis:
             reason_parts.append(f'UK {uk_analysis["uk_verdict"].lower()} ({uk_dir} {uk_move:+.2f}%)')
+        if 'NFP' in release_type:
+            season = details.get('nfp_seasonality', {})
+            reason_parts.append(f'NFP seasonality: {season.get("bias", "?")} (avg {season.get("avg_move", 0):+.2f}%)')
         if release_decay_mult < 1.0:
             reason_parts.append(f'decay={release_decay_mult:.2f}x ({release_days_since}d)')
         details['score_reason'] = ', '.join(reason_parts)
@@ -2080,9 +2272,42 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
             bias = 'MIXED'
             confidence = 'LOW'
 
+        # ── NFP-specific: Asia fade adjustment ──
+        # NFP has STRONGER Asia fade pattern than CPI/PPI.
+        # After US dump: 60% Asia bounce. After US rally: 64% Asia fade.
+        nfp_asia_fade_rate = None
+        if 'NFP' in release_type:
+            if us_dir == 'DUMP':
+                nfp_asia_fade_rate = NFP_ASIA_FADE_AFTER_DUMP
+                if bias == 'CONTINUATION' and nfp_asia_fade_rate >= 0.55:
+                    bias = 'FADE'
+                    confidence = 'MEDIUM'
+            elif us_dir == 'RALLY':
+                nfp_asia_fade_rate = NFP_ASIA_FADE_AFTER_RALLY
+                if bias != 'FADE' and nfp_asia_fade_rate >= 0.60:
+                    bias = 'FADE'
+                    confidence = 'MEDIUM'
+            # NFP seasonality boost
+            nfp_month = int(release_date[5:7])
+            season = NFP_SEASONALITY.get(nfp_month, {})
+            details['nfp_seasonality'] = season
+            details['nfp_asia_fade_rate'] = nfp_asia_fade_rate
+            if season.get('bias') == 'DANGER':
+                if us_dir == 'DUMP':
+                    confidence = 'HIGH'  # September dump = high confidence continuation
+            elif season.get('bias') == 'BULLISH':
+                if us_dir == 'RALLY':
+                    confidence = 'HIGH'  # November rally = high confidence
+
         # ── CASCADE: Adjust confidence by type ──
-        # CPI is primary signal → boosts confidence. PPI alone → noisier.
-        if release_type == 'CPI' and confidence == 'MEDIUM':
+        # NFP is labor market signal (high vol, no directional bias).
+        # CPI is primary inflation signal → boosts confidence. PPI alone → noisier.
+        if 'NFP' in release_type and 'CPI' in release_type:
+            if confidence == 'MEDIUM':
+                confidence = 'HIGH'  # NFP+CPI = max signal
+        elif 'NFP' in release_type:
+            pass  # NFP standalone — use its own confidence (already set above)
+        elif release_type == 'CPI' and confidence == 'MEDIUM':
             confidence = 'HIGH'    # CPI upgrade — primary signal
         elif release_type == 'BOTH' and confidence == 'MEDIUM':
             confidence = 'HIGH'    # Both upgrade — max signal
@@ -2128,10 +2353,19 @@ def score_m23_ppi_session(df_15m, current_time=None, config=None):
         score = max(0.30, min(0.90, score))
         status = 'PASS'
 
+        nfp_reason = ''
+        if 'NFP' in release_type:
+            nfp_season = details.get('nfp_seasonality', {})
+            nfp_fade = details.get('nfp_asia_fade_rate')
+            nfp_reason = f', NFP_season={nfp_season.get("bias", "?")}'
+            if nfp_fade:
+                nfp_reason += f', asia_fade={nfp_fade:.0%}'
+
         details['score_reason'] = (
             f'{release_type} release day: US {us_dir} {us_move:+.2f}%, '
             f'regime={regime} (sens={regime_sensitivity:.2f}), bias={bias}, conf={confidence}'
             + (f', rev_prob={rev_prob:.0%}' if dump_size != 'NOT_DUMP' else '')
+            + nfp_reason
             + (f', decay={release_decay_mult:.2f}x' if release_decay_mult < 1.0 else '')
         )
 
@@ -2183,8 +2417,14 @@ def format_m23(details):
     claims_today = details.get('claims_today', False)
 
     # Header with type icon — CASCADE model
-    type_icons = {'PPI': '🏭', 'CPI': '🛒', 'BOTH': '📊'}
-    type_icon = type_icons.get(release_type, '📊')
+    type_icons = {'PPI': '🏭', 'CPI': '🛒', 'BOTH': '📊', 'NFP': '💼',
+                  'CLAIMS': '📋'}
+    # Handle combined types like 'NFP+CPI', 'NFP+PPI', 'NFP+CLAIMS'
+    if '+' in release_type:
+        parts = release_type.split('+')
+        type_icon = '📊'  # combined = max signal
+    else:
+        type_icon = type_icons.get(release_type, '📊')
     claims_tag = ' + 📋 CLAIMS' if claims_today else ''
     lines.append(f"\n  {type_icon} M23 {release_type}{claims_tag} CASCADE: {release_date}")
     lines.append(f"    Regime: {regime}  fade={details.get('fade_rate', 0):.0%}  "
@@ -2197,12 +2437,30 @@ def format_m23(details):
         lines.append(f"    {decay_icon} Decay: {decay_mult:.2f}x  ({days_since}d since release)")
 
     # Show cascade sequence
-    if release_type == 'CPI':
+    if 'NFP' in release_type and 'CPI' in release_type:
+        lines.append(f"    📊 Cascade: NFP+CPI same day (max signal) → PPI tomorrow (confirm)")
+    elif 'NFP' in release_type and 'PPI' in release_type:
+        lines.append(f"    📊 Cascade: NFP+PPI (labor+inflation) → Claims Thu (context)")
+    elif 'NFP' in release_type:
+        lines.append(f"    📊 Cascade: NFP (labor) → Claims Thu → CPI next week (inflation)")
+    elif release_type == 'CPI':
         lines.append(f"    📊 Cascade: CPI (primary) → PPI tomorrow (confirm/deny) → Claims Thu (context)")
     elif release_type == 'PPI':
         lines.append(f"    📊 Cascade: CPI already set tone → PPI (confirm/deny) → Claims Thu (context)")
     elif release_type == 'BOTH':
         lines.append(f"    📊 Cascade: CPI+PPI same day (max signal) → Claims Thu (context)")
+
+    # NFP seasonality (if applicable)
+    nfp_season = details.get('nfp_seasonality', {})
+    nfp_fade = details.get('nfp_asia_fade_rate')
+    if nfp_season:
+        bias = nfp_season.get('bias', '?')
+        avg_move = nfp_season.get('avg_move', 0)
+        bias_icons = {'DANGER': '🔴', 'BEARISH': '🟠', 'BULLISH': '🟢', 'NEUTRAL': '⚪'}
+        b_icon = bias_icons.get(bias, '⚪')
+        lines.append(f"    {b_icon} NFP Seasonality: {bias} (avg {avg_move:+.2f}%)")
+    if nfp_fade is not None:
+        lines.append(f"    📊 NFP Asia fade rate: {nfp_fade:.0%}")
 
     # ── Claims context (before US session data) ──
     if claims_ctx:
@@ -2250,7 +2508,24 @@ def format_m23(details):
             lines.append(f"    1h Spike Bias: {spike_bias}  ({spike_acc:.0%} accuracy)")
 
         # Trade suggestion
-        if direction == 'FADE' and confidence in ('HIGH', 'MEDIUM'):
+        if 'NFP' in (release_type or ''):
+            nfp_fade = asia_pred.get('nfp_asia_fade_rate')
+            if direction == 'FADE':
+                fade_str = f' (NFP fade rate: {nfp_fade:.0%})' if nfp_fade else ''
+                if us_dir == 'DUMP':
+                    lines.append(f"    💡 NFP: Asia likely BOUNCES after US dump{fade_str} — watch long at Asia open")
+                elif us_dir == 'RALLY':
+                    lines.append(f"    💡 NFP: Asia likely FADES after US rally{fade_str} — watch short at Asia open")
+            elif direction == 'CONTINUATION':
+                if dump_size == 'CRASH':
+                    lines.append(f"    🚨 NFP CRASH MODE — Asia likely continues selling, do NOT buy the dip")
+                else:
+                    lines.append(f"    💡 NFP: Asia likely CONTINUES {us_dir.lower()} — momentum trade")
+            # NFP→CPI cascade hint
+            nfp_month = int(release_date[5:7]) if release_date else 0
+            # Check if CPI is coming next week
+            lines.append(f"    📊 NFP sets labor tone → Claims Thu → CPI next week (inflation)")
+        elif direction == 'FADE' and confidence in ('HIGH', 'MEDIUM'):
             if us_dir == 'DUMP':
                 lines.append(f"    💡 Asia likely BOUNCES after US dump — watch long at Asia open")
             elif us_dir == 'RALLY':

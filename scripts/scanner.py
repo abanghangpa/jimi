@@ -54,7 +54,8 @@ from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range,
 from src.modules.m22_inflation_regime import score_m22, format_m22
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
-    is_macro_release_day, is_claims_release_day, get_claims_trend, classify_macro_combo,
+    is_nfp_release_day, is_macro_release_day, is_claims_release_day,
+    get_claims_trend, classify_macro_combo,
 )
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
@@ -893,7 +894,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m22'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
-    # ── M23: PPI + CPI Session Analysis ──
+    # ── M23: NFP + PPI + CPI Session Analysis ──
     m23_score = 0.5
     m23_status = 'SKIP'
     m23_details = {}
@@ -917,6 +918,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
                 'regime_sensitivity': m23_details.get('regime_sensitivity', 0.80),
                 'claims_context': m23_details.get('claims_context'),
                 'claims_today': m23_details.get('claims_today', False),
+                # NFP-specific fields
+                'nfp_seasonality': m23_details.get('nfp_seasonality'),
+                'nfp_asia_fade_rate': m23_details.get('nfp_asia_fade_rate'),
                 'details': m23_details,
             }
     except Exception as e:
