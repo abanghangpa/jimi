@@ -1012,35 +1012,128 @@ def score_m22_v2(ppi_yoy, ppi_prev_yoy=None, ppi_prev_prev_yoy=None, ppi_mom=Non
 # ═══════════════════════════════════════════════════════════════
 
 def score_m22(direction='LONG', ls_ratio=None, config=None):
-    """Score inflation regime using config overrides. Drop-in replacement for v1."""
+    """Score inflation regime using config + live FRED data.
+
+    Auto-fills PPI, CPI, Fed funds rate, and Fed stance from FRED cache
+    when config values are missing or stale. Config values still take
+    precedence when explicitly set (non-default).
+
+    Live data source: data/fred/macro_cache.json
+    Fetched by: scripts/fetch_fred_claims.py
+    """
     cfg = config or CONFIG
 
     if not cfg.get('M22_ENABLED', False):
         return 'SKIP', 0.5, {'regime': 'DISABLED'}
 
-    ppi_yoy = cfg.get('M22_PPI_YOY')
-    if ppi_yoy is None:
-        return 'SKIP', 0.5, {'regime': 'NO_DATA', 'reason': 'M22_PPI_YOY not set'}
+    # ── Auto-fill from FRED live data ──
+    fred_overrides = {}
+    fred_data = None
+    try:
+        from src.utils.macro_loader import get_m22_overrides, load_macro_data
+        fred_overrides = get_m22_overrides()
+        fred_data = load_macro_data()
+    except Exception:
+        pass
 
-    return score_m22_v2(
+    # Merge: FRED live data is primary (always fresh), config is fallback.
+    # Consensus expectations (CPI_EXPECTED, PPI_EXPECTED) are config-only
+    # since FRED doesn't have forward-looking data.
+    def _get(key, default=None):
+        """Get value from FRED live data, falling back to config."""
+        val = fred_overrides.get(key)
+        if val is not None:
+            return val
+        return cfg.get(key, default)
+
+    ppi_yoy = _get('M22_PPI_YOY')
+    if ppi_yoy is None:
+        return 'SKIP', 0.5, {'regime': 'NO_DATA', 'reason': 'M22_PPI_YOY not set (no config, no FRED data)'}
+
+    # Auto-fill claims/unemployment from FRED cache if not in config
+    claims_classification = _get('M22_CLAIMS_CLASSIFICATION')
+    claims_trend = _get('M22_CLAIMS_TREND')
+    unemployment_rate = _get('M22_UNEMPLOYMENT_RATE')
+    sahm_triggered = cfg.get('M22_SAHM_TRIGGERED', False)
+
+    # If claims classification not set, try to infer from FRED claims data
+    if claims_classification is None and fred_data:
+        icsa_monthly = fred_data.get('icsa_monthly_avg', {})
+        if not icsa_monthly:
+            # Try loading from claims cache directly
+            try:
+                from src.utils.macro_loader import _load_cache
+                cache = _load_cache()
+                if cache:
+                    icsa_monthly = cache.get('icsa', {}).get('monthly_avg', {})
+            except Exception:
+                pass
+        if icsa_monthly:
+            months = sorted(icsa_monthly.keys(), reverse=True)
+            if months:
+                latest_claims = icsa_monthly[months[0]]
+                # Classify: <220K=LOW, 220-260K=NORMAL, 260-300K=ELEVATED, >300K=SPIKE
+                if latest_claims < 220:
+                    claims_classification = 'LOW'
+                elif latest_claims < 260:
+                    claims_classification = 'NORMAL'
+                elif latest_claims < 300:
+                    claims_classification = 'ELEVATED'
+                else:
+                    claims_classification = 'SPIKE'
+                # Infer trend from 3-month average
+                if len(months) >= 4:
+                    recent_avg = sum(icsa_monthly[m] for m in months[:3]) / 3
+                    older_avg = sum(icsa_monthly[m] for m in months[3:6]) / min(3, len(months) - 3)
+                    if recent_avg > older_avg * 1.05:
+                        claims_trend = 'RISING'
+                    elif recent_avg < older_avg * 0.95:
+                        claims_trend = 'FALLING'
+                    else:
+                        claims_trend = 'STABLE'
+
+    # If unemployment not set, pull from FRED cache
+    if unemployment_rate is None and fred_data:
+        unrate = fred_data.get('unrate_monthly', {})
+        if not unrate:
+            try:
+                from src.utils.macro_loader import _load_cache
+                cache = _load_cache()
+                if cache:
+                    unrate = cache.get('unrate', {}).get('monthly', {})
+            except Exception:
+                pass
+        if unrate:
+            months = sorted(unrate.keys(), reverse=True)
+            if months:
+                unemployment_rate = unrate[months[0]]
+
+    result = score_m22_v2(
         ppi_yoy=ppi_yoy,
-        ppi_prev_yoy=cfg.get('M22_PPI_PREV_YOY'),
-        ppi_prev_prev_yoy=cfg.get('M22_PPI_PREV_PREV_YOY'),
-        ppi_mom=cfg.get('M22_PPI_MOM'),
-        cpi_yoy=cfg.get('M22_CPI_YOY'),
-        cpi_prev_yoy=cfg.get('M22_CPI_PREV_YOY'),
-        cpi_expected=cfg.get('M22_CPI_EXPECTED'),
-        ppi_expected=cfg.get('M22_PPI_EXPECTED'),
-        fed_stance=cfg.get('M22_FED_STANCE', 'HOLDING'),
-        fed_funds_rate=cfg.get('M22_FED_FUNDS_RATE'),
+        ppi_prev_yoy=_get('M22_PPI_PREV_YOY'),
+        ppi_prev_prev_yoy=_get('M22_PPI_PREV_PREV_YOY'),
+        ppi_mom=_get('M22_PPI_MOM'),
+        cpi_yoy=_get('M22_CPI_YOY'),
+        cpi_prev_yoy=_get('M22_CPI_PREV_YOY'),
+        cpi_expected=cfg.get('M22_CPI_EXPECTED'),  # expectations: config only (not on FRED)
+        ppi_expected=cfg.get('M22_PPI_EXPECTED'),   # expectations: config only (not on FRED)
+        fed_stance=_get('M22_FED_STANCE', 'HOLDING'),
+        fed_funds_rate=_get('M22_FED_FUNDS_RATE'),
         ls_ratio=ls_ratio,
         direction=direction,
-        claims_classification=cfg.get('M22_CLAIMS_CLASSIFICATION'),
-        claims_trend=cfg.get('M22_CLAIMS_TREND'),
-        unemployment_rate=cfg.get('M22_UNEMPLOYMENT_RATE'),
-        sahm_triggered=cfg.get('M22_SAHM_TRIGGERED', False),
+        claims_classification=claims_classification,
+        claims_trend=claims_trend,
+        unemployment_rate=unemployment_rate,
+        sahm_triggered=sahm_triggered,
         config=cfg,
     )
+
+    # Tag result with data source for transparency
+    if len(result) >= 3 and isinstance(result[2], dict):
+        result[2]['_fred_live'] = bool(fred_overrides)
+        result[2]['_fred_overrides'] = list(fred_overrides.keys()) if fred_overrides else []
+
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 """
-Fetch live jobless claims (ICSA) and unemployment rate (UNRATE) from FRED.
-Writes data/fred/claims_cache.json consumed by m23_ppi_session.py.
+Fetch live macro data from FRED:
+  - ICSA: Weekly jobless claims
+  - UNRATE: Unemployment rate
+  - WPSFD49207: PPI (Producer Price Index)
+  - CPIAUCSL: CPI (Consumer Price Index)
+  - FEDFUNDS: Federal funds rate
+
+Writes data/fred/macro_cache.json consumed by:
+  - m22_inflation_regime_v2.py (PPI, CPI, Fed funds, Fed stance)
+  - m23_ppi_session.py (claims, unemployment)
 
 Usage:
     python scripts/fetch_fred_claims.py
-    python scripts/freq_fred_claims.py --api-key YOUR_KEY
+    python scripts/fetch_fred_claims.py --api-key YOUR_KEY
 
 FRED API is free — get a key at https://fred.stlouisfed.org/docs/api/api_key.html
 Or set FRED_API_KEY env var. Without a key, falls back to web scrape.
@@ -21,6 +29,7 @@ import requests
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "fred")
 CACHE_FILE = os.path.join(DATA_DIR, "claims_cache.json")
+MACRO_CACHE_FILE = os.path.join(DATA_DIR, "macro_cache.json")
 FRED_BASE = "https://api.stlouisfed.org/fred"
 
 
@@ -85,81 +94,209 @@ def monthly_observations(observations):
     return result
 
 
+def compute_yoy(index_series):
+    """Compute year-over-year % change from a monthly index series.
+
+    Args:
+        index_series: {YYYY-MM: index_value} dict
+
+    Returns:
+        {YYYY-MM: yoy_pct} dict
+    """
+    yoy = {}
+    for month, val in sorted(index_series.items()):
+        year = int(month[:4])
+        mo = int(month[5:7])
+        prev_year = f"{year - 1}-{mo:02d}"
+        if prev_year in index_series and index_series[prev_year] > 0:
+            pct = (val - index_series[prev_year]) / index_series[prev_year] * 100
+            yoy[month] = round(pct, 1)
+    return yoy
+
+
+def infer_fed_stance(rate_series):
+    """Infer Fed stance from rate changes.
+
+    Looks at the most recent 3 months of data to determine if the Fed
+    is actively cutting, holding, or hiking. Historical cuts that ended
+    are classified as HOLDING (rates are now stable).
+
+    Args:
+        rate_series: {YYYY-MM: rate_pct} dict (e.g., FEDFUNDS)
+
+    Returns:
+        dict with 'stance' (CUTTING/HOLDING/HIKING), 'current_rate',
+        'prev_rate', 'change', 'last_change_month'
+    """
+    if not rate_series or len(rate_series) < 2:
+        return {'stance': 'HOLDING', 'current_rate': None, 'prev_rate': None,
+                'change': 0, 'last_change_month': None}
+
+    months = sorted(rate_series.keys())
+    current_rate = rate_series[months[-1]]
+    prev_rate = rate_series[months[-2]]
+
+    # Find the last month with a meaningful rate change (>= 5bp)
+    last_change_month = None
+    last_change_bars_ago = 0
+    for i in range(len(months) - 1, max(0, len(months) - 13), -1):
+        diff = rate_series[months[i]] - rate_series[months[i - 1]]
+        if abs(diff) >= 0.05:
+            last_change_month = months[i]
+            last_change_bars_ago = len(months) - 1 - i
+            break
+
+    recent_change = current_rate - prev_rate
+
+    # If the last rate change was 2+ months ago, Fed is HOLDING
+    # (even if rates were cut/hiked previously — that cycle ended)
+    if last_change_bars_ago >= 2 or last_change_month is None:
+        stance = 'HOLDING'
+    elif abs(recent_change) < 0.05:
+        stance = 'HOLDING'
+    elif recent_change < -0.05:
+        stance = 'CUTTING'
+    elif recent_change > 0.05:
+        stance = 'HIKING'
+    else:
+        stance = 'HOLDING'
+
+    return {
+        'stance': stance,
+        'current_rate': round(current_rate, 2),
+        'prev_rate': round(prev_rate, 2),
+        'change': round(recent_change, 2),
+        'last_change_month': last_change_month,
+    }
+
+
+def fetch_fred_csv(series_id, start_date="2023-01-01"):
+    """Fetch a FRED series via CSV endpoint (no API key needed).
+
+    Returns:
+        list of {'date': 'YYYY-MM-DD', 'value': float}
+    """
+    url = (f"https://fred.stlouisfed.org/graph/fredgraph.csv"
+           f"?id={series_id}&cosd={start_date}&coed=2026-12-31")
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+    lines = resp.text.strip().split("\n")
+    observations = []
+    for line in lines[1:]:
+        parts = line.split(",")
+        if len(parts) >= 2 and parts[1].strip() not in (".", ""):
+            observations.append({"date": parts[0].strip(), "value": float(parts[1].strip())})
+    return observations
+
+
 def fetch_via_web_scrape():
     """Fallback: scrape FRED CSV endpoints (no API key needed)."""
     print("  No API key — trying FRED CSV endpoints...")
 
-    # ICSA (weekly claims)
-    url_icsa = "https://fred.stlouisfed.org/graph/fredgraph.csv?bgcolor=%23e1e9f0&chart_type=line&drp=0&fo=open%20sans&graph_bgcolor=%23ffffff&height=450&mode=fred&recession_bars=on&txtcolor=%23444444&ts=12&tts=12&width=1168&nt=0&thu=0&trc=0&show_legend=yes&show_axis_titles=yes&show_tooltip=yes&id=ICSA&scale=left&cosd=2020-01-01&coed=2026-12-31&line_color=%234572a7&link_values=false&line_style=solid&mark_type=none&mw=3&lw=2&ost=-99999&oet=99999&mma=0&fml=a&fq=Weekly%2C+Ending+Saturday&fam=avg&fgst=lin&fgsnd=2020-02-01&line_index=1&transformation=lin&vintage_date=2026-05-14&revision_date=2026-05-14&nd=1967-01-07"
-
-    # UNRATE (unemployment rate)
-    url_unrate = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=UNRATE&cosd=2020-01-01&coed=2026-12-31"
-
     result = {}
 
+    # ICSA (weekly claims)
     try:
-        resp = requests.get(url_icsa, timeout=30)
-        resp.raise_for_status()
-        lines = resp.text.strip().split("\n")
-        header = lines[0].split(",")
-        weekly = []
-        for line in lines[1:]:
-            parts = line.split(",")
-            if len(parts) >= 2 and parts[1].strip() not in (".", ""):
-                weekly.append({"date": parts[0].strip(), "value": float(parts[1].strip())})
-        result["icsa_raw"] = weekly
-        result["icsa"] = {"monthly_avg": weekly_to_monthly_avg(weekly)}
-        print(f"  ✅ ICSA: {len(weekly)} weekly observations → {len(result['icsa']['monthly_avg'])} months")
+        icsa_obs = fetch_fred_csv("ICSA", "2020-01-01")
+        result["icsa_raw"] = icsa_obs
+        result["icsa"] = {"monthly_avg": weekly_to_monthly_avg(icsa_obs)}
+        print(f"  ✅ ICSA: {len(icsa_obs)} weekly observations → {len(result['icsa']['monthly_avg'])} months")
     except Exception as e:
         print(f"  ⚠️  ICSA scrape failed: {e}")
 
+    # UNRATE (unemployment rate)
     try:
-        resp = requests.get(url_unrate, timeout=30)
-        resp.raise_for_status()
-        lines = resp.text.strip().split("\n")
-        monthly = []
-        for line in lines[1:]:
-            parts = line.split(",")
-            if len(parts) >= 2 and parts[1].strip() not in (".", ""):
-                monthly.append({"date": parts[0].strip(), "value": float(parts[1].strip())})
-        result["unrate"] = {"monthly": monthly_observations(monthly)}
-        print(f"  ✅ UNRATE: {len(monthly)} monthly observations")
+        unrate_obs = fetch_fred_csv("UNRATE", "2020-01-01")
+        result["unrate"] = {"monthly": monthly_observations(unrate_obs)}
+        print(f"  ✅ UNRATE: {len(unrate_obs)} monthly observations")
     except Exception as e:
         print(f"  ⚠️  UNRATE scrape failed: {e}")
+
+    # PPI (WPSFD49207 — PPI Commodity index, final demand)
+    try:
+        ppi_obs = fetch_fred_csv("WPSFD49207", "2023-01-01")
+        ppi_monthly = monthly_observations(ppi_obs)
+        ppi_yoy = compute_yoy(ppi_monthly)
+        result["ppi"] = {"index": ppi_monthly, "yoy": ppi_yoy}
+        print(f"  ✅ PPI: {len(ppi_obs)} monthly observations → {len(ppi_yoy)} YoY values")
+    except Exception as e:
+        print(f"  ⚠️  PPI scrape failed: {e}")
+
+    # CPI (CPIAUCSL — All Urban Consumers)
+    try:
+        cpi_obs = fetch_fred_csv("CPIAUCSL", "2023-01-01")
+        cpi_monthly = monthly_observations(cpi_obs)
+        cpi_yoy = compute_yoy(cpi_monthly)
+        result["cpi"] = {"index": cpi_monthly, "yoy": cpi_yoy}
+        print(f"  ✅ CPI: {len(cpi_obs)} monthly observations → {len(cpi_yoy)} YoY values")
+    except Exception as e:
+        print(f"  ⚠️  CPI scrape failed: {e}")
+
+    # Fed Funds Rate (FEDFUNDS)
+    try:
+        fed_obs = fetch_fred_csv("FEDFUNDS", "2023-01-01")
+        fed_monthly = monthly_observations(fed_obs)
+        fed_info = infer_fed_stance(fed_monthly)
+        result["fed_funds"] = {"monthly": fed_monthly, "stance_info": fed_info}
+        print(f"  ✅ FEDFUNDS: {len(fed_obs)} monthly observations → stance={fed_info['stance']} ({fed_info['current_rate']}%)")
+    except Exception as e:
+        print(f"  ⚠️  FEDFUNDS scrape failed: {e}")
 
     return result
 
 
 def fetch_via_api(api_key):
     """Fetch via FRED API (needs key)."""
+    result = {}
+
     print(f"  Fetching ICSA (weekly claims) from FRED API...")
     icsa_obs = fetch_fred_observations("ICSA", api_key)
     icsa_monthly = weekly_to_monthly_avg(icsa_obs)
+    result["icsa_raw"] = icsa_obs
+    result["icsa"] = {"monthly_avg": icsa_monthly}
     print(f"  ✅ ICSA: {len(icsa_obs)} weekly obs → {len(icsa_monthly)} months")
 
     print(f"  Fetching UNRATE (unemployment rate) from FRED API...")
     unrate_obs = fetch_fred_observations("UNRATE", api_key)
     unrate_monthly = monthly_observations(unrate_obs)
+    result["unrate"] = {"monthly": unrate_monthly}
     print(f"  ✅ UNRATE: {len(unrate_obs)} monthly obs")
 
-    return {
-        "icsa_raw": icsa_obs,
-        "icsa": {"monthly_avg": icsa_monthly},
-        "unrate": {"monthly": unrate_monthly},
-    }
+    print(f"  Fetching PPI (WPSFD49207) from FRED API...")
+    ppi_obs = fetch_fred_observations("WPSFD49207", api_key, "2023-01-01")
+    ppi_monthly = monthly_observations(ppi_obs)
+    ppi_yoy = compute_yoy(ppi_monthly)
+    result["ppi"] = {"index": ppi_monthly, "yoy": ppi_yoy}
+    print(f"  ✅ PPI: {len(ppi_obs)} monthly obs → {len(ppi_yoy)} YoY")
+
+    print(f"  Fetching CPI (CPIAUCSL) from FRED API...")
+    cpi_obs = fetch_fred_observations("CPIAUCSL", api_key, "2023-01-01")
+    cpi_monthly = monthly_observations(cpi_obs)
+    cpi_yoy = compute_yoy(cpi_monthly)
+    result["cpi"] = {"index": cpi_monthly, "yoy": cpi_yoy}
+    print(f"  ✅ CPI: {len(cpi_obs)} monthly obs → {len(cpi_yoy)} YoY")
+
+    print(f"  Fetching FEDFUNDS from FRED API...")
+    fed_obs = fetch_fred_observations("FEDFUNDS", api_key, "2023-01-01")
+    fed_monthly = monthly_observations(fed_obs)
+    fed_info = infer_fed_stance(fed_monthly)
+    result["fed_funds"] = {"monthly": fed_monthly, "stance_info": fed_info}
+    print(f"  ✅ FEDFUNDS: {len(fed_obs)} monthly obs → stance={fed_info['stance']} ({fed_info['current_rate']}%)")
+
+    return result
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch FRED jobless claims + unemployment data")
+    parser = argparse.ArgumentParser(description="Fetch FRED macro data (claims, PPI, CPI, Fed funds)")
     parser.add_argument("--api-key", default=os.environ.get("FRED_API_KEY"),
                         help="FRED API key (or set FRED_API_KEY env var)")
     parser.add_argument("--output", default=CACHE_FILE,
-                        help=f"Output path (default: {CACHE_FILE})")
+                        help=f"Claims output path (default: {CACHE_FILE})")
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
-    print("Fetching FRED data (ICSA + UNRATE)...")
+    print("Fetching FRED data (ICSA + UNRATE + PPI + CPI + FEDFUNDS)...")
 
     if args.api_key:
         data = fetch_via_api(args.api_key)
@@ -174,23 +311,40 @@ def main():
     data["_meta"] = {
         "fetched_at": datetime.utcnow().isoformat() + "Z",
         "source": "FRED (Federal Reserve Economic Data)",
-        "series": ["ICSA", "UNRATE"],
+        "series": ["ICSA", "UNRATE", "WPSFD49207", "CPIAUCSL", "FEDFUNDS"],
     }
 
+    # Write claims cache (backward compatible — m23 reads this)
     with open(args.output, "w") as f:
         json.dump(data, f, indent=2)
-
     print(f"\n  💾 Saved: {args.output}")
+
+    # Write macro cache (M22 reads this)
+    with open(MACRO_CACHE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"  💾 Saved: {MACRO_CACHE_FILE}")
 
     # Print latest values
     icsa = data.get("icsa", {}).get("monthly_avg", {})
     unrate = data.get("unrate", {}).get("monthly", {})
+    ppi_yoy = data.get("ppi", {}).get("yoy", {})
+    cpi_yoy = data.get("cpi", {}).get("yoy", {})
+    fed = data.get("fed_funds", {}).get("stance_info", {})
+
     if icsa:
         latest_month = max(icsa.keys())
         print(f"  Latest claims: {icsa[latest_month]}K ({latest_month})")
     if unrate:
         latest_month = max(unrate.keys())
         print(f"  Latest unemployment: {unrate[latest_month]}% ({latest_month})")
+    if ppi_yoy:
+        latest_month = max(ppi_yoy.keys())
+        print(f"  Latest PPI YoY: {ppi_yoy[latest_month]:+.1f}% ({latest_month})")
+    if cpi_yoy:
+        latest_month = max(cpi_yoy.keys())
+        print(f"  Latest CPI YoY: {cpi_yoy[latest_month]:+.1f}% ({latest_month})")
+    if fed:
+        print(f"  Fed funds: {fed['current_rate']}%  stance={fed['stance']}")
 
 
 if __name__ == "__main__":
