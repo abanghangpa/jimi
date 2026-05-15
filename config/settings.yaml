@@ -593,16 +593,18 @@ M22_SIZE_MEDIUM: 0.75         # MEDIUM severity → 75% size
 # PPI: https://www.bls.gov/ppi/  (released mid-month)
 # CPI: https://www.bls.gov/cpi/  (released mid-month)
 # Fed: https://www.federalreserve.gov/  (8x/year, FOMC)
-M22_PPI_YOY: 4.9              # Apr 2026 PPI YoY (released May 13)
-M22_PPI_PREV_YOY: 3.5         # Mar 2026 PPI YoY (for direction calc)
-M22_PPI_PREV_PREV_YOY: 2.4    # Feb 2026 PPI YoY (for acceleration calc)
+# NOTE: These are FALLBACK values. FRED live data is primary (auto-fetched).
+#       Only update these when FRED is down or as a sanity check.
+M22_PPI_YOY: 6.3              # Apr 2026 PPI YoY (FRED WPSFD49207, 2026-04)
+M22_PPI_PREV_YOY: 4.3         # Mar 2026 PPI YoY (for direction calc)
+M22_PPI_PREV_PREV_YOY: 1.6    # Feb 2026 PPI YoY (for acceleration calc)
 M22_PPI_MOM: 0.5              # Apr 2026 PPI MoM
-M22_CPI_YOY: 3.8              # Apr 2026 CPI YoY (released May 12)
-M22_CPI_PREV_YOY: 3.5         # Mar 2026 CPI YoY (for CPI direction)
-M22_CPI_EXPECTED: 3.6         # CPI consensus expectation (for surprise calc)
-M22_FED_STANCE: "HOLDING"     # CUTTING | HOLDING | HIKING
-M22_FED_FUNDS_RATE: 4.50      # Current Fed funds rate (for real rate calc)
-M22_PPI_EXPECTED: 4.0         # PPI consensus expectation (for surprise calc)
+M22_CPI_YOY: 3.8              # Apr 2026 CPI YoY (FRED CPIAUCSL, 2026-04)
+M22_CPI_PREV_YOY: 3.3         # Mar 2026 CPI YoY (for CPI direction)
+M22_CPI_EXPECTED: 3.6         # CPI consensus expectation (manual — not on FRED)
+M22_FED_STANCE: "HOLDING"     # Auto-inferred from FRED FEDFUNDS trajectory
+M22_FED_FUNDS_RATE: 3.60      # FRED FEDFUNDS (2026-04)
+M22_PPI_EXPECTED: 4.0         # PPI consensus expectation (manual — not on FRED)
 
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
