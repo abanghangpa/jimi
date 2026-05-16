@@ -674,6 +674,24 @@ M28_WINDOW_DAYS: 1            # Days after release to consider active
 M29_ENABLED: true
 M29_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M30: CHINA CPI+PPI SESSION BIAS ────────────────────────
+# Backtested: 101 releases, 2018-2026. Overall noise (p=0.98).
+# Edges: INFLATION+CHOP+BEAT +3.30% (70% win, n=10).
+# DISINFLATION+LOW_VOL+MISS -2.69% (18% win, n=11).
+# SEVERE_DEFLATION+SQUEEZE+MISS +6.90% (100% win, n=3).
+# Chain: Ldn-NY→NY AM 75% (only real edge). Asia chain broken.
+M30_ENABLED: true
+M30_WINDOW_DAYS: 1            # Days after release to consider active
+
+# ─── M31: UK CPI SESSION BIAS ───────────────────────────────
+# Backtested: 101 releases, 2018-2026. Overall noise (p=0.85).
+# Edges: WARM_SERVICES+LOW_VOL+MISS +1.17% (67% win, n=6).
+# HOT_SERVICES+SQUEEZE+MISS -1.94% (0% win, n=5).
+# HOT_SERVICES+CHOP+MISS -3.12% (0% win, n=3).
+# Chain: Ldn-NY→NY AM 79% (real edge). Ldn Midday→NY Pre 63% (marginal).
+M31_ENABLED: true
+M31_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

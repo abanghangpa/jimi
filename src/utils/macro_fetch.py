@@ -559,6 +559,102 @@ def fetch_jolts(force_refresh=False):
     return None
 
 
+def fetch_china_cpi(force_refresh=False):
+    """Fetch latest China CPI+PPI data (NBS release, ~10th-15th of month).
+
+    Also updates M30's cache so the session bias module
+    has fresh data for release-day scoring.
+    """
+    cache = _load_cache()
+    cache_key = 'china_cpi_ppi'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching China CPI+PPI...")
+
+    result = _fetch_trading_economics('consumer-price-index-cpi')
+    if result is None:
+        result = _fetch_trading_economics('china/consumer-price-index-cpi')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ China CPI: actual={result['actual']}")
+
+        # ── Feed live data into M30 cache ──
+        try:
+            from src.modules.m30_china_cpi_ppi import update_china_cpi_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            update_china_cpi_cache(
+                cpi_yoy=result['actual'],
+                ppi_yoy=result.get('ppi_yoy', result.get('previous', 0)),
+                release_date=_today,
+            )
+        except Exception:
+            pass
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
+def fetch_uk_cpi(force_refresh=False):
+    """Fetch latest UK CPI data (ONS release, ~10th-20th of month).
+
+    Also updates M31's cache so the session bias module
+    has fresh data for release-day scoring.
+    """
+    cache = _load_cache()
+    cache_key = 'uk_cpi'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching UK CPI...")
+
+    result = _fetch_trading_economics('united-kingdom/consumer-price-index-cpi')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ UK CPI: actual={result['actual']}")
+
+        # ── Feed live data into M31 cache ──
+        try:
+            from src.modules.m31_uk_cpi import update_uk_cpi_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            update_uk_cpi_cache(
+                cpi_yoy=result['actual'],
+                services_yoy=result.get('services_yoy', result.get('previous', 0)),
+                release_date=_today,
+            )
+        except Exception:
+            pass
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -570,6 +666,8 @@ def get_latest_macro_indicators():
         'ism_mfg_pmi': fetch_ism_pmi(),
         'ism_svc_pmi': fetch_ism_svc_pmi(),
         'jolts': fetch_jolts(),
+        'china_cpi_ppi': fetch_china_cpi(),
+        'uk_cpi': fetch_uk_cpi(),
     }
 
 
@@ -586,6 +684,8 @@ def get_surprise_for_event(event_id):
         'us_ism_mfg_pmi': 'ism_mfg_pmi',
         'us_ism_svc_pmi': 'ism_svc_pmi',
         'us_jolts': 'jolts',
+        'cn_cpi_ppi': 'china_cpi_ppi',
+        'uk_cpi': 'uk_cpi',
     }
 
     key = event_map.get(event_id)
