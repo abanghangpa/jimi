@@ -632,6 +632,16 @@ M24_WINDOW_DAYS: 1            # Days after release to consider active (0=release
 M25_ENABLED: true
 M25_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M26: EUROZONE FLASH PMI SESSION BIAS ────────────────────
+# Session-conditional bias on EZ Flash PMI release day.
+# Backtested: 100 releases (2018-2026), ETH/USDT 15m.
+# MILD_MISS: SHORT via Europe→UK→US chain (78.8%/69.7% persistence).
+# MILD_BEAT: LONG via UK→US chain (76.9% persistence).
+# Chain breaks at US Open→US Afternoon (51.5%, noise).
+# Session-aware: size decays after US Open (chain broken).
+M26_ENABLED: true
+M26_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

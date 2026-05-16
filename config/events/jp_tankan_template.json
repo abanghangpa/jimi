@@ -1,0 +1,19 @@
+{
+  "name": "Japan Tankan",
+  "geography": "asia",
+  "signal_classifier": "generic",
+  "signal_thresholds": {
+    "expansion_strong": 52.0,
+    "expansion_mild": 50.0,
+    "surprise_strong": 1.0,
+    "surprise_mild": 0.0,
+    "big_surprise": 1.0
+  },
+  "releases": {
+    "YYYY-MM-DD": {
+      "actual": 0.0,
+      "prior": 0.0,
+      "consensus": 0.0
+    }
+  }
+}

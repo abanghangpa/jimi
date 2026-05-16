@@ -54,6 +54,7 @@ from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range,
 from src.modules.m22_inflation_regime_v2 import score_m22, format_m22
 from src.modules.m24_nbs_pmi import score_m24_nbs_pmi, format_m24
 from src.modules.m25_caixin_pmi import score_m25_caixin_pmi, format_m25
+from src.modules.m26_ez_pmi import score_m26_ez_pmi, format_m26
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1031,6 +1032,48 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m25'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M26: Eurozone Flash PMI Session Bias (regime-conditional) ──
+    m26_score_adj = 0.0
+    m26_size_mult = 1.0
+    m26_details = {}
+    try:
+        from datetime import datetime as _dt
+        _now_utc_m26 = _dt.utcnow()
+        m26_status, m26_score_adj, m26_size_mult, m26_details = score_m26_ez_pmi(
+            wyckoff_phase=_wyckoff_for_m24,  # reuse M24's wyckoff lookup
+            vol_regime=_vol_for_m24,          # reuse M24's vol lookup
+            direction=direction,
+            config=cfg,
+            now_utc=_now_utc_m26)
+        if m26_details and m26_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m26'] = {
+                'status': m26_status,
+                'score_adj': m26_score_adj,
+                'size_mult': m26_size_mult,
+                'regime': m26_details.get('regime', '?'),
+                'bias': m26_details.get('bias', '?'),
+                'actual': m26_details.get('actual'),
+                'consensus': m26_details.get('consensus'),
+                'surprise': m26_details.get('surprise'),
+                'signal': m26_details.get('signal'),
+                'avg_ret_entry_to_exit': m26_details.get('avg_ret_entry_to_exit'),
+                'win_rate': m26_details.get('win_rate'),
+                'sample_size': m26_details.get('sample_size'),
+                'confidence': m26_details.get('confidence'),
+                'session_phase': m26_details.get('session_phase'),
+                'persistence_eu_uk': m26_details.get('persistence_eu_uk'),
+                'persistence_uk_us': m26_details.get('persistence_uk_us'),
+                'entry_session': m26_details.get('entry_session'),
+                'exit_session': m26_details.get('exit_session'),
+                'release_date': m26_details.get('release_date'),
+                'details': m26_details,
+            }
+            # Apply M26 size multiplier
+            if m26_size_mult < 1.0:
+                result['_m26_size_mult'] = m26_size_mult
+    except Exception as e:
+        result['m26'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1380,6 +1423,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))  # clamp to [0, 1]
         result['ics'] = round(float(ics), 4)
         result['m25_ics_adj'] = m25_score_adj
+
+    # ── M26 EZ PMI ICS adjustment (session-conditional bias on release days) ──
+    if m26_score_adj != 0.0 and m26_status in ('PASS', 'WEAK'):
+        ics += m26_score_adj
+        ics = max(0.0, min(1.0, ics))  # clamp to [0, 1]
+        result['ics'] = round(float(ics), 4)
+        result['m26_ics_adj'] = m26_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -1769,6 +1819,12 @@ def print_signal(result):
         m25_out = format_m25(result['m25'].get('details', {}))
         if m25_out:
             print(m25_out)
+
+    # M26 Eurozone Flash PMI Session Bias
+    if 'm26' in result and result['m26'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m26_out = format_m26(result['m26'].get('details', {}))
+        if m26_out:
+            print(m26_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -2503,6 +2559,32 @@ def print_summary(result):
             print(f"  {'  Filters':<22} Phase0={m25_p0b}  Trend={m25_tb}  adj={m25_adj:+.3f}  size={m25_sm:.2f}x")
         else:
             print(f"  {'M25 Caixin PMI':<22} {bias_icon} {m25_surprise:>12}  {m25_regime}")
+
+    # M26 Eurozone Flash PMI Session Bias summary
+    m26 = result.get('m26', {})
+    if m26 and m26.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m26_bias = m26.get('bias', '?')
+        m26_actual = m26.get('actual', 0)
+        m26_consensus = m26.get('consensus', 0)
+        m26_surprise = m26.get('surprise', 0)
+        m26_signal = m26.get('signal', '?')
+        m26_avg = m26.get('avg_ret_entry_to_exit', 0)
+        m26_win = m26.get('win_rate', 0)
+        m26_n = m26.get('sample_size', 0)
+        m26_conf = m26.get('confidence', 0)
+        m26_adj = m26.get('score_adj', 0)
+        m26_sm = m26.get('size_mult', 1.0)
+        m26_phase = m26.get('session_phase', '?')
+        m26_entry = m26.get('entry_session', '?')
+        m26_exit = m26.get('exit_session', '?')
+        m26_eu_uk = m26.get('persistence_eu_uk', 0)
+        m26_uk_us = m26.get('persistence_uk_us', 0)
+        bias_icon = '🟢' if m26_bias == 'LONG' else '🔴' if m26_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m26_conf >= 0.7 else '🟡' if m26_conf >= 0.4 else '🟠'
+        phase_icon = {'IN_WINDOW': '✅', 'FADING': '⚠️', 'OUT_OF_WINDOW': '❌'}.get(m26_phase, '❓')
+        print(f"  {'M26 EZ PMI':<22} {bias_icon} {m26_bias:>8}  actual={m26_actual:.1f} cons={m26_consensus:.1f} surp={m26_surprise:+.1f}  signal={m26_signal}")
+        print(f"  {'  Chain':<22} {conf_icon} {m26_entry}→{m26_exit}  EU→UK={m26_eu_uk:.0f}%  UK→US={m26_uk_us:.0f}%  avg={m26_avg:+.2f}%  win={m26_win*100:.0f}%  n={m26_n}")
+        print(f"  {'  Session':<22} {phase_icon} {m26_phase}  adj={m26_adj:+.3f}  size={m26_sm:.2f}x")
 
     # Breakout Confirmation summary
     bc = result.get('breakout_confirm')
