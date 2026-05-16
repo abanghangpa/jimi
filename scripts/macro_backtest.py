@@ -1,33 +1,49 @@
 #!/usr/bin/env python3
 """
-GENERALIZED MACRO EVENT BACKTEST FRAMEWORK
-==========================================
+GENERALIZED MACRO EVENT BACKTEST — PROMPT A
+=============================================
 
-Works with ANY macro event — just define:
-  1. EVENT_RELEASES: {date: {actual, prior, consensus, ...}}
-  2. EVENT_CONFIG: release time, timezone, geography
-  3. The framework auto-generates sessions and transitions based on release time
+Backtest [EVENT NAME] from [START YEAR] to today using ETH/USDT 15m data.
 
-No hardcoded sessions. No hardcoded transitions. The event's release time
-and geography determine the session itinerary automatically.
+Pipeline:
+  1. Collect [EVENT] release dates and actual values (YYYY-MM-DD + value)
+  2. Measure ETH returns across sessions, 24h aggregate:
+
+     | Region             | Phase                |
+     | ------------------ | -------------------- |
+     | **Pre-Asia**       | Post-NY Close/Globex |
+     | **Asia**           | Sydney Open          |
+     |                    | Tokyo Open           |
+     |                    | Asia Mid             |
+     |                    | Asia Afternoon       |
+     |                    | Tokyo Close          |
+     |                    | Pre-London           |
+     | **Europe**         | Frankfurt Open       |
+     |                    | London Open          |
+     |                    | London Morning       |
+     |                    | London Midday        |
+     | **Overlap (EU-US)**| NY Pre-Open          |
+     |                    | NY Open              |
+     |                    | London-NY Overlap    |
+     | **New York**       | NY AM                |
+     |                    | NY Lunch             |
+     |                    | NY PM                |
+
+  3. Classify each release by: Wyckoff phase (M21 proxy), vol regime (M9 proxy),
+     M22 module, and the event's signal strength
+  4. Cross-tabulate: (wyckoff × vol × signal) → avg 24h return, win rate, sample size
+  5. Report: which combos have edge (n≥3, |avg|≥0.5%), session-by-session
+     transmission chain, statistical significance (t-test miss vs beat)
 
 Usage:
-    # Define your event
-    config = {
-        'name': 'Eurozone Flash PMI (Composite)',
-        'release_utc_hour': 8,      # 08:00 UTC
-        'release_utc_minute': 0,
-        'geography': 'europe',       # determines session order
-        'custom_sessions': None,     # override auto-generated sessions if needed
-    }
+    # Run from config file
+    python3 scripts/macro_backtest.py eth_15m_merged.csv config/events/ez_pmi.json
 
-    releases = {
-        '2024-01-24': {'actual': 47.9, 'prior': 47.6, 'consensus': 48.0},
-        ...
-    }
+    # Generate config template
+    python3 scripts/macro_backtest.py --template "US CPI" us config/events/us_cpi.json
 
-    # Run
-    results = run_backtest(df, releases, config)
+Geographies: europe, us, asia, australia
+Signal classifiers: generic, surprise, rate_decision (or custom callable)
 """
 
 import pandas as pd
