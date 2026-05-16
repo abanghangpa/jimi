@@ -2822,7 +2822,8 @@ def main():
     try:
         if result.get('macro_calendar'):
             macro_cal = get_macro_calendar()
-            print(format_macro_calendar(macro_cal))
+            _current_regime = result.get('m9', {}).get('regime', None)
+            print(format_macro_calendar(macro_cal, current_regime=_current_regime))
     except Exception:
         pass
 

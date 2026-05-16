@@ -135,12 +135,26 @@ EVENTS = [
                 'COOL': 'Avg +1.06% (Fed can cut → risk-on)',
                 'HOT': 'Avg -0.45% (Fed stays tight → risk-off)',
             },
+            'eth_by_regime': {
+                'BEAR':              {'COOL': +9.92, 'HOT': -3.33},
+                'BULL':              {'COOL': +1.88, 'HOT': -0.20},
+                'RECOVERY':          {'COOL': -0.55, 'HOT': +0.84},
+                'ACCELERATION':      {'COOL': -0.09, 'HOT': +0.06},
+                'STAGFLATION':       {'COOL': +3.00, 'HOT': -2.00},
+                'STAGFLATION_HOT':   {'COOL': +4.00, 'HOT': -3.00},
+            },
+            'regime_sensitivity': {
+                'TIGHTENING': 0.60, 'EASING': 0.50, 'CRISIS_RECOVERY': 0.80,
+                'BULL': 0.85, 'BEAR': 1.20, 'RECOVERY': 0.75,
+                'ACCELERATION': 0.65, 'STAGFLATION': 1.00, 'STAGFLATION_HOT': 1.10,
+            },
         },
         'what_to_watch': [
             'CPI vs consensus surprise — direction AND magnitude',
             'Core CPI (ex food/energy) — sticky inflation indicator',
             'Shelter/rent component — largest weight, slow-moving',
             'Market pricing: did DXY already price in the print?',
+            'CURRENT REGIME determines expected move magnitude — see eth_by_regime',
         ],
     },
     {
@@ -712,8 +726,14 @@ def _build_cascade_chain(events, now):
 
 # ── Formatting ──
 
-def format_macro_calendar(cal):
-    """Format macro calendar for terminal output."""
+def format_macro_calendar(cal, current_regime=None):
+    """Format macro calendar for terminal output.
+
+    Args:
+        cal: calendar dict from get_macro_calendar()
+        current_regime: current market regime (e.g. 'STAGFLATION_HOT')
+                        if provided, shows regime-specific expected moves
+    """
     lines = []
     lines.append('')
     lines.append('═' * 60)
@@ -722,6 +742,8 @@ def format_macro_calendar(cal):
     lines.append(f'\n  Now: {cal["now"]}')
     lines.append(f'  Phase: {_phase_icon(cal["phase"])} {cal["phase"]} — {cal["phase_desc"]}')
     lines.append(f'  Next major: {cal["next_major"]}')
+    if current_regime:
+        lines.append(f'  Regime: {current_regime} (impacts adjusted for current regime)')
 
     # ── Next 24h ──
     next_24h = [e for e in cal['events'] if e.get('is_next_24h')]
@@ -730,14 +752,19 @@ def format_macro_calendar(cal):
         for evt in next_24h:
             icon = _impact_icon(evt['impact'])
             alert = ' 🚨' if evt.get('is_next_1h') else ''
-            lines.append(f'    {icon} {evt["countdown"]:>10}  {evt["name"]:30}  {evt["time_utc"]}{alert}')
+            regime_str = _regime_impact_str(evt, current_regime)
+            lines.append(f'    {icon} {evt["countdown"]:>10}  {evt["name"]:30}  {evt["time_utc"]}{alert}{regime_str}')
     else:
         lines.append(f'\n  ⚡ NEXT 24 HOURS: (none)')
 
     # ── Upcoming events (full list) ──
     lines.append(f'\n  📋 UPCOMING EVENTS (next 30 days):')
-    lines.append(f'    {"Countdown":>10}  {"Event":32} {"Country":12} {"Impact":8} {"Time":>6}')
-    lines.append(f'    {"─" * 10}  {"─" * 32} {"─" * 12} {"─" * 8} {"─" * 6}')
+    if current_regime:
+        lines.append(f'    {"Countdown":>10}  {"Event":32} {"Country":12} {"Impact":8} {"Regime Adj":>10}')
+        lines.append(f'    {"─" * 10}  {"─" * 32} {"─" * 12} {"─" * 8} {"─" * 10}')
+    else:
+        lines.append(f'    {"Countdown":>10}  {"Event":32} {"Country":12} {"Impact":8} {"Time":>6}')
+        lines.append(f'    {"─" * 10}  {"─" * 32} {"─" * 12} {"─" * 8} {"─" * 6}')
 
     for evt in cal['events'][:20]:  # Show next 20 events
         icon = _impact_icon(evt['impact'])
@@ -745,9 +772,33 @@ def format_macro_calendar(cal):
         name = evt['name'][:30]
         country = evt['country']
         impact = evt['impact']
-        time = evt['time_utc']
         alert = ' 🚨' if evt.get('is_next_4h') else ''
-        lines.append(f'    {icon} {cd:>10}  {name:32} {country:12} {impact:8} {time:>6}{alert}')
+
+        if current_regime:
+            regime_str = _regime_impact_str(evt, current_regime)
+            lines.append(f'    {icon} {cd:>10}  {name:32} {country:12} {impact:8}{regime_str}{alert}')
+        else:
+            time = evt['time_utc']
+            lines.append(f'    {icon} {cd:>10}  {name:32} {country:12} {impact:8} {time:>6}{alert}')
+
+    # ── Regime-specific CPI preview ──
+    if current_regime:
+        lines.append(f'\n  📊 REGIME-ADJUSTED EXPECTED MOVES ({current_regime}):')
+        cpi_evt = next((e for e in cal['events'] if e['id'] == 'us_cpi'), None)
+        if cpi_evt:
+            regime_data = cpi_evt.get('cascade', {}).get('eth_by_regime', {})
+            if current_regime in regime_data:
+                rd = regime_data[current_regime]
+                cool_move = rd.get('COOL', 0)
+                hot_move = rd.get('HOT', 0)
+                lines.append(f'    🔴 US CPI if COOL: {cool_move:+.2f}%  (avg base: +1.06%)')
+                lines.append(f'    🔴 US CPI if HOT:  {hot_move:+.2f}%  (avg base: -0.45%)')
+                lines.append(f'    ⚠️  Regime multiplier: {cool_move/1.06:.1f}x (COOL) / {hot_move/-0.45:.1f}x (HOT) vs base')
+
+                # Sensitivity
+                sens = cpi_evt.get('cascade', {}).get('regime_sensitivity', {})
+                if current_regime in sens:
+                    lines.append(f'    📐 Sensitivity: {sens[current_regime]:.2f}x (how much macro matters in this era)')
 
     # ── Cascade chain ──
     if cal['cascade_chain']:
@@ -779,6 +830,28 @@ def format_macro_calendar(cal):
 
     lines.append('═' * 60)
     return '\n'.join(lines)
+
+
+def _regime_impact_str(evt, current_regime):
+    """Get regime-adjusted impact string for an event."""
+    if not current_regime:
+        return ''
+
+    cascade = evt.get('cascade', {})
+
+    # CPI has regime-specific expected moves
+    if evt['id'] == 'us_cpi':
+        regime_data = cascade.get('eth_by_regime', {})
+        if current_regime in regime_data:
+            rd = regime_data[current_regime]
+            cool = rd.get('COOL', 0)
+            hot = rd.get('HOT', 0)
+            return f'  COOL:{cool:+.1f}% HOT:{hot:+.1f}%'
+        return ''
+
+    # PPI modifier is regime-independent (acts on CPI signal)
+    # NFP, Claims, etc. use flat averages
+    return ''
 
 
 def _phase_icon(phase):
