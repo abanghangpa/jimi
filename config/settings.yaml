@@ -642,6 +642,16 @@ M25_WINDOW_DAYS: 1            # Days after release to consider active
 M26_ENABLED: true
 M26_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M27: US ISM MANUFACTURING PMI SESSION BIAS ─────────────
+# Session transmission chain bias on ISM MFG PMI release day.
+# Backtested: 101 releases (2018-2026), ETH/USDT 15m.
+# STRONG_CONTRACTION + TREND: +3.44% avg, 75% win. SEVERE NO (<45): +1.77%, 71% win.
+# Chain: TK Close→Pre-LDN 85.9% → Frankfurt 80% → London 69.2%. Breaks at NY re-open.
+# New Orders <50 = DXY weakens → ETH short squeeze. Services follow-up 2-3d later.
+# Session-aware: size decays after London Morning (chain breaks at NY AM).
+M27_ENABLED: true
+M27_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

@@ -397,6 +397,64 @@ def fetch_nbs_pmi(force_refresh=False):
     return None
 
 
+def fetch_ism_pmi(force_refresh=False):
+    """Fetch latest US ISM Manufacturing PMI data.
+
+    Also updates M27's ISM PMI cache so the session bias module
+    has fresh data for release-day scoring.
+    """
+    cache = _load_cache()
+    cache_key = 'ism_mfg_pmi'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching US ISM Manufacturing PMI...")
+
+    # Try Trading Economics for ISM Manufacturing PMI
+    result = _fetch_trading_economics('ism-manufacturing-pmi')
+    if result is None:
+        result = _fetch_trading_economics('united-states/manufacturing-pmi')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ ISM MFG PMI: actual={result['actual']}")
+
+        # ── Feed live ISM PMI into M27 cache ──
+        try:
+            from src.modules.m27_ism_pmi import update_ism_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            # New Orders sub-index — primary signal driver
+            # Try to fetch from Trading Economics
+            no_result = _fetch_trading_economics('ism-new-orders')
+            new_orders = no_result.get('actual') if no_result else None
+            if new_orders is None:
+                # Estimate from headline (rough proxy)
+                new_orders = result['actual']
+            update_ism_cache(
+                actual=result['actual'],
+                new_orders=new_orders,
+                prior=result.get('previous'),
+                release_date=_today,
+            )
+        except Exception:
+            pass  # non-critical
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -405,6 +463,7 @@ def get_latest_macro_indicators():
     return {
         'caixin_mfg_pmi': fetch_caixin_pmi(),
         'nbs_mfg_pmi': fetch_nbs_pmi(),
+        'ism_mfg_pmi': fetch_ism_pmi(),
     }
 
 
@@ -418,6 +477,7 @@ def get_surprise_for_event(event_id):
     event_map = {
         'cn_caixin_mfg_pmi': 'caixin_mfg_pmi',
         'cn_nbs_pmi': 'nbs_mfg_pmi',
+        'us_ism_mfg_pmi': 'ism_mfg_pmi',
     }
 
     key = event_map.get(event_id)
