@@ -1,0 +1,92 @@
+[
+  {
+    "wyckoff": "CHOP",
+    "vol": "CHOP",
+    "signal": "MISS",
+    "n": 3,
+    "avg_ret": -2.7680475608585033,
+    "win_rate": 0.6666666666666666,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "MARKDOWN",
+    "vol": "LOW_VOL",
+    "signal": "BIG_MISS",
+    "n": 5,
+    "avg_ret": 1.7808979602436028,
+    "win_rate": 0.8,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "MARKDOWN",
+    "vol": "LOW_VOL",
+    "signal": "STRONG_BEAT",
+    "n": 3,
+    "avg_ret": 4.164111828828049,
+    "win_rate": 1.0,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "signal": "STRONG_BEAT",
+    "n": 4,
+    "avg_ret": 2.566527497073894,
+    "win_rate": 1.0,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "MARKUP",
+    "vol": "LOW_VOL",
+    "signal": "STRONG_BEAT",
+    "n": 3,
+    "avg_ret": -0.6724833046104935,
+    "win_rate": 0.3333333333333333,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "RANGE",
+    "vol": "COMPRESSING",
+    "signal": "BIG_MISS",
+    "n": 7,
+    "avg_ret": 0.8063043281816716,
+    "win_rate": 0.5714285714285714,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "RANGE",
+    "vol": "COMPRESSING",
+    "signal": "INLINE",
+    "n": 12,
+    "avg_ret": -0.7027469797454997,
+    "win_rate": 0.3333333333333333,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "RANGE",
+    "vol": "COMPRESSING",
+    "signal": "MISS",
+    "n": 5,
+    "avg_ret": -1.995172462345132,
+    "win_rate": 0.2,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "RANGE",
+    "vol": "COMPRESSING",
+    "signal": "STRONG_BEAT",
+    "n": 19,
+    "avg_ret": 1.1266180910959245,
+    "win_rate": 0.631578947368421,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "RANGE",
+    "vol": "LOW_VOL",
+    "signal": "STRONG_BEAT",
+    "n": 3,
+    "avg_ret": 2.0393196861238407,
+    "win_rate": 1.0,
+    "bias": "LONG"
+  }
+]

@@ -59,6 +59,7 @@ from src.modules.m33_retail_sales import score_m33_retail_sales, format_m33
 from src.modules.m34_housing_starts import score_m34_housing, format_m34
 from src.modules.m35_pboc_lpr import score_m35_pboc_lpr, format_m35
 from src.modules.m36_adp_employment import score_m36_adp, format_m36
+from src.modules.m37_nfp import score_m37_nfp, format_m37
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1225,6 +1226,42 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m36'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M37: US Non-Farm Payrolls Session Bias (regime-conditional) ──
+    m37_score_adj = 0.0
+    m37_size_mult = 1.0
+    m37_status = 'SKIP'
+    m37_details = {}
+    try:
+        _wyckoff_for_m37 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m37 = result.get('m9', {}).get('regime', 'CHOP')
+        m37_status, m37_score_adj, m37_size_mult, m37_details = score_m37_nfp(
+            wyckoff_phase=_wyckoff_for_m37,
+            vol_regime=_vol_for_m37,
+            direction=direction, today_str=today_str, config=cfg)
+        if m37_details and m37_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m37'] = {
+                'status': m37_status,
+                'score_adj': m37_score_adj,
+                'size_mult': m37_size_mult,
+                'regime': m37_details.get('regime', '?'),
+                'bias': m37_details.get('bias', '?'),
+                'nfp_k': m37_details.get('nfp_k'),
+                'consensus_k': m37_details.get('consensus_k'),
+                'surprise': m37_details.get('surprise'),
+                'signal': m37_details.get('signal'),
+                'avg_ret_24h': m37_details.get('avg_ret_24h'),
+                'win_rate': m37_details.get('win_rate'),
+                'sample_size': m37_details.get('sample_size'),
+                'confidence': m37_details.get('confidence'),
+                'source': m37_details.get('source'),
+                'release_date': m37_details.get('release_date'),
+                'details': m37_details,
+            }
+            if m37_size_mult < 1.0:
+                result['_m37_size_mult'] = m37_size_mult
+    except Exception as e:
+        result['m37'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1609,6 +1646,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m36_ics_adj'] = m36_score_adj
+
+    # ── M37 NFP ICS adjustment (regime-conditional bias on release days) ──
+    if m37_score_adj != 0.0 and m37_status in ('PASS', 'WEAK'):
+        ics += m37_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m37_ics_adj'] = m37_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2028,6 +2072,12 @@ def print_signal(result):
         m36_out = format_m36(result['m36'].get('details', {}))
         if m36_out:
             print(m36_out)
+
+    # M37 NFP Session Bias
+    if 'm37' in result and result['m37'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m37_out = format_m37(result['m37'].get('details', {}))
+        if m37_out:
+            print(m37_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -2844,6 +2894,25 @@ def print_summary(result):
         conf_icon = '🟢' if m36_conf >= 0.7 else '🟡' if m36_conf >= 0.4 else '🟠'
         print(f"  {'M36 ADP Employment':<22} {bias_icon} {m36_bias:>8}  ADP={m36_adp}K cons={m36_cons}K surp={m36_surprise:+.0f}K  signal={m36_signal}")
         print(f"  {'  Backtest':<22} {conf_icon} 24h={m36_avg:+.2f}%  win={m36_win*100:.0f}%  n={m36_n}  adj={m36_adj:+.3f}  size={m36_sm:.2f}x  ⚠️ trap risk")
+
+    # M37 NFP Session Bias summary
+    m37 = result.get('m37', {})
+    if m37 and m37.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m37_bias = m37.get('bias', '?')
+        m37_nfp = m37.get('nfp_k', 0)
+        m37_cons = m37.get('consensus_k', 0)
+        m37_surprise = m37.get('surprise', 0)
+        m37_signal = m37.get('signal', '?')
+        m37_avg = m37.get('avg_ret_24h', 0)
+        m37_win = m37.get('win_rate', 0)
+        m37_n = m37.get('sample_size', 0)
+        m37_conf = m37.get('confidence', 0)
+        m37_adj = m37.get('score_adj', 0)
+        m37_sm = m37.get('size_mult', 1.0)
+        bias_icon = '🟢' if m37_bias == 'LONG' else '🔴' if m37_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m37_conf >= 0.7 else '🟡' if m37_conf >= 0.4 else '🟠'
+        print(f"  {'M37 NFP':<22} {bias_icon} {m37_bias:>8}  NFP={m37_nfp:,}K cons={m37_cons:,}K surp={m37_surprise:+,}K  signal={m37_signal}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m37_avg:+.2f}%  win={m37_win*100:.0f}%  n={m37_n}  adj={m37_adj:+.3f}  size={m37_sm:.2f}x  chain: London→NY 73-90%")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})
