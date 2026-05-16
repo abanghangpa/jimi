@@ -701,6 +701,26 @@ M31_WINDOW_DAYS: 1            # Days after release to consider active
 M32_ENABLED: true
 M32_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M33: US RETAIL SALES SESSION BIAS ──────────────────────
+# Session transmission chain bias on US Retail Sales release day.
+# Backtested: 101 releases (2018-2026), ETH/USDT 15m.
+# BIG_MISS+LOW_VOL+MARKDOWN: +2.32% (80% win, n=5).
+# BIG_MISS+CHOP+MARKUP: -3.33% (0% win, n=5). BEAT+CHOP+RANGE: +3.62% (100%, n=3).
+# Chain: Release→NY Open 97% → Ldn-NY Overlap 62% (marginal) → NY AM 80%. Breaks at NY Lunch.
+# Session-aware: edge lives in Release→NY AM window (~4h post-release).
+M33_ENABLED: true
+M33_WINDOW_DAYS: 1            # Days after release to consider active
+
+# ─── M34: US HOUSING STARTS + BUILDING PERMITS SESSION BIAS ──
+# Session transmission chain bias on Housing Starts release day.
+# Backtested: 100 releases (2018-2026), ETH/USDT 15m.
+# COLLAPSE+CHOP+MARKDOWN: +2.07% (60% win, n=5). STRONG+LOW_VOL+MARKDOWN: -2.56% (25%, n=4).
+# STABLE+CHOP+RANGE: -3.95% (0% win, n=3).
+# Chain: Release→NY Open 96% → Ldn-NY 57% (marginal) → NY AM 70%. Breaks at NY Lunch.
+# Rate-sensitive proxy: collapse → DXY drop → ETH up (dovish bets).
+M34_ENABLED: true
+M34_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

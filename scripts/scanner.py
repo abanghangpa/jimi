@@ -55,6 +55,8 @@ from src.modules.m22_inflation_regime_v2 import score_m22, format_m22
 from src.modules.m24_nbs_pmi import score_m24_nbs_pmi, format_m24
 from src.modules.m25_caixin_pmi import score_m25_caixin_pmi, format_m25
 from src.modules.m26_ez_pmi import score_m26_ez_pmi, format_m26
+from src.modules.m33_retail_sales import score_m33_retail_sales, format_m33
+from src.modules.m34_housing_starts import score_m34_housing, format_m34
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1074,6 +1076,80 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m26'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M33: US Retail Sales Session Bias (regime-conditional) ──
+    m33_score_adj = 0.0
+    m33_size_mult = 1.0
+    m33_details = {}
+    try:
+        _wyckoff_for_m33 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m33 = result.get('m9', {}).get('regime', 'CHOP')
+        m33_status, m33_score_adj, m33_size_mult, m33_details = score_m33_retail_sales(
+            wyckoff_phase=_wyckoff_for_m33,
+            vol_regime=_vol_for_m33,
+            direction=direction,
+            config=cfg)
+        if m33_details and m33_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m33'] = {
+                'status': m33_status,
+                'score_adj': m33_score_adj,
+                'size_mult': m33_size_mult,
+                'regime': m33_details.get('regime', '?'),
+                'bias': m33_details.get('bias', '?'),
+                'retail_mom': m33_details.get('retail_mom'),
+                'core_mom': m33_details.get('core_mom'),
+                'consensus': m33_details.get('consensus'),
+                'surprise': m33_details.get('surprise'),
+                'signal': m33_details.get('signal'),
+                'avg_ret_24h': m33_details.get('avg_ret_24h'),
+                'win_rate': m33_details.get('win_rate'),
+                'sample_size': m33_details.get('sample_size'),
+                'confidence': m33_details.get('confidence'),
+                'source': m33_details.get('source'),
+                'release_date': m33_details.get('release_date'),
+                'details': m33_details,
+            }
+            if m33_size_mult < 1.0:
+                result['_m33_size_mult'] = m33_size_mult
+    except Exception as e:
+        result['m33'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
+    # ── M34: US Housing Starts Session Bias (regime-conditional) ──
+    m34_score_adj = 0.0
+    m34_size_mult = 1.0
+    m34_details = {}
+    try:
+        _wyckoff_for_m34 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m34 = result.get('m9', {}).get('regime', 'CHOP')
+        m34_status, m34_score_adj, m34_size_mult, m34_details = score_m34_housing(
+            wyckoff_phase=_wyckoff_for_m34,
+            vol_regime=_vol_for_m34,
+            direction=direction,
+            config=cfg)
+        if m34_details and m34_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m34'] = {
+                'status': m34_status,
+                'score_adj': m34_score_adj,
+                'size_mult': m34_size_mult,
+                'regime': m34_details.get('regime', '?'),
+                'bias': m34_details.get('bias', '?'),
+                'starts_k': m34_details.get('starts_k'),
+                'permits_k': m34_details.get('permits_k'),
+                'starts_mom': m34_details.get('starts_mom'),
+                'permits_mom': m34_details.get('permits_mom'),
+                'signal': m34_details.get('signal'),
+                'avg_ret_24h': m34_details.get('avg_ret_24h'),
+                'win_rate': m34_details.get('win_rate'),
+                'sample_size': m34_details.get('sample_size'),
+                'confidence': m34_details.get('confidence'),
+                'source': m34_details.get('source'),
+                'release_date': m34_details.get('release_date'),
+                'details': m34_details,
+            }
+            if m34_size_mult < 1.0:
+                result['_m34_size_mult'] = m34_size_mult
+    except Exception as e:
+        result['m34'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1430,6 +1506,20 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))  # clamp to [0, 1]
         result['ics'] = round(float(ics), 4)
         result['m26_ics_adj'] = m26_score_adj
+
+    # ── M33 US Retail Sales ICS adjustment (regime-conditional bias on release days) ──
+    if m33_score_adj != 0.0 and m33_status in ('PASS', 'WEAK'):
+        ics += m33_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m33_ics_adj'] = m33_score_adj
+
+    # ── M34 US Housing ICS adjustment (regime-conditional bias on release days) ──
+    if m34_score_adj != 0.0 and m34_status in ('PASS', 'WEAK'):
+        ics += m34_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m34_ics_adj'] = m34_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -1825,6 +1915,18 @@ def print_signal(result):
         m26_out = format_m26(result['m26'].get('details', {}))
         if m26_out:
             print(m26_out)
+
+    # M33 US Retail Sales Session Bias
+    if 'm33' in result and result['m33'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m33_out = format_m33(result['m33'].get('details', {}))
+        if m33_out:
+            print(m33_out)
+
+    # M34 US Housing Starts Session Bias
+    if 'm34' in result and result['m34'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m34_out = format_m34(result['m34'].get('details', {}))
+        if m34_out:
+            print(m34_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -2559,6 +2661,48 @@ def print_summary(result):
             print(f"  {'  Filters':<22} Phase0={m25_p0b}  Trend={m25_tb}  adj={m25_adj:+.3f}  size={m25_sm:.2f}x")
         else:
             print(f"  {'M25 Caixin PMI':<22} {bias_icon} {m25_surprise:>12}  {m25_regime}")
+
+    # M33 US Retail Sales Session Bias summary
+    m33 = result.get('m33', {})
+    if m33 and m33.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m33_bias = m33.get('bias', '?')
+        m33_retail_mom = m33.get('retail_mom', 0)
+        m33_core = m33.get('core_mom', 0)
+        m33_consensus = m33.get('consensus', 0)
+        m33_surprise = m33.get('surprise', 0)
+        m33_signal = m33.get('signal', '?')
+        m33_avg = m33.get('avg_ret_24h', 0)
+        m33_win = m33.get('win_rate', 0)
+        m33_n = m33.get('sample_size', 0)
+        m33_conf = m33.get('confidence', 0)
+        m33_adj = m33.get('score_adj', 0)
+        m33_sm = m33.get('size_mult', 1.0)
+        m33_src = m33.get('source', '?')
+        bias_icon = '🟢' if m33_bias == 'LONG' else '🔴' if m33_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m33_conf >= 0.7 else '🟡' if m33_conf >= 0.4 else '🟠'
+        print(f"  {'M33 Retail Sales':<22} {bias_icon} {m33_bias:>8}  retail={m33_retail_mom:+.1f}% cons={m33_consensus:+.1f}% surp={m33_surprise:+.2f}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m33_avg:+.2f}%  win={m33_win*100:.0f}%  n={m33_n}  src={m33_src}  adj={m33_adj:+.3f}  size={m33_sm:.2f}x")
+
+    # M34 US Housing Starts Session Bias summary
+    m34 = result.get('m34', {})
+    if m34 and m34.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m34_bias = m34.get('bias', '?')
+        m34_starts = m34.get('starts_k', 0)
+        m34_permits = m34.get('permits_k', 0)
+        m34_starts_mom = m34.get('starts_mom', 0)
+        m34_permits_mom = m34.get('permits_mom', 0)
+        m34_signal = m34.get('signal', '?')
+        m34_avg = m34.get('avg_ret_24h', 0)
+        m34_win = m34.get('win_rate', 0)
+        m34_n = m34.get('sample_size', 0)
+        m34_conf = m34.get('confidence', 0)
+        m34_adj = m34.get('score_adj', 0)
+        m34_sm = m34.get('size_mult', 1.0)
+        m34_src = m34.get('source', '?')
+        bias_icon = '🟢' if m34_bias == 'LONG' else '🔴' if m34_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m34_conf >= 0.7 else '🟡' if m34_conf >= 0.4 else '🟠'
+        print(f"  {'M34 Housing Starts':<22} {bias_icon} {m34_bias:>8}  starts={m34_starts}K({m34_starts_mom:+.1f}%) permits={m34_permits}K({m34_permits_mom:+.1f}%)  signal={m34_signal}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m34_avg:+.2f}%  win={m34_win*100:.0f}%  n={m34_n}  src={m34_src}  adj={m34_adj:+.3f}  size={m34_sm:.2f}x")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})

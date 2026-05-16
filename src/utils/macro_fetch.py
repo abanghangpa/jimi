@@ -704,6 +704,102 @@ def fetch_uk_wages(force_refresh=False):
     return None
 
 
+def fetch_us_retail_sales(force_refresh=False):
+    """Fetch latest US Retail Sales data.
+
+    Also updates M33's retail sales cache so the session bias module
+    has fresh data for release-day scoring.
+    """
+    cache = _load_cache()
+    cache_key = 'us_retail_sales'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching US Retail Sales...")
+
+    result = _fetch_trading_economics('retail-sales')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ US Retail Sales: actual={result['actual']}")
+
+        # ── Feed live data into M33 cache ──
+        try:
+            from src.modules.m33_retail_sales import update_retail_sales_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            update_retail_sales_cache(
+                retail_mom=result['actual'],
+                core_mom=None,  # core not always available from TE
+                release_date=_today,
+            )
+        except Exception:
+            pass
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
+def fetch_us_housing_starts(force_refresh=False):
+    """Fetch latest US Housing Starts data.
+
+    Also updates M34's housing cache so the session bias module
+    has fresh data for release-day scoring.
+    """
+    cache = _load_cache()
+    cache_key = 'us_housing_starts'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching US Housing Starts...")
+
+    result = _fetch_trading_economics('housing-starts')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ US Housing Starts: actual={result['actual']}")
+
+        # ── Feed live data into M34 cache ──
+        try:
+            from src.modules.m34_housing_starts import update_housing_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            update_housing_cache(
+                starts_k=result['actual'],
+                permits_k=None,
+                starts_mom=None,
+                permits_mom=None,
+                release_date=_today,
+            )
+        except Exception:
+            pass
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -718,6 +814,8 @@ def get_latest_macro_indicators():
         'china_cpi_ppi': fetch_china_cpi(),
         'uk_cpi': fetch_uk_cpi(),
         'uk_wages': fetch_uk_wages(),
+        'us_retail_sales': fetch_us_retail_sales(),
+        'us_housing_starts': fetch_us_housing_starts(),
     }
 
 
