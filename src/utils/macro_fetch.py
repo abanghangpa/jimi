@@ -509,6 +509,56 @@ def fetch_ism_svc_pmi(force_refresh=False):
     return None
 
 
+def fetch_jolts(force_refresh=False):
+    """Fetch latest JOLTS Job Openings data.
+
+    Also updates M29's JOLTS cache so the session bias module
+    has fresh data for release-day scoring.
+    """
+    cache = _load_cache()
+    cache_key = 'jolts'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching JOLTS Job Openings...")
+
+    result = _fetch_trading_economics('job-offers')
+    if result is None:
+        result = _fetch_trading_economics('united-states/job-openings')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ JOLTS: actual={result['actual']}")
+
+        # ── Feed live JOLTS into M29 cache ──
+        try:
+            from src.modules.m29_jolts import update_jolts_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            update_jolts_cache(
+                actual=result['actual'],
+                prior=result.get('previous', result['actual']),
+                quits_rate=result.get('quits_rate'),
+                release_date=_today,
+            )
+        except Exception:
+            pass
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -519,6 +569,7 @@ def get_latest_macro_indicators():
         'nbs_mfg_pmi': fetch_nbs_pmi(),
         'ism_mfg_pmi': fetch_ism_pmi(),
         'ism_svc_pmi': fetch_ism_svc_pmi(),
+        'jolts': fetch_jolts(),
     }
 
 
@@ -534,6 +585,7 @@ def get_surprise_for_event(event_id):
         'cn_nbs_pmi': 'nbs_mfg_pmi',
         'us_ism_mfg_pmi': 'ism_mfg_pmi',
         'us_ism_svc_pmi': 'ism_svc_pmi',
+        'us_jolts': 'jolts',
     }
 
     key = event_map.get(event_id)

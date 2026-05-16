@@ -663,6 +663,17 @@ M27_WINDOW_DAYS: 1            # Days after release to consider active
 M28_ENABLED: true
 M28_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M29: JOLTS JOB OPENINGS SESSION BIAS ────────────────────
+# Session transmission chain bias on JOLTS release day.
+# Backtested: 100 releases (2018-2026), ETH/USDT 15m.
+# SURGING+TREND: +7.17% 100% win (p=0.0196). RISING+TREND: -5.18% (p=0.0072).
+# COLLAPSE+CHOP: +2.02% 100% win. SURGING+CHOP: +1.66% 83% win.
+# Chain: Spike→NY AM 81.5% → TK Close→Frankfurt 73.8% → Frankfurt→LDN 70.6%.
+# JOLTS→NFP loopback: 20-33% full 3-day persistence (does NOT hold as direction chain).
+# Session-aware: size decays after London (chain breaks at NY PM).
+M29_ENABLED: true
+M29_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
