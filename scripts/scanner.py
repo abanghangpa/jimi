@@ -61,6 +61,7 @@ from src.modules.m35_pboc_lpr import score_m35_pboc_lpr, format_m35
 from src.modules.m36_adp_employment import score_m36_adp, format_m36
 from src.modules.m37_nfp import score_m37_nfp, format_m37
 from src.modules.m38_ifo import score_m38_ifo, format_m38
+from src.modules.m39_ums import score_m39_ums, format_m39
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1300,6 +1301,45 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m38'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M39: Michigan Consumer Sentiment Session Bias (regime-conditional) ──
+    m39_score_adj = 0.0
+    m39_size_mult = 1.0
+    m39_status = 'SKIP'
+    m39_details = {}
+    try:
+        _wyckoff_for_m39 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m39 = result.get('m9', {}).get('regime', 'CHOP')
+        m39_status, m39_score_adj, m39_size_mult, m39_details = score_m39_ums(
+            wyckoff_phase=_wyckoff_for_m39,
+            vol_regime=_vol_for_m39,
+            direction=direction, today_str=today_str, config=cfg)
+        if m39_details and m39_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m39'] = {
+                'status': m39_status,
+                'score_adj': m39_score_adj,
+                'size_mult': m39_size_mult,
+                'regime': m39_details.get('regime', '?'),
+                'bias': m39_details.get('bias', '?'),
+                'headline': m39_details.get('headline'),
+                'consensus': m39_details.get('consensus'),
+                'surprise': m39_details.get('surprise'),
+                'signal': m39_details.get('signal'),
+                'infl_5yr': m39_details.get('infl_5yr'),
+                'infl_signal': m39_details.get('infl_signal'),
+                'type': m39_details.get('type'),
+                'avg_ret_24h': m39_details.get('avg_ret_24h'),
+                'win_rate': m39_details.get('win_rate'),
+                'sample_size': m39_details.get('sample_size'),
+                'confidence': m39_details.get('confidence'),
+                'source': m39_details.get('source'),
+                'release_date': m39_details.get('release_date'),
+                'details': m39_details,
+            }
+            if m39_size_mult < 1.0:
+                result['_m39_size_mult'] = m39_size_mult
+    except Exception as e:
+        result['m39'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1698,6 +1738,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m38_ics_adj'] = m38_score_adj
+
+    # ── M39 UMS ICS adjustment (regime-conditional bias on release days) ──
+    if m39_score_adj != 0.0 and m39_status in ('PASS', 'WEAK'):
+        ics += m39_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m39_ics_adj'] = m39_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2129,6 +2176,12 @@ def print_signal(result):
         m38_out = format_m38(result['m38'].get('details', {}))
         if m38_out:
             print(m38_out)
+
+    # M39 Michigan Sentiment Session Bias
+    if 'm39' in result and result['m39'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m39_out = format_m39(result['m39'].get('details', {}))
+        if m39_out:
+            print(m39_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -2985,6 +3038,29 @@ def print_summary(result):
         trend_icon = '📈' if m38_trend == 'IMPROVING' else '📉' if m38_trend == 'DETERIORATING' else '➡️'
         print(f"  {'M38 Germany Ifo':<22} {bias_icon} {m38_bias:>8}  actual={m38_actual} cons={m38_cons} trend={trend_icon}{m38_trend}")
         print(f"  {'  Backtest':<22} {conf_icon} 24h={m38_avg:+.2f}%  win={m38_win*100:.0f}%  n={m38_n}  adj={m38_adj:+.3f}  size={m38_sm:.2f}x  chain: Fr→London→NY 78-88%")
+
+    # M39 Michigan Consumer Sentiment summary
+    m39 = result.get('m39', {})
+    if m39 and m39.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m39_bias = m39.get('bias', '?')
+        m39_headline = m39.get('headline', 0)
+        m39_cons = m39.get('consensus', 0)
+        m39_surprise = m39.get('surprise', 0)
+        m39_signal = m39.get('signal', '?')
+        m39_infl = m39.get('infl_5yr', 0)
+        m39_infl_sig = m39.get('infl_signal', '?')
+        m39_type = m39.get('type', '?')
+        m39_avg = m39.get('avg_ret_24h', 0)
+        m39_win = m39.get('win_rate', 0)
+        m39_n = m39.get('sample_size', 0)
+        m39_conf = m39.get('confidence', 0)
+        m39_adj = m39.get('score_adj', 0)
+        m39_sm = m39.get('size_mult', 1.0)
+        bias_icon = '🟢' if m39_bias == 'LONG' else '🔴' if m39_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m39_conf >= 0.7 else '🟡' if m39_conf >= 0.4 else '🟠'
+        infl_icon = '🔴' if m39_infl_sig == 'INFL_UP' else '🟢' if m39_infl_sig == 'INFL_DOWN' else '⚪'
+        print(f"  {'M39 Michigan Sent':<22} {bias_icon} {m39_bias:>8}  {m39_type} headline={m39_headline} cons={m39_cons} 5yr={m39_infl}%{infl_icon}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m39_avg:+.2f}%  win={m39_win*100:.0f}%  n={m39_n}  adj={m39_adj:+.3f}  size={m39_sm:.2f}x  weekend: 68.2% continuity")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})

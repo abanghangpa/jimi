@@ -765,6 +765,18 @@ M37_WINDOW_DAYS: 1            # Days after release to consider active
 M38_ENABLED: true
 M38_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M39: Michigan Consumer Sentiment Session Bias (regime-conditional) ───
+# UMS released 2nd & 4th Friday, 10:00 ET (14:00 UTC). 193 releases backtested.
+# Key sub-index: 5-Year Inflation Expectations (drives Fed modeling).
+# Primary signal: Wyckoff × Vol × Inflation Expectations.
+#   MARKDOWN + LOW_VOL + INFL_STABLE: +1.43% avg, 67% win, n=18 → LONG
+#   RANGE + COMPRESSING + INFL_UP:    -1.13% avg, 44% win, n=9 → SHORT
+# Weekend crypto continuity: Fri Close → Mon Asia 68.2% same direction ✅
+# Session chain: NY AM→NY Lunch→NY PM→Fri Close→Sat→Sun→Mon: 73-94% persist
+# Conference Board loopback: UMS sets tone for following week's Consumer Confidence.
+M39_ENABLED: true
+M39_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

@@ -1,0 +1,74 @@
+[
+  {
+    "wyckoff": "CHOP",
+    "vol": "LOW_VOL",
+    "infl_signal": "INFL_STABLE",
+    "n": 7,
+    "avg_ret": -0.6063312416224439,
+    "win_rate": 0.42857142857142855,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "MARKDOWN",
+    "vol": "COMPRESSING",
+    "infl_signal": "INFL_STABLE",
+    "n": 5,
+    "avg_ret": -0.5265255309695759,
+    "win_rate": 0.2,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "MARKDOWN",
+    "vol": "LOW_VOL",
+    "infl_signal": "INFL_STABLE",
+    "n": 18,
+    "avg_ret": 1.433775637298996,
+    "win_rate": 0.6666666666666666,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "MARKDOWN",
+    "vol": "TREND",
+    "infl_signal": "INFL_STABLE",
+    "n": 4,
+    "avg_ret": 0.6014966622439347,
+    "win_rate": 0.5,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "MARKUP",
+    "vol": "CHOP",
+    "infl_signal": "INFL_STABLE",
+    "n": 3,
+    "avg_ret": -3.4438694558616274,
+    "win_rate": 0.0,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "infl_signal": "INFL_STABLE",
+    "n": 6,
+    "avg_ret": 1.02042138750118,
+    "win_rate": 0.5,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "MARKUP",
+    "vol": "TREND",
+    "infl_signal": "INFL_STABLE",
+    "n": 4,
+    "avg_ret": -2.2903920865767144,
+    "win_rate": 0.25,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "RANGE",
+    "vol": "COMPRESSING",
+    "infl_signal": "INFL_UP",
+    "n": 9,
+    "avg_ret": -1.1282701553691985,
+    "win_rate": 0.4444444444444444,
+    "bias": "SHORT"
+  }
+]

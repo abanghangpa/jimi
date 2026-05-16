@@ -45,7 +45,8 @@ _DYNAMIC_KEYS = {'_base_timeframe', 'M22_ENABLED', 'M22_WEIGHT', 'M22_VETO_THRES
                   'M35_ENABLED', 'M35_WINDOW_DAYS',
                   'M36_ENABLED', 'M36_WINDOW_DAYS',
                   'M37_ENABLED', 'M37_WINDOW_DAYS',
-                  'M38_ENABLED', 'M38_WINDOW_DAYS'}
+                  'M38_ENABLED', 'M38_WINDOW_DAYS',
+                  'M39_ENABLED', 'M39_WINDOW_DAYS'}
 
 # Module → (enabled_key, weight_key, required_when_enabled)
 _MODULE_WEIGHT_PAIRS = [
