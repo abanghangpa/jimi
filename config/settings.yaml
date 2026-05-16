@@ -692,6 +692,15 @@ M30_WINDOW_DAYS: 1            # Days after release to consider active
 M31_ENABLED: true
 M31_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M32: UK EMPLOYMENT + WAGES SESSION BIAS ─────────────────
+# Backtested: 101 releases, 2018-2026. Overall noise (p=0.58).
+# Edges: COOL_WAGES+TREND+INLINE +4.52% (80% win, n=5).
+# WARM_WAGES+LOW_VOL+INLINE +0.59% (70% win, n=10).
+# WARM_WAGES+CHOP+MISS -2.43% (40% win, n=5).
+# Chain: Ldn Midday→NY Pre 68%, Ldn-NY→NY AM 75%.
+M32_ENABLED: true
+M32_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

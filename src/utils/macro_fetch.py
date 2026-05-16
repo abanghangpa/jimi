@@ -655,6 +655,55 @@ def fetch_uk_cpi(force_refresh=False):
     return None
 
 
+def fetch_uk_wages(force_refresh=False):
+    """Fetch latest UK Employment + Wages data (ONS release, ~2nd Tuesday).
+
+    Also updates M32's cache so the session bias module
+    has fresh data for release-day scoring.
+    """
+    cache = _load_cache()
+    cache_key = 'uk_wages'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching UK Wages...")
+
+    result = _fetch_trading_economics('united-kingdom/average-earnings')
+    if result is None:
+        result = _fetch_trading_economics('united-kingdom/wage-growth')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ UK Wages: actual={result['actual']}")
+
+        # ── Feed live data into M32 cache ──
+        try:
+            from src.modules.m32_uk_wages import update_uk_wages_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            update_uk_wages_cache(
+                earnings_3m_yr=result['actual'],
+                unemployment=result.get('unemployment'),
+                release_date=_today,
+            )
+        except Exception:
+            pass
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -668,6 +717,7 @@ def get_latest_macro_indicators():
         'jolts': fetch_jolts(),
         'china_cpi_ppi': fetch_china_cpi(),
         'uk_cpi': fetch_uk_cpi(),
+        'uk_wages': fetch_uk_wages(),
     }
 
 
@@ -686,6 +736,7 @@ def get_surprise_for_event(event_id):
         'us_jolts': 'jolts',
         'cn_cpi_ppi': 'china_cpi_ppi',
         'uk_cpi': 'uk_cpi',
+        'uk_wages': 'uk_wages',
     }
 
     key = event_map.get(event_id)
