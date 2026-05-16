@@ -260,19 +260,43 @@ NBS_RELEASES = [
 ]
 
 
-def classify_surprise(actual, previous):
-    """Classify PMI surprise vs previous."""
+def classify_surprise(actual, previous, sigma=None):
+    """Classify PMI surprise vs previous.
+
+    Uses σ-based thresholds if sigma is provided:
+      STRONG_BEAT: ≥ +2σ
+      BEAT:        > +0.5σ
+      INLINE:      ± 0.5σ
+      MISS:        < -0.5σ
+      BIG_MISS:    < -2σ
+
+    Otherwise falls back to simple MoM classification.
+    """
     diff = actual - previous
-    if diff > 0.3:
-        return 'STRONG_BEAT'
-    elif diff > 0.0:
-        return 'BEAT'
-    elif diff < -0.3:
-        return 'BIG_MISS'
-    elif diff < 0.0:
-        return 'MISS'
+    if sigma and sigma > 0:
+        z = diff / sigma
+        if z >= 2.0:
+            return 'STRONG_BEAT'
+        elif z > 0.5:
+            return 'BEAT'
+        elif z >= -0.5:
+            return 'INLINE'
+        elif z >= -2.0:
+            return 'MISS'
+        else:
+            return 'BIG_MISS'
     else:
-        return 'INLINE'
+        # Fallback: simple MoM
+        if diff > 0.3:
+            return 'STRONG_BEAT'
+        elif diff > 0.0:
+            return 'BEAT'
+        elif diff < -0.3:
+            return 'BIG_MISS'
+        elif diff < 0.0:
+            return 'MISS'
+        else:
+            return 'INLINE'
 
 
 def classify_divergence(caixin_actual, nbs_actual):
@@ -435,7 +459,24 @@ def get_regime_at_date(df_15m, df_1h, df_1d, date_str, config=None):
 def main():
     parser = argparse.ArgumentParser(description='Caixin PMI Session Transmission Backtest')
     parser.add_argument('--verbose', '-v', action='store_true')
+    parser.add_argument('--sigma', type=float, nargs='?', const=0.5, default=None,
+                        help='Use σ-based surprise thresholds. Pass σ value (default 0.5 if flag used without value)')
     args = parser.parse_args()
+
+    # Compute σ from all Caixin PMI changes
+    changes = [actual - prev for _, actual, prev in CAIXIN_RELEASES]
+    data_sigma = float(np.std(changes))
+    mean_change = float(np.mean(changes))
+    print(f"Caixin PMI change stats: mean={mean_change:+.3f}, σ={data_sigma:.3f} (n={len(changes)})")
+
+    use_sigma = args.sigma
+    if use_sigma is not None:
+        sigma = use_sigma
+        print(f"  Using σ-based thresholds (σ={sigma}): STRONG_BEAT ≥ +2σ ({2*sigma:+.2f}), BEAT > +0.5σ ({0.5*sigma:+.2f}), INLINE ±0.5σ, MISS < -0.5σ ({-0.5*sigma:+.2f})")
+    else:
+        sigma = None
+        print(f"  Using simple MoM thresholds (>0.3, >0, <-0.3)")
+    print()
 
     # Load data
     csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'eth_15m_merged.csv')
@@ -476,7 +517,7 @@ def main():
             continue
 
         # Classify
-        surprise = classify_surprise(caixin_actual, caixin_prev)
+        surprise = classify_surprise(caixin_actual, caixin_prev, sigma=sigma)
         divergence = classify_divergence(caixin_actual, nbs_actual) if nbs_actual else 'NO_NBS_DATA'
 
         # Regime
@@ -512,6 +553,8 @@ def main():
 
     print("═" * 70)
     print("  CAIXIN PMI SESSION TRANSMISSION BACKTEST")
+    method = f"σ-BASED (σ={sigma})" if sigma else "SIMPLE MoM"
+    print(f"  Classification: {method}")
     print("═" * 70)
     print(f"\n  Events analyzed: {len(df)}")
     print(f"  Date range: {df['date'].iloc[0]} → {df['date'].iloc[-1]}")
