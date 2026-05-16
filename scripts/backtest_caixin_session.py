@@ -32,19 +32,99 @@ UTC = timezone.utc
 # ══════════════════════════════════════════════════════════════
 
 CAIXIN_RELEASES = [
-    # (date, actual, previous, consensus_if_available)
-    ('2024-01-02', 50.8, 50.7),   # Beat
-    ('2024-02-01', 50.8, 50.8),   # Inline
-    ('2024-03-01', 50.9, 50.8),   # Slight beat
-    ('2024-04-01', 51.1, 50.9),   # Beat
-    ('2024-05-02', 51.4, 51.1),   # Beat
-    ('2024-06-03', 51.7, 51.4),   # Beat
-    ('2024-07-01', 51.8, 51.7),   # Slight beat
-    ('2024-08-01', 49.8, 51.8),   # MISS (big miss, contraction)
-    ('2024-09-02', 50.4, 49.8),   # Beat (recovery)
+    # (date, actual, previous)
+    # 2018
+    ('2018-01-02', 51.5, 51.8),   # Miss
+    ('2018-02-01', 51.5, 51.5),   # Inline
+    ('2018-03-01', 51.6, 51.5),   # Slight beat
+    ('2018-04-02', 51.0, 51.6),   # Miss
+    ('2018-05-02', 51.1, 51.0),   # Slight beat
+    ('2018-06-01', 51.1, 51.1),   # Inline
+    ('2018-07-02', 51.0, 51.1),   # Slight miss
+    ('2018-08-01', 50.8, 51.0),   # Miss
+    ('2018-09-03', 50.6, 50.8),   # Miss
+    ('2018-10-08', 50.0, 50.6),   # Miss
+    ('2018-11-01', 50.2, 50.0),   # Beat
+    ('2018-12-03', 50.7, 50.2),   # Beat
+    # 2019
+    ('2019-01-02', 49.7, 50.7),   # Big miss
+    ('2019-02-01', 48.3, 49.7),   # Big miss
+    ('2019-03-01', 49.9, 48.3),   # Beat
+    ('2019-04-01', 50.8, 49.9),   # Beat
+    ('2019-05-02', 50.2, 50.8),   # Miss
+    ('2019-06-03', 49.4, 50.2),   # Miss
+    ('2019-07-01', 49.9, 49.4),   # Beat
+    ('2019-08-01', 49.9, 49.9),   # Inline
+    ('2019-09-02', 50.6, 49.9),   # Beat
+    ('2019-10-08', 51.7, 50.6),   # Strong beat
+    ('2019-11-01', 51.8, 51.7),   # Slight beat
+    ('2019-12-02', 51.8, 51.8),   # Inline
+    # 2020
+    ('2020-01-02', 51.5, 51.8),   # Miss
+    ('2020-02-03', 50.7, 51.5),   # Miss (COVID starting)
+    ('2020-03-02', 40.3, 50.7),   # BIG miss (COVID crash)
+    ('2020-04-01', 49.4, 40.3),   # Beat (recovery)
+    ('2020-05-07', 49.6, 49.4),   # Slight beat
+    ('2020-06-01', 50.7, 49.6),   # Beat
+    ('2020-07-01', 51.2, 50.7),   # Beat
+    ('2020-08-03', 52.8, 51.2),   # Strong beat
+    ('2020-09-01', 53.1, 52.8),   # Beat
+    ('2020-10-09', 53.5, 53.1),   # Beat
+    ('2020-11-02', 53.6, 53.5),   # Slight beat
+    ('2020-12-01', 54.9, 53.6),   # Strong beat
+    # 2021
+    ('2021-01-04', 53.0, 54.9),   # Miss
+    ('2021-02-01', 50.9, 53.0),   # Miss
+    ('2021-03-01', 50.6, 50.9),   # Miss
+    ('2021-04-01', 51.9, 50.6),   # Beat
+    ('2021-05-06', 52.0, 51.9),   # Slight beat
+    ('2021-06-01', 51.3, 52.0),   # Miss
+    ('2021-07-01', 50.3, 51.3),   # Miss
+    ('2021-08-02', 50.3, 50.3),   # Inline
+    ('2021-09-01', 50.0, 50.3),   # Miss
+    ('2021-10-08', 50.6, 50.0),   # Beat
+    ('2021-11-01', 50.6, 50.6),   # Inline
+    ('2021-12-01', 51.2, 50.6),   # Beat
+    # 2022
+    ('2022-01-04', 49.1, 51.2),   # Miss
+    ('2022-02-07', 50.1, 49.1),   # Beat (but still contraction zone)
+    ('2022-03-01', 48.1, 50.1),   # Miss (Russia/Ukraine)
+    ('2022-04-01', 46.0, 48.1),   # Big miss (Shanghai lockdown)
+    ('2022-05-05', 48.1, 46.0),   # Beat
+    ('2022-06-01', 48.1, 48.1),   # Inline
+    ('2022-07-01', 50.4, 48.1),   # Beat
+    ('2022-08-01', 49.5, 50.4),   # Miss
+    ('2022-09-01', 48.1, 49.5),   # Miss
+    ('2022-10-08', 49.2, 48.1),   # Beat
+    ('2022-11-01', 49.4, 49.2),   # Slight beat
+    ('2022-12-01', 49.4, 49.4),   # Inline
+    # 2023
+    ('2023-01-03', 49.5, 49.4),   # Beat (but contraction)
+    ('2023-02-01', 50.2, 49.5),   # Beat (expansion!)
+    ('2023-03-01', 51.6, 50.2),   # Beat
+    ('2023-04-03', 50.0, 51.6),   # Miss
+    ('2023-05-04', 49.5, 50.0),   # Miss
+    ('2023-06-01', 50.5, 49.5),   # Beat
+    ('2023-07-03', 50.5, 50.5),   # Inline
+    ('2023-08-01', 49.2, 50.5),   # Miss
+    ('2023-09-01', 50.6, 49.2),   # Beat
+    ('2023-10-09', 50.8, 50.6),   # Slight beat
+    ('2023-11-01', 50.3, 50.8),   # Miss
+    ('2023-12-01', 50.2, 50.3),   # Slight miss
+    # 2024
+    ('2024-01-02', 50.8, 50.2),   # Beat
+    ('2024-02-01', 50.9, 50.8),   # Beat
+    ('2024-03-01', 51.1, 50.9),   # Beat
+    ('2024-04-01', 51.4, 51.1),   # Beat
+    ('2024-05-02', 51.7, 51.4),   # Beat
+    ('2024-06-03', 51.8, 51.7),   # Beat
+    ('2024-07-01', 51.8, 51.8),   # Inline
+    ('2024-08-01', 49.8, 51.8),   # Big miss
+    ('2024-09-02', 50.4, 49.8),   # Beat
     ('2024-10-08', 50.3, 50.4),   # Slight miss
     ('2024-11-01', 50.3, 50.3),   # Inline
     ('2024-12-02', 51.5, 50.3),   # Beat
+    # 2025
     ('2025-01-02', 50.5, 51.5),   # Miss
     ('2025-02-03', 50.8, 50.5),   # Beat
     ('2025-03-03', 51.2, 50.8),   # Beat
@@ -57,6 +137,7 @@ CAIXIN_RELEASES = [
     ('2025-10-09', 51.0, 50.9),   # Slight beat
     ('2025-11-03', 50.6, 51.0),   # Miss
     ('2025-12-01', 51.2, 50.6),   # Beat
+    # 2026
     ('2026-01-02', 50.5, 51.2),   # Miss
     ('2026-02-02', 50.8, 50.5),   # Beat
     ('2026-03-02', 51.1, 50.8),   # Beat
@@ -64,38 +145,118 @@ CAIXIN_RELEASES = [
     ('2026-05-01', 50.7, 51.2),   # Miss
 ]
 
-# NBS PMI (same day as Caixin, ~01:00 UTC, released slightly before)
-# These are the official state survey numbers
+# NBS PMI (same day, ~01:00 UTC)
 NBS_RELEASES = [
+    # 2018
+    ('2018-01-02', 51.3, 51.6),
+    ('2018-02-01', 50.3, 51.3),
+    ('2018-03-01', 51.5, 50.3),
+    ('2018-04-02', 51.4, 51.5),
+    ('2018-05-02', 51.9, 51.4),
+    ('2018-06-01', 51.5, 51.9),
+    ('2018-07-02', 51.2, 51.5),
+    ('2018-08-01', 51.3, 51.2),
+    ('2018-09-03', 50.8, 51.3),
+    ('2018-10-08', 50.2, 50.8),
+    ('2018-11-01', 50.0, 50.2),
+    ('2018-12-03', 49.4, 50.0),
+    # 2019
+    ('2019-01-02', 49.5, 49.4),
+    ('2019-02-01', 49.2, 49.5),
+    ('2019-03-01', 50.5, 49.2),
+    ('2019-04-01', 50.1, 50.5),
+    ('2019-05-02', 49.4, 50.1),
+    ('2019-06-03', 49.4, 49.4),
+    ('2019-07-01', 49.7, 49.4),
+    ('2019-08-01', 49.5, 49.7),
+    ('2019-09-02', 49.8, 49.5),
+    ('2019-10-08', 49.3, 49.8),
+    ('2019-11-01', 49.6, 49.3),
+    ('2019-12-02', 50.2, 49.6),
+    # 2020
+    ('2020-01-02', 50.0, 50.2),
+    ('2020-02-03', 35.7, 50.0),   # COVID crash
+    ('2020-03-02', 52.0, 35.7),   # Recovery
+    ('2020-04-01', 50.8, 52.0),
+    ('2020-05-07', 50.6, 50.8),
+    ('2020-06-01', 50.9, 50.6),
+    ('2020-07-01', 51.1, 50.9),
+    ('2020-08-03', 51.0, 51.1),
+    ('2020-09-01', 51.5, 51.0),
+    ('2020-10-09', 51.4, 51.5),
+    ('2020-11-02', 52.1, 51.4),
+    ('2020-12-01', 51.9, 52.1),
+    # 2021
+    ('2021-01-04', 51.3, 51.9),
+    ('2021-02-01', 50.6, 51.3),
+    ('2021-03-01', 51.9, 50.6),
+    ('2021-04-01', 51.1, 51.9),
+    ('2021-05-06', 51.0, 51.1),
+    ('2021-06-01', 50.9, 51.0),
+    ('2021-07-01', 50.4, 50.9),
+    ('2021-08-02', 50.1, 50.4),
+    ('2021-09-01', 49.6, 50.1),
+    ('2021-10-08', 49.2, 49.6),
+    ('2021-11-01', 50.1, 49.2),
+    ('2021-12-01', 50.3, 50.1),
+    # 2022
+    ('2022-01-04', 50.1, 50.3),
+    ('2022-02-07', 50.2, 50.1),
+    ('2022-03-01', 49.5, 50.2),
+    ('2022-04-01', 47.4, 49.5),   # Shanghai lockdown
+    ('2022-05-05', 49.6, 47.4),
+    ('2022-06-01', 50.2, 49.6),
+    ('2022-07-01', 49.0, 50.2),
+    ('2022-08-01', 49.4, 49.0),
+    ('2022-09-01', 50.1, 49.4),
+    ('2022-10-08', 49.2, 50.1),
+    ('2022-11-01', 48.0, 49.2),
+    ('2022-12-01', 47.0, 48.0),
+    # 2023
+    ('2023-01-03', 47.0, 47.0),
+    ('2023-02-01', 52.6, 47.0),   # Reopening surge
+    ('2023-03-01', 51.9, 52.6),
+    ('2023-04-03', 49.2, 51.9),
+    ('2023-05-04', 48.8, 49.2),
+    ('2023-06-01', 49.0, 48.8),
+    ('2023-07-03', 49.3, 49.0),
+    ('2023-08-01', 49.7, 49.3),
+    ('2023-09-01', 50.2, 49.7),
+    ('2023-10-09', 49.5, 50.2),
+    ('2023-11-01', 49.4, 49.5),
+    ('2023-12-01', 49.0, 49.4),
+    # 2024
     ('2024-01-02', 49.0, 49.0),
     ('2024-02-01', 49.1, 49.0),
     ('2024-03-01', 49.1, 49.1),
-    ('2024-04-01', 50.8, 49.1),   # Big beat (returned to expansion)
-    ('2024-05-02', 49.5, 50.8),   # Miss (back to contraction)
+    ('2024-04-01', 50.8, 49.1),
+    ('2024-05-02', 49.5, 50.8),
     ('2024-06-03', 49.5, 49.5),
-    ('2024-07-01', 49.5, 49.5),
-    ('2024-08-01', 49.4, 49.5),
-    ('2024-09-02', 49.8, 49.4),   # Slight beat
-    ('2024-10-08', 50.1, 49.8),   # Beat (expansion)
-    ('2024-11-01', 50.3, 50.1),   # Beat
-    ('2024-12-02', 50.1, 50.3),   # Slight miss
+    ('2024-07-01', 49.4, 49.5),
+    ('2024-08-01', 49.1, 49.4),
+    ('2024-09-02', 49.8, 49.1),
+    ('2024-10-08', 50.1, 49.8),
+    ('2024-11-01', 50.3, 50.1),
+    ('2024-12-02', 50.1, 50.3),
+    # 2025
     ('2025-01-02', 50.1, 50.1),
-    ('2025-02-03', 50.2, 50.1),   # Beat
-    ('2025-03-03', 50.5, 50.2),   # Beat
+    ('2025-02-03', 50.2, 50.1),
+    ('2025-03-03', 50.5, 50.2),
     ('2025-04-01', 50.5, 50.5),
-    ('2025-05-02', 49.4, 50.5),   # Miss
-    ('2025-06-02', 49.5, 49.4),   # Slight beat
+    ('2025-05-02', 49.4, 50.5),
+    ('2025-06-02', 49.5, 49.4),
     ('2025-07-01', 49.5, 49.5),
-    ('2025-08-01', 49.3, 49.5),   # Miss
-    ('2025-09-01', 49.8, 49.3),   # Beat
-    ('2025-10-09', 50.2, 49.8),   # Beat
-    ('2025-11-03', 49.5, 50.2),   # Miss
-    ('2025-12-01', 50.0, 49.5),   # Beat
-    ('2026-01-02', 49.8, 50.0),   # Miss
-    ('2026-02-02', 50.2, 49.8),   # Beat
-    ('2026-03-02', 50.5, 50.2),   # Beat
+    ('2025-08-01', 49.3, 49.5),
+    ('2025-09-01', 49.8, 49.3),
+    ('2025-10-09', 50.2, 49.8),
+    ('2025-11-03', 49.5, 50.2),
+    ('2025-12-01', 50.0, 49.5),
+    # 2026
+    ('2026-01-02', 49.8, 50.0),
+    ('2026-02-02', 50.2, 49.8),
+    ('2026-03-02', 50.5, 50.2),
     ('2026-04-01', 50.5, 50.5),
-    ('2026-05-01', 49.4, 50.5),   # Miss
+    ('2026-05-01', 49.4, 50.5),
 ]
 
 
@@ -214,12 +375,11 @@ def get_session_returns(df_15m, release_date, verbose=False):
 
 
 def get_regime_at_date(df_15m, df_1h, df_1d, date_str, config=None):
-    """Get market regime at a specific date."""
+    """Get market regime at a specific date using M9 volatility regime engine."""
     from src.modules.m9_volatility import RegimeState, compute_vol_regime
 
     ts = pd.Timestamp(date_str)
 
-    # Find closest 15m bar
     mask = df_15m['Open time'] >= ts
     if not mask.any():
         return None
@@ -227,13 +387,11 @@ def get_regime_at_date(df_15m, df_1h, df_1d, date_str, config=None):
     if idx < 50:
         return None
 
-    # Find closest 1h bar
     mask_1h = df_1h['Open time'] >= ts
     if not mask_1h.any():
         return None
     idx_1h = mask_1h.idxmax()
 
-    # Find closest 1d bar
     mask_1d = df_1d['Open time'] >= ts
     if not mask_1d.any():
         return None
@@ -242,14 +400,24 @@ def get_regime_at_date(df_15m, df_1h, df_1d, date_str, config=None):
     cfg = config or {}
     regime_state = RegimeState(config=cfg)
     try:
-        vol_regime, m9_raw, _ = compute_vol_regime(
+        vol_regime, m9_raw, details = compute_vol_regime(
             df_15m, df_1h, idx, idx_1h, regime_state=regime_state, config=cfg)
     except Exception:
-        vol_regime, m9_raw = 'UNKNOWN', 0.5
+        vol_regime, m9_raw, details = 'UNKNOWN', 0.5, {}
 
     swing_bias = df_1d['swing_bias'].iloc[idx_1d] if 'swing_bias' in df_1d.columns else 'UNKNOWN'
     phase0 = df_1d['phase0'].iloc[idx_1d] if 'phase0' in df_1d.columns else None
     trend = df_1d['trend'].iloc[idx_1d] if 'trend' in df_1d.columns else 'UNKNOWN'
+
+    price = float(df_15m['Close'].iloc[idx])
+    atr_1h = float(df_1h['atr'].iloc[idx_1h]) if 'atr' in df_1h.columns and not pd.isna(df_1h['atr'].iloc[idx_1h]) else None
+
+    lookback = min(idx, 2880)
+    if lookback > 0:
+        price_30d_ago = float(df_15m['Close'].iloc[idx - lookback])
+        trend_30d = (price - price_30d_ago) / price_30d_ago * 100
+    else:
+        trend_30d = 0
 
     return {
         'regime': vol_regime,
@@ -257,6 +425,10 @@ def get_regime_at_date(df_15m, df_1h, df_1d, date_str, config=None):
         'swing_bias': swing_bias,
         'phase0': round(float(phase0), 3) if phase0 and not pd.isna(phase0) else None,
         'trend': trend,
+        'price': price,
+        'atr_1h': round(atr_1h, 2) if atr_1h else None,
+        'trend_30d': round(trend_30d, 2),
+        'details': details if isinstance(details, dict) else {},
     }
 
 
@@ -321,6 +493,9 @@ def main():
             'swing_bias': regime_info['swing_bias'] if regime_info else 'UNKNOWN',
             'trend': regime_info['trend'] if regime_info else 'UNKNOWN',
             'phase0': regime_info['phase0'] if regime_info else None,
+            'price': regime_info['price'] if regime_info else None,
+            'atr_1h': regime_info['atr_1h'] if regime_info else None,
+            'trend_30d': regime_info['trend_30d'] if regime_info else None,
         }
         row.update(session_rets)
         results.append(row)
@@ -414,12 +589,13 @@ def main():
             reversals = sum(1 for p, r in zip(prior_rets, reopen_rets) if (p > 0 and r < 0) or (p < 0 and r > 0))
             print(f"    Reversal rate (US→Asia re-open): {reversals}/{len(prior_rets)} = {reversals/len(prior_rets)*100:.0f}%")
 
-    # ── 3. Regime Breakdown ──
+    # ── 3. Regime Breakdown (M9 + Trend + Phase0) ──
     print(f"\n  {'─' * 66}")
-    print(f"  SESSION RETURNS BY REGIME")
+    print(f"  SESSION RETURNS BY M9 VOLATILITY REGIME")
     print(f"  {'─' * 66}")
 
-    for regime in df['regime'].unique():
+    regime_order = ['TRENDING', 'COMPRESSING', 'NEUTRAL', 'CHOP_MILD', 'CHOP_HARD', 'CRISIS', 'UNKNOWN']
+    for regime in regime_order:
         subset = df[df['regime'] == regime]
         if len(subset) == 0:
             continue
@@ -435,8 +611,71 @@ def main():
                 continue
 
             avg = np.mean(rets)
+            med = np.median(rets)
             win = sum(1 for r in rets if r > 0) / len(rets) * 100
-            print(f"    {session:16s}  avg={avg:+.3f}%  win={win:.0f}%")
+            print(f"    {session:16s}  avg={avg:+.3f}%  med={med:+.3f}%  win={win:.0f}%")
+
+        # Surprise breakdown within regime
+        for surprise_type in ['STRONG_BEAT', 'BEAT', 'INLINE', 'MISS', 'BIG_MISS']:
+            s = subset[subset['surprise'] == surprise_type]
+            if len(s) == 0:
+                continue
+            t24 = [r.get('total_24h', {}).get('return_pct', 0) for _, r in s.iterrows() if isinstance(r.get('total_24h'), dict)]
+            if t24:
+                print(f"    {surprise_type:16s}  24h={np.mean(t24):+.3f}%  win={sum(1 for x in t24 if x > 0)/len(t24)*100:.0f}%  (n={len(t24)})")
+
+    # ── 3b. Regime × Trend 30d ──
+    print(f"\n  {'─' * 66}")
+    print(f"  SESSION RETURNS BY 30-DAY TREND (entering event)")
+    print(f"  {'─' * 66}")
+
+    # Split into trend buckets
+    df['trend_bucket'] = pd.cut(df['trend_30d'].fillna(0),
+                                 bins=[-100, -10, -5, -2, 2, 5, 10, 100],
+                                 labels=['STRONG_DOWN', 'DOWN', 'SLIGHT_DOWN', 'FLAT', 'SLIGHT_UP', 'UP', 'STRONG_UP'])
+    for bucket in ['STRONG_DOWN', 'DOWN', 'SLIGHT_DOWN', 'FLAT', 'SLIGHT_UP', 'UP', 'STRONG_UP']:
+        subset = df[df['trend_bucket'] == bucket]
+        if len(subset) == 0:
+            continue
+        t24 = [r.get('total_24h', {}).get('return_pct', 0) for _, r in subset.iterrows() if isinstance(r.get('total_24h'), dict)]
+        if t24:
+            print(f"  {bucket:16s}  avg={np.mean(t24):+.3f}%  win={sum(1 for x in t24 if x > 0)/len(t24)*100:.0f}%  (n={len(t24)})")
+
+    # ── 3c. Regime × Phase0 ──
+    print(f"\n  {'─' * 66}")
+    print(f"  SESSION RETURNS BY PHASE0 (macro context)")
+    print(f"  {'─' * 66}")
+
+    df['phase0_bucket'] = pd.cut(df['phase0'].fillna(0.5),
+                                  bins=[0, 0.15, 0.30, 0.50, 0.70, 1.0],
+                                  labels=['DEATH_ZONE', 'LOW', 'NEUTRAL', 'STRONG', 'EXTREME'])
+    for bucket in ['DEATH_ZONE', 'LOW', 'NEUTRAL', 'STRONG', 'EXTREME']:
+        subset = df[df['phase0_bucket'] == bucket]
+        if len(subset) == 0:
+            continue
+        t24 = [r.get('total_24h', {}).get('return_pct', 0) for _, r in subset.iterrows() if isinstance(r.get('total_24h'), dict)]
+        if t24:
+            print(f"  {bucket:16s}  avg={np.mean(t24):+.3f}%  win={sum(1 for x in t24 if x > 0)/len(t24)*100:.0f}%  (n={len(t24)})")
+
+    # ── 3d. Regime × Surprise Cross-Tab ──
+    print(f"\n  {'─' * 66}")
+    print(f"  CROSS-TAB: REGIME × SURPRISE (24h return)")
+    print(f"  {'─' * 66}")
+
+    for regime in regime_order:
+        subset = df[df['regime'] == regime]
+        if len(subset) == 0:
+            continue
+        parts = []
+        for surprise_type in ['STRONG_BEAT', 'BEAT', 'INLINE', 'MISS', 'BIG_MISS']:
+            s = subset[subset['surprise'] == surprise_type]
+            if len(s) == 0:
+                continue
+            t24 = [r.get('total_24h', {}).get('return_pct', 0) for _, r in s.iterrows() if isinstance(r.get('total_24h'), dict)]
+            if t24:
+                parts.append(f"{surprise_type[:6]}={np.mean(t24):+.1f}%({len(t24)})")
+        if parts:
+            print(f"  {regime:14s}  {'  '.join(parts)}")
 
     # ── 4. Full Event Table ──
     if args.verbose:
@@ -500,6 +739,74 @@ def main():
     print(f"\n  3. NBS DIVERGENCE → ASIA RE-OPEN REVERSAL:")
     aligned = df[df['divergence'] == 'ALIGNED']
     divergent = df[df['divergence'].isin(['CAIXIN_HOT_NBS_COLD', 'CAIXIN_COLD_NBS_HOT'])]
+
+    for label, subset in [('Aligned', aligned), ('Divergent', divergent)]:
+        if len(subset) == 0:
+            continue
+        us_rets = []
+        reopen_rets = []
+        for _, r in subset.iterrows():
+            us = r.get('us', {})
+            reopen = r.get('asia_reopen', {})
+            if isinstance(us, dict) and isinstance(reopen, dict):
+                u = us.get('return_pct', 0)
+                a = reopen.get('return_pct', 0)
+                if u != 0:
+                    us_rets.append(u)
+                    reopen_rets.append(a)
+
+        if us_rets:
+            reversals = sum(1 for p, r in zip(us_rets, reopen_rets) if (p > 0 and r < 0) or (p < 0 and r > 0))
+            avg_us = np.mean(us_rets)
+            avg_reopen = np.mean(reopen_rets)
+            print(f"     {label:10s} — US avg: {avg_us:+.3f}%, Asia re-open avg: {avg_reopen:+.3f}%, "
+                  f"reversal: {reversals}/{len(us_rets)} = {reversals/len(us_rets)*100:.0f}%")
+
+    # ── 4. Regime-specific best strategy ──
+    print(f"\n  4. BEST STRATEGY BY REGIME (24h return):")
+    for regime in regime_order:
+        subset = df[df['regime'] == regime]
+        if len(subset) < 3:
+            continue
+        best_surprise = None
+        best_avg = -999
+        worst_surprise = None
+        worst_avg = 999
+        for surprise_type in ['STRONG_BEAT', 'BEAT', 'INLINE', 'MISS', 'BIG_MISS']:
+            s = subset[subset['surprise'] == surprise_type]
+            if len(s) < 2:
+                continue
+            t24 = [r.get('total_24h', {}).get('return_pct', 0) for _, r in s.iterrows() if isinstance(r.get('total_24h'), dict)]
+            if t24:
+                avg = np.mean(t24)
+                if avg > best_avg:
+                    best_avg = avg
+                    best_surprise = surprise_type
+                if avg < worst_avg:
+                    worst_avg = avg
+                    worst_surprise = surprise_type
+        if best_surprise and worst_surprise:
+            print(f"     {regime:14s}  BUY on {best_surprise:12s} ({best_avg:+.1f}%)  SELL on {worst_surprise:12s} ({worst_avg:+.1f}%)")
+
+    # ── 5. Trend context ──
+    print(f"\n  5. TREND CONTEXT (30d price trend entering event):")
+    for bucket in ['STRONG_DOWN', 'DOWN', 'SLIGHT_DOWN', 'FLAT', 'SLIGHT_UP', 'UP', 'STRONG_UP']:
+        subset = df[df['trend_bucket'] == bucket]
+        if len(subset) == 0:
+            continue
+        t24 = [r.get('total_24h', {}).get('return_pct', 0) for _, r in subset.iterrows() if isinstance(r.get('total_24h'), dict)]
+        if t24:
+            print(f"     {bucket:16s}  avg={np.mean(t24):+.3f}%  win={sum(1 for x in t24 if x > 0)/len(t24)*100:.0f}%  (n={len(t24)})")
+
+    # ── 6. Phase0 context ──
+    print(f"\n  6. PHASE0 CONTEXT (macro momentum):")
+    for bucket in ['DEATH_ZONE', 'LOW', 'NEUTRAL', 'STRONG', 'EXTREME']:
+        subset = df[df['phase0_bucket'] == bucket]
+        if len(subset) == 0:
+            continue
+        t24 = [r.get('total_24h', {}).get('return_pct', 0) for _, r in subset.iterrows() if isinstance(r.get('total_24h'), dict)]
+        if t24:
+            print(f"     {bucket:16s}  avg={np.mean(t24):+.3f}%  win={sum(1 for x in t24 if x > 0)/len(t24)*100:.0f}%  (n={len(t24)})")
 
     for label, subset in [('Aligned', aligned), ('Divergent', divergent)]:
         if len(subset) == 0:
