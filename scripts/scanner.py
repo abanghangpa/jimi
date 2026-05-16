@@ -1783,6 +1783,22 @@ def print_signal(result):
         if m20_fmt:
             print(m20_fmt)
 
+    # Macro Indicators (fetched live)
+    macro_ind = result.get('macro_indicators', {})
+    if macro_ind:
+        has_data = any(v and v.get('actual') is not None for v in macro_ind.values())
+        if has_data:
+            print(f"\n  Macro Indicators (live):")
+            for name, data in macro_ind.items():
+                if data and data.get('actual') is not None:
+                    actual = data['actual']
+                    prev = data.get('previous', '?')
+                    surprise = data.get('surprise', '?')
+                    source = data.get('source', '?')
+                    icon = {'STRONG_BEAT': '🟢🟢', 'BEAT': '🟢', 'INLINE': '⚪',
+                            'MISS': '🔴', 'BIG_MISS': '🔴🔴'}.get(surprise, '❓')
+                    print(f"    {name:24s} actual={actual}  prev={prev}  {surprise} {icon}  [{source}]")
+
     # Derivatives
     deriv = result.get('derivatives', {})
     if deriv and 'error' not in deriv:
@@ -2738,6 +2754,17 @@ def main():
     except Exception as e:
         print(f"  ⚠️  FRED claims fetch failed: {e} (using cached/hardcoded data)")
 
+    # Step 1c: Fetch live macro indicators (Caixin PMI, NBS PMI, etc.)
+    try:
+        from src.utils.macro_fetch import get_latest_macro_indicators
+        _macro_indicators = get_latest_macro_indicators()
+        for _name, _data in _macro_indicators.items():
+            if _data and _data.get('actual') is not None:
+                _surprise = _data.get('surprise', '?')
+                print(f"  📊 {_name}: actual={_data['actual']} prev={_data.get('previous', '?')} surprise={_surprise}")
+    except Exception as e:
+        print(f"  ⚠️  Macro indicator fetch failed: {e}")
+
     # Step 2: Load daily data from CSV for reliable EMA55 bias
     df_1d_hist = load_daily_from_csv(csv_path)
     if df_1d_hist is not None:
@@ -2790,6 +2817,13 @@ def main():
     except Exception as e:
         print(f"  ⚠️  Macro calendar error: {e}")
         result['macro_calendar'] = None
+
+    # Add macro indicators to result
+    try:
+        from src.utils.macro_fetch import get_latest_macro_indicators
+        result['macro_indicators'] = get_latest_macro_indicators()
+    except Exception:
+        result['macro_indicators'] = None
 
     # Always save scan result to data/scans/
     scan_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'scans')
