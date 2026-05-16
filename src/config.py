@@ -30,7 +30,8 @@ _DYNAMIC_KEYS = {'_base_timeframe', 'M22_ENABLED', 'M22_WEIGHT', 'M22_VETO_THRES
                   'TAKER_ENABLED', 'TAKER_WEIGHT', 'TAKER_DEVIATION_THRESHOLD',
                   'TAKER_MOMENTUM_BONUS', 'TAKER_12H_AGREE_BONUS',
                   'TAKER_DIVERGENCE_PENALTY', 'MIN_RR_RATIO',
-                  'M23_CLAIMS_ENABLED', 'M23_CLAIMS_WEIGHT', 'M23_COMBO_ENABLED'}
+                  'M23_CLAIMS_ENABLED', 'M23_CLAIMS_WEIGHT', 'M23_COMBO_ENABLED',
+                  'M24_ENABLED', 'M24_WINDOW_DAYS'}
 
 # Module → (enabled_key, weight_key, required_when_enabled)
 _MODULE_WEIGHT_PAIRS = [

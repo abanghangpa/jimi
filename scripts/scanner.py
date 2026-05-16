@@ -52,6 +52,7 @@ from src.modules.taker_tracker import get_taker_summary, format_taker_summary
 from src.modules.cross_asset import score_cross_asset
 from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
 from src.modules.m22_inflation_regime_v2 import score_m22, format_m22
+from src.modules.m24_nbs_pmi import score_m24_nbs_pmi, format_m24
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -937,6 +938,43 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m23'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
+    # ── M24: NBS PMI Session Bias (regime-conditional) ──
+    m24_score_adj = 0.0
+    m24_size_mult = 1.0
+    m24_details = {}
+    try:
+        _wyckoff_for_m24 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m24 = result.get('m9', {}).get('regime', 'CHOP')
+        m24_status, m24_score_adj, m24_size_mult, m24_details = score_m24_nbs_pmi(
+            wyckoff_phase=_wyckoff_for_m24,
+            vol_regime=_vol_for_m24,
+            direction=direction,
+            config=cfg)
+        if m24_details and m24_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m24'] = {
+                'status': m24_status,
+                'score_adj': m24_score_adj,
+                'size_mult': m24_size_mult,
+                'regime': m24_details.get('regime', '?'),
+                'bias': m24_details.get('bias', '?'),
+                'mfg_pmi': m24_details.get('mfg_pmi'),
+                'services_pmi': m24_details.get('services_pmi'),
+                'pmi_signal': m24_details.get('pmi_signal'),
+                'economic_regime': m24_details.get('economic_regime'),
+                'avg_ret_24h': m24_details.get('avg_ret_24h'),
+                'win_rate': m24_details.get('win_rate'),
+                'sample_size': m24_details.get('sample_size'),
+                'confidence': m24_details.get('confidence'),
+                'source': m24_details.get('source'),
+                'release_date': m24_details.get('release_date'),
+                'details': m24_details,
+            }
+            # Apply M24 size multiplier
+            if m24_size_mult < 1.0:
+                result['_m24_size_mult'] = m24_size_mult
+    except Exception as e:
+        result['m24'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1272,6 +1310,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics += squeeze_result['ics_boost']
         result['ics'] = round(float(ics), 4)
         result['squeeze_ics_boost'] = squeeze_result['ics_boost']
+
+    # ── M24 NBS PMI ICS adjustment (regime-conditional bias on release days) ──
+    if m24_score_adj != 0.0 and m24_status in ('PASS', 'WEAK'):
+        ics += m24_score_adj
+        ics = max(0.0, min(1.0, ics))  # clamp to [0, 1]
+        result['ics'] = round(float(ics), 4)
+        result['m24_ics_adj'] = m24_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -1649,6 +1694,12 @@ def print_signal(result):
         m23_out = format_m23(result['m23'].get('details', {}))
         if m23_out:
             print(m23_out)
+
+    # M24 NBS PMI Session Bias
+    if 'm24' in result and result['m24'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m24_out = format_m24(result['m24'].get('details', {}))
+        if m24_out:
+            print(m24_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -2341,6 +2392,26 @@ def print_summary(result):
             gap_icon = '✅' if gap_held else '❌'
             asia_icon = '🟢' if asia_move > 0 else '🔴'
             print(f"  {'  Asia Actual':<22} {asia_icon} {asia_move:+.2f}%  gap={gap_icon}  {pattern}")
+
+    # M24 NBS PMI Session Bias summary
+    m24 = result.get('m24', {})
+    if m24 and m24.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m24_bias = m24.get('bias', '?')
+        m24_mfg = m24.get('mfg_pmi', 0)
+        m24_svc = m24.get('services_pmi', 0)
+        m24_signal = m24.get('pmi_signal', '?')
+        m24_econ = m24.get('economic_regime', '?')
+        m24_avg = m24.get('avg_ret_24h', 0)
+        m24_win = m24.get('win_rate', 0)
+        m24_n = m24.get('sample_size', 0)
+        m24_conf = m24.get('confidence', 0)
+        m24_adj = m24.get('score_adj', 0)
+        m24_sm = m24.get('size_mult', 1.0)
+        m24_src = m24.get('source', '?')
+        bias_icon = '🟢' if m24_bias == 'LONG' else '🔴' if m24_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m24_conf >= 0.7 else '🟡' if m24_conf >= 0.4 else '🟠'
+        print(f"  {'M24 NBS PMI':<22} {bias_icon} {m24_bias:>8}  mfg={m24_mfg:.1f}({m24_signal}) svc={m24_svc:.1f}  econ={m24_econ}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m24_avg:+.2f}%  win={m24_win*100:.0f}%  n={m24_n}  src={m24_src}  adj={m24_adj:+.3f}  size={m24_sm:.2f}x")
 
     # Breakout Confirmation summary
     bc = result.get('breakout_confirm')

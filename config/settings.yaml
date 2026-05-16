@@ -617,6 +617,13 @@ M22_FED_STANCE: "HOLDING"     # Auto-inferred from FRED FEDFUNDS trajectory
 M22_FED_FUNDS_RATE: 3.60      # FRED FEDFUNDS (2026-04)
 M22_PPI_EXPECTED: 4.0         # PPI consensus expectation (manual — not on FRED)
 
+# ─── M24: NBS PMI SESSION BIAS ──────────────────────────────
+# Regime-conditional 24h bias on NBS Manufacturing PMI release days.
+# Backtested: 100 releases (2018-2026), ETH/USDT 15m.
+# Only active on release days (~12x/year). Uses Wyckoff (M21) + Vol (M9).
+M24_ENABLED: true
+M24_WINDOW_DAYS: 1            # Days after release to consider active (0=release day only)
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
