@@ -59,6 +59,7 @@ from src.modules.m23_ppi_session import (
 )
 from src.modules.macro_lifecycle import evaluate_macro_lifecycle, format_lifecycle
 from src.modules.macro_calendar import get_macro_calendar, format_macro_calendar, format_macro_calendar_compact, calendar_to_dict
+from src.modules.macro_event_filter import MacroEventFilter, get_phase0_from_df, get_trend_30d
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
@@ -1494,6 +1495,25 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     # Bypass for M20 direct signals and squeeze-triggered entries
     _m20_direct = result.get('m20_direct_signal', False)
     _squeeze_active_for_filters = squeeze_result['squeeze_status'] == 'TRIGGERED' and squeeze_confirmed
+
+    # ── Macro Event Pre-Filter (backtested Phase0 + trend + cascade) ──
+    if not _m20_direct and not _squeeze_active_for_filters and cfg.get('MACRO_EVENT_FILTER_ENABLED', True):
+        _phase0_for_mef = phase0_val
+        _trend_30d_for_mef = get_trend_30d(df_15m, idx)
+        _mef = MacroEventFilter(config=cfg)
+        _mef_result = _mef.check(ts, df_15m, idx, direction,
+                                  phase0=_phase0_for_mef, trend_30d=_trend_30d_for_mef)
+        if _mef_result['blocked']:
+            result['status'] = 'FILTERED'
+            result['reason'] = _mef_result['reason']
+            result['macro_event_filter'] = _mef_result
+            return result
+        if _mef_result['size_mult'] < 1.0:
+            result['macro_event_filter'] = _mef_result
+            # Apply size reduction later (after signal confirmed)
+        elif _mef_result['regime_notes']:
+            result['macro_event_filter'] = _mef_result
+
     if not _m20_direct and not _squeeze_active_for_filters:
         passed, reason = check_entry_filters(df_15m, idx, direction, swing_bias, phase0_val, atr_1h, config=cfg)
         if not passed:
@@ -2329,6 +2349,18 @@ def print_summary(result):
 
     # Key observations
     print(f"\n  Key observations:")
+
+    # Macro Event Filter
+    mef = result.get('macro_event_filter', {})
+    if mef:
+        if mef.get('blocked'):
+            print(f"  • 🚫 MACRO EVENT BLOCKED: {mef.get('reason', '')}")
+        elif mef.get('size_mult', 1.0) < 1.0:
+            print(f"  • ⚠️ MACRO EVENT SIZE REDUCTION: {mef.get('size_mult', 1.0):.2f}x")
+        for note in mef.get('regime_notes', []):
+            print(f"    {note}")
+        for evt in mef.get('active_events', []):
+            print(f"    📡 Active: {evt['name']} ({evt['country']}) {evt['hours_since']:+.1f}h — {evt['phase']}")
 
     # PPI/CPI session context
     m23 = result.get('m23', {})

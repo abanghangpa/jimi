@@ -437,6 +437,17 @@ SWEEP_PROXIMITY_PCT: 0.001         # 0.1% — near-miss tolerance for swept dete
 
 # ─── M23: PPI SESSION ANALYSIS ──────────────────────────────
 M23_ENABLED: true
+
+# ─── MACRO EVENT PRE-FILTER ─────────────────────────────────
+# Backtested Phase0 + 30d trend + cascade window filter
+# Phase0 < 0.15 = DEATH_ZONE (43% WR) → block entries
+# Phase0 0.15-0.30 = LOW → reduced size
+# Active HIGHEST impact cascade → block or reduce size
+MACRO_EVENT_FILTER_ENABLED: true
+PHASE0_CAUTION: 0.30
+MACRO_CASCADE_SIZE_MULT: 0.70
+MACRO_LOOKBACK_HOURS: 4
+MACRO_LOOKAHEAD_HOURS: 2
 M23_CLAIMS_ENABLED: true          # Include jobless claims in macro analysis
 M23_CLAIMS_WEIGHT: 0.08           # ICS weight for claims signal (when standalone release)
 M23_COMBO_ENABLED: true           # Enable CPI×PPI×Claims combo matrix
