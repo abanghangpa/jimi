@@ -1597,7 +1597,10 @@ def _build_narrative_v2(phase, direction, structure_bullish, smart_money_bearish
         parts.append("Wait for sweep completion + rejection confirmation before entering.")
 
     elif sweep_status == 'PENDING':
-        parts.append(f"\n⏳ Sweep PENDING — momentum heading toward ${sweep_level:.0f}.")
+        if sweep_level is not None:
+            parts.append(f"\n⏳ Sweep PENDING — momentum heading toward ${sweep_level:.0f}.")
+        else:
+            parts.append(f"\n⏳ Sweep PENDING — waiting for level confirmation.")
         parts.append("Watch for volume spike at the level to confirm sweep.")
 
     # Timing signal
