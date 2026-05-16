@@ -721,6 +721,25 @@ M33_WINDOW_DAYS: 1            # Days after release to consider active
 M34_ENABLED: true
 M34_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M35: PBOC LPR DECISION SESSION BIAS ────────────────────
+# Session transmission chain bias on PBoC LPR release day.
+# Backtested: 81 releases (2019-2026), ETH/USDT 15m.
+# HOLD+CHOP+MARKDOWN: +4.43% (87.5% win, n=8). HOLD+CHOP+MARKUP: -3.89% (14.3%, n=7).
+# HOLD+TREND+MARKDOWN: +3.33% (60% win, n=5).
+# Chain: Release→Tokyo Open 67% ✅. London-NY→NY AM 78% ✅.
+# CNY weakening → capital into alt assets. Most signals are HOLD (Wyckoff context dominates).
+M35_ENABLED: true
+M35_WINDOW_DAYS: 1            # Days after release to consider active
+
+# ─── M36: ADP EMPLOYMENT REPORT SESSION BIAS ────────────────
+# Session transmission chain bias on ADP release day.
+# Backtested: 101 releases (2018-2026), ETH/USDT 15m.
+# MISS+LOW_VOL+MARKDOWN: +2.61% (67% win, n=3). INLINE+CHOP+MARKUP: +1.32% (50%, n=6).
+# Chain: London-NY→NY AM 68% ✅. Rest breaks.
+# ⚠️ ADP frequently diverges from NFP — creates traps. Use cautiously.
+M36_ENABLED: true
+M36_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

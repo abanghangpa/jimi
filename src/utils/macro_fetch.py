@@ -800,6 +800,80 @@ def fetch_us_housing_starts(force_refresh=False):
     return None
 
 
+def fetch_pboc_lpr(force_refresh=False):
+    """Fetch latest PBoC LPR data and update M35 cache."""
+    cache = _load_cache()
+    cache_key = 'pboc_lpr'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching PBoC LPR...")
+    result = _fetch_trading_economics('loan-prime-rate')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ PBoC LPR: actual={result['actual']}")
+
+        try:
+            from src.modules.m35_pboc_lpr import update_pboc_lpr_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            update_pboc_lpr_cache(lpr_1y=result['actual'], lpr_5y=None, release_date=_today)
+        except Exception:
+            pass
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
+def fetch_adp_employment(force_refresh=False):
+    """Fetch latest ADP Employment data and update M36 cache."""
+    cache = _load_cache()
+    cache_key = 'adp_employment'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching ADP Employment...")
+    result = _fetch_trading_economics('non-farm-payrolls-private')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ ADP Employment: actual={result['actual']}")
+
+        try:
+            from src.modules.m36_adp_employment import update_adp_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            update_adp_cache(adp_k=result['actual'], consensus_k=None, release_date=_today)
+        except Exception:
+            pass
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -816,6 +890,8 @@ def get_latest_macro_indicators():
         'uk_wages': fetch_uk_wages(),
         'us_retail_sales': fetch_us_retail_sales(),
         'us_housing_starts': fetch_us_housing_starts(),
+        'pboc_lpr': fetch_pboc_lpr(),
+        'adp_employment': fetch_adp_employment(),
     }
 
 

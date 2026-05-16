@@ -57,6 +57,8 @@ from src.modules.m25_caixin_pmi import score_m25_caixin_pmi, format_m25
 from src.modules.m26_ez_pmi import score_m26_ez_pmi, format_m26
 from src.modules.m33_retail_sales import score_m33_retail_sales, format_m33
 from src.modules.m34_housing_starts import score_m34_housing, format_m34
+from src.modules.m35_pboc_lpr import score_m35_pboc_lpr, format_m35
+from src.modules.m36_adp_employment import score_m36_adp, format_m36
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1150,6 +1152,79 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m34'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M35: PBoC LPR Decision Session Bias (regime-conditional) ──
+    m35_score_adj = 0.0
+    m35_size_mult = 1.0
+    m35_details = {}
+    try:
+        _wyckoff_for_m35 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m35 = result.get('m9', {}).get('regime', 'CHOP')
+        m35_status, m35_score_adj, m35_size_mult, m35_details = score_m35_pboc_lpr(
+            wyckoff_phase=_wyckoff_for_m35,
+            vol_regime=_vol_for_m35,
+            direction=direction,
+            config=cfg)
+        if m35_details and m35_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m35'] = {
+                'status': m35_status,
+                'score_adj': m35_score_adj,
+                'size_mult': m35_size_mult,
+                'regime': m35_details.get('regime', '?'),
+                'bias': m35_details.get('bias', '?'),
+                'lpr_1y': m35_details.get('lpr_1y'),
+                'lpr_5y': m35_details.get('lpr_5y'),
+                'cut_1y': m35_details.get('cut_1y'),
+                'cut_5y': m35_details.get('cut_5y'),
+                'signal': m35_details.get('signal'),
+                'avg_ret_24h': m35_details.get('avg_ret_24h'),
+                'win_rate': m35_details.get('win_rate'),
+                'sample_size': m35_details.get('sample_size'),
+                'confidence': m35_details.get('confidence'),
+                'source': m35_details.get('source'),
+                'release_date': m35_details.get('release_date'),
+                'details': m35_details,
+            }
+            if m35_size_mult < 1.0:
+                result['_m35_size_mult'] = m35_size_mult
+    except Exception as e:
+        result['m35'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
+    # ── M36: ADP Employment Report Session Bias (regime-conditional) ──
+    m36_score_adj = 0.0
+    m36_size_mult = 1.0
+    m36_details = {}
+    try:
+        _wyckoff_for_m36 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m36 = result.get('m9', {}).get('regime', 'CHOP')
+        m36_status, m36_score_adj, m36_size_mult, m36_details = score_m36_adp(
+            wyckoff_phase=_wyckoff_for_m36,
+            vol_regime=_vol_for_m36,
+            direction=direction,
+            config=cfg)
+        if m36_details and m36_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m36'] = {
+                'status': m36_status,
+                'score_adj': m36_score_adj,
+                'size_mult': m36_size_mult,
+                'regime': m36_details.get('regime', '?'),
+                'bias': m36_details.get('bias', '?'),
+                'adp_k': m36_details.get('adp_k'),
+                'consensus_k': m36_details.get('consensus_k'),
+                'surprise': m36_details.get('surprise'),
+                'signal': m36_details.get('signal'),
+                'avg_ret_24h': m36_details.get('avg_ret_24h'),
+                'win_rate': m36_details.get('win_rate'),
+                'sample_size': m36_details.get('sample_size'),
+                'confidence': m36_details.get('confidence'),
+                'source': m36_details.get('source'),
+                'release_date': m36_details.get('release_date'),
+                'details': m36_details,
+            }
+            if m36_size_mult < 1.0:
+                result['_m36_size_mult'] = m36_size_mult
+    except Exception as e:
+        result['m36'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1520,6 +1595,20 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m34_ics_adj'] = m34_score_adj
+
+    # ── M35 PBoC LPR ICS adjustment (regime-conditional bias on release days) ──
+    if m35_score_adj != 0.0 and m35_status in ('PASS', 'WEAK'):
+        ics += m35_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m35_ics_adj'] = m35_score_adj
+
+    # ── M36 ADP Employment ICS adjustment (regime-conditional bias on release days) ──
+    if m36_score_adj != 0.0 and m36_status in ('PASS', 'WEAK'):
+        ics += m36_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m36_ics_adj'] = m36_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -1927,6 +2016,18 @@ def print_signal(result):
         m34_out = format_m34(result['m34'].get('details', {}))
         if m34_out:
             print(m34_out)
+
+    # M35 PBoC LPR Session Bias
+    if 'm35' in result and result['m35'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m35_out = format_m35(result['m35'].get('details', {}))
+        if m35_out:
+            print(m35_out)
+
+    # M36 ADP Employment Session Bias
+    if 'm36' in result and result['m36'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m36_out = format_m36(result['m36'].get('details', {}))
+        if m36_out:
+            print(m36_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -2703,6 +2804,46 @@ def print_summary(result):
         conf_icon = '🟢' if m34_conf >= 0.7 else '🟡' if m34_conf >= 0.4 else '🟠'
         print(f"  {'M34 Housing Starts':<22} {bias_icon} {m34_bias:>8}  starts={m34_starts}K({m34_starts_mom:+.1f}%) permits={m34_permits}K({m34_permits_mom:+.1f}%)  signal={m34_signal}")
         print(f"  {'  Backtest':<22} {conf_icon} 24h={m34_avg:+.2f}%  win={m34_win*100:.0f}%  n={m34_n}  src={m34_src}  adj={m34_adj:+.3f}  size={m34_sm:.2f}x")
+
+    # M35 PBoC LPR Session Bias summary
+    m35 = result.get('m35', {})
+    if m35 and m35.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m35_bias = m35.get('bias', '?')
+        m35_lpr1y = m35.get('lpr_1y', 0)
+        m35_lpr5y = m35.get('lpr_5y', 0)
+        m35_cut1y = m35.get('cut_1y', 0)
+        m35_cut5y = m35.get('cut_5y', 0)
+        m35_signal = m35.get('signal', '?')
+        m35_avg = m35.get('avg_ret_24h', 0)
+        m35_win = m35.get('win_rate', 0)
+        m35_n = m35.get('sample_size', 0)
+        m35_conf = m35.get('confidence', 0)
+        m35_adj = m35.get('score_adj', 0)
+        m35_sm = m35.get('size_mult', 1.0)
+        bias_icon = '🟢' if m35_bias == 'LONG' else '🔴' if m35_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m35_conf >= 0.7 else '🟡' if m35_conf >= 0.4 else '🟠'
+        cut_icon = '📉' if m35_cut1y > 0 or m35_cut5y > 0 else '📈' if m35_cut1y < 0 else '➡️'
+        print(f"  {'M35 PBoC LPR':<22} {bias_icon} {m35_bias:>8}  1Y={m35_lpr1y:.2f}%({m35_cut1y:+.2f}%) 5Y={m35_lpr5y:.2f}%({m35_cut5y:+.2f}%) {cut_icon}  signal={m35_signal}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m35_avg:+.2f}%  win={m35_win*100:.0f}%  n={m35_n}  adj={m35_adj:+.3f}  size={m35_sm:.2f}x")
+
+    # M36 ADP Employment Session Bias summary
+    m36 = result.get('m36', {})
+    if m36 and m36.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m36_bias = m36.get('bias', '?')
+        m36_adp = m36.get('adp_k', 0)
+        m36_cons = m36.get('consensus_k', 0)
+        m36_surprise = m36.get('surprise', 0)
+        m36_signal = m36.get('signal', '?')
+        m36_avg = m36.get('avg_ret_24h', 0)
+        m36_win = m36.get('win_rate', 0)
+        m36_n = m36.get('sample_size', 0)
+        m36_conf = m36.get('confidence', 0)
+        m36_adj = m36.get('score_adj', 0)
+        m36_sm = m36.get('size_mult', 1.0)
+        bias_icon = '🟢' if m36_bias == 'LONG' else '🔴' if m36_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m36_conf >= 0.7 else '🟡' if m36_conf >= 0.4 else '🟠'
+        print(f"  {'M36 ADP Employment':<22} {bias_icon} {m36_bias:>8}  ADP={m36_adp}K cons={m36_cons}K surp={m36_surprise:+.0f}K  signal={m36_signal}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m36_avg:+.2f}%  win={m36_win*100:.0f}%  n={m36_n}  adj={m36_adj:+.3f}  size={m36_sm:.2f}x  ⚠️ trap risk")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})
