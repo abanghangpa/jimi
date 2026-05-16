@@ -911,6 +911,43 @@ def fetch_nfp(force_refresh=False):
     return None
 
 
+def fetch_ifo(force_refresh=False):
+    """Fetch latest Germany Ifo Business Climate data and update M38 cache."""
+    cache = _load_cache()
+    cache_key = 'ifo'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching Germany Ifo Business Climate...")
+    result = _fetch_trading_economics('germany/business-confidence')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ Ifo: actual={result['actual']}")
+
+        try:
+            from src.modules.m38_ifo import update_ifo_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            update_ifo_cache(actual=result['actual'], consensus_k=None, release_date=_today)
+        except Exception:
+            pass
+
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -930,6 +967,7 @@ def get_latest_macro_indicators():
         'pboc_lpr': fetch_pboc_lpr(),
         'adp_employment': fetch_adp_employment(),
         'nfp': fetch_nfp(),
+        'ifo': fetch_ifo(),
     }
 
 

@@ -1,0 +1,74 @@
+[
+  {
+    "wyckoff": "MARKDOWN",
+    "vol": "COMPRESSING",
+    "signal": "MILD_MISS",
+    "n": 3,
+    "avg_ret": 0.5817550993556541,
+    "win_rate": 0.3333333333333333,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "MARKDOWN",
+    "vol": "LOW_VOL",
+    "signal": "INLINE",
+    "n": 3,
+    "avg_ret": -7.0376550780304425,
+    "win_rate": 0.3333333333333333,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "MARKDOWN",
+    "vol": "LOW_VOL",
+    "signal": "MILD_MISS",
+    "n": 3,
+    "avg_ret": -2.488333177010425,
+    "win_rate": 0.3333333333333333,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "MARKDOWN",
+    "vol": "TREND",
+    "signal": "MILD_MISS",
+    "n": 3,
+    "avg_ret": -1.526138819531389,
+    "win_rate": 0.6666666666666666,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "signal": "MILD_BEAT",
+    "n": 3,
+    "avg_ret": -0.6822340552121625,
+    "win_rate": 0.3333333333333333,
+    "bias": "SHORT"
+  },
+  {
+    "wyckoff": "MARKUP",
+    "vol": "TREND",
+    "signal": "MILD_BEAT",
+    "n": 3,
+    "avg_ret": 4.059845593331658,
+    "win_rate": 0.3333333333333333,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "RANGE",
+    "vol": "COMPRESSING",
+    "signal": "INLINE",
+    "n": 10,
+    "avg_ret": 0.5855315701826342,
+    "win_rate": 0.5,
+    "bias": "LONG"
+  },
+  {
+    "wyckoff": "RANGE",
+    "vol": "COMPRESSING",
+    "signal": "STRONG_MISS",
+    "n": 3,
+    "avg_ret": 2.9331320788862634,
+    "win_rate": 0.6666666666666666,
+    "bias": "LONG"
+  }
+]

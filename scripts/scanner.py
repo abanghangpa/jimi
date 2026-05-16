@@ -60,6 +60,7 @@ from src.modules.m34_housing_starts import score_m34_housing, format_m34
 from src.modules.m35_pboc_lpr import score_m35_pboc_lpr, format_m35
 from src.modules.m36_adp_employment import score_m36_adp, format_m36
 from src.modules.m37_nfp import score_m37_nfp, format_m37
+from src.modules.m38_ifo import score_m38_ifo, format_m38
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1262,6 +1263,43 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m37'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M38: Germany Ifo Business Climate Session Bias (regime-conditional) ──
+    m38_score_adj = 0.0
+    m38_size_mult = 1.0
+    m38_status = 'SKIP'
+    m38_details = {}
+    try:
+        _wyckoff_for_m38 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m38 = result.get('m9', {}).get('regime', 'CHOP')
+        m38_status, m38_score_adj, m38_size_mult, m38_details = score_m38_ifo(
+            wyckoff_phase=_wyckoff_for_m38,
+            vol_regime=_vol_for_m38,
+            direction=direction, today_str=today_str, config=cfg)
+        if m38_details and m38_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m38'] = {
+                'status': m38_status,
+                'score_adj': m38_score_adj,
+                'size_mult': m38_size_mult,
+                'regime': m38_details.get('regime', '?'),
+                'bias': m38_details.get('bias', '?'),
+                'actual': m38_details.get('actual'),
+                'consensus': m38_details.get('consensus'),
+                'surprise': m38_details.get('surprise'),
+                'signal': m38_details.get('signal'),
+                'trend': m38_details.get('trend'),
+                'avg_ret_24h': m38_details.get('avg_ret_24h'),
+                'win_rate': m38_details.get('win_rate'),
+                'sample_size': m38_details.get('sample_size'),
+                'confidence': m38_details.get('confidence'),
+                'source': m38_details.get('source'),
+                'release_date': m38_details.get('release_date'),
+                'details': m38_details,
+            }
+            if m38_size_mult < 1.0:
+                result['_m38_size_mult'] = m38_size_mult
+    except Exception as e:
+        result['m38'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1653,6 +1691,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m37_ics_adj'] = m37_score_adj
+
+    # ── M38 Ifo ICS adjustment (regime-conditional bias on release days) ──
+    if m38_score_adj != 0.0 and m38_status in ('PASS', 'WEAK'):
+        ics += m38_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m38_ics_adj'] = m38_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2078,6 +2123,12 @@ def print_signal(result):
         m37_out = format_m37(result['m37'].get('details', {}))
         if m37_out:
             print(m37_out)
+
+    # M38 Ifo Session Bias
+    if 'm38' in result and result['m38'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m38_out = format_m38(result['m38'].get('details', {}))
+        if m38_out:
+            print(m38_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -2913,6 +2964,27 @@ def print_summary(result):
         conf_icon = '🟢' if m37_conf >= 0.7 else '🟡' if m37_conf >= 0.4 else '🟠'
         print(f"  {'M37 NFP':<22} {bias_icon} {m37_bias:>8}  NFP={m37_nfp:,}K cons={m37_cons:,}K surp={m37_surprise:+,}K  signal={m37_signal}")
         print(f"  {'  Backtest':<22} {conf_icon} 24h={m37_avg:+.2f}%  win={m37_win*100:.0f}%  n={m37_n}  adj={m37_adj:+.3f}  size={m37_sm:.2f}x  chain: London→NY 73-90%")
+
+    # M38 Germany Ifo Session Bias summary
+    m38 = result.get('m38', {})
+    if m38 and m38.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m38_bias = m38.get('bias', '?')
+        m38_actual = m38.get('actual', 0)
+        m38_cons = m38.get('consensus', 0)
+        m38_surprise = m38.get('surprise', 0)
+        m38_signal = m38.get('signal', '?')
+        m38_trend = m38.get('trend', '?')
+        m38_avg = m38.get('avg_ret_24h', 0)
+        m38_win = m38.get('win_rate', 0)
+        m38_n = m38.get('sample_size', 0)
+        m38_conf = m38.get('confidence', 0)
+        m38_adj = m38.get('score_adj', 0)
+        m38_sm = m38.get('size_mult', 1.0)
+        bias_icon = '🟢' if m38_bias == 'LONG' else '🔴' if m38_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m38_conf >= 0.7 else '🟡' if m38_conf >= 0.4 else '🟠'
+        trend_icon = '📈' if m38_trend == 'IMPROVING' else '📉' if m38_trend == 'DETERIORATING' else '➡️'
+        print(f"  {'M38 Germany Ifo':<22} {bias_icon} {m38_bias:>8}  actual={m38_actual} cons={m38_cons} trend={trend_icon}{m38_trend}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m38_avg:+.2f}%  win={m38_win*100:.0f}%  n={m38_n}  adj={m38_adj:+.3f}  size={m38_sm:.2f}x  chain: Fr→London→NY 78-88%")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})
