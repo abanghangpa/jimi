@@ -77,44 +77,76 @@ def _binom_test(k, n, p0=0.5):
 # ═══════════════════════════════════════════════════════════════
 # SESSION LIBRARY — All known global macro sessions
 # ═══════════════════════════════════════════════════════════════
-# Each session: (name, start_utc_h, start_utc_m, end_utc_h, end_utc_m, day_offset)
+# Each session: (h_start, m_start, h_end, m_end, day_offset)
 # day_offset: 0 = release day, 1 = next day, 2 = day after
 
 ALL_SESSIONS = {
-    # ── Release Day ──
-    'asia_early':        (0,  0,  4,  0,  0),   # 00:00-04:00 UTC
-    'asia_open':         (0,  0,  5,  0,  0),   # 00:00-05:00 UTC
-    'asia_morning':      (0,  0,  8,  0,  0),   # 00:00-08:00 UTC
-    'australia':         (3,  0,  6,  0,  0),   # 03:00-06:00 UTC
-    'asia_overlap':      (3,  0,  8,  0,  0),   # 03:00-08:00 UTC
-    'europe_pre':        (6,  0,  8,  0,  0),   # 06:00-08:00 UTC
-    'europe_open':       (7,  0, 12,  0,  0),   # 07:00-12:00 UTC
-    'europe_morning':    (7,  0, 11,  0,  0),   # 07:00-11:00 UTC
-    'europe_core':       (8,  0, 16,  30, 0),   # 08:00-16:30 UTC
-    'uk_session':        (8,  0, 16,  30, 0),   # 08:00-16:30 UTC
-    'europe_afternoon':  (12, 0, 16,  30, 0),   # 12:00-16:30 UTC
-    'us_pre':            (12, 0, 13,  30, 0),   # 12:00-13:30 UTC
-    'us_open':           (13, 30, 17, 0,  0),   # 13:30-17:00 UTC
-    'us_morning':        (13, 30, 17, 0,  0),   # 13:30-17:00 UTC
-    'us_afternoon':      (17, 0, 21,  0,  0),   # 17:00-21:00 UTC
-    'us_close':          (20, 0, 23,  59, 0),   # 20:00-23:59 UTC
+    # ── Pre-Asia ──
+    'pre_asia':              (0,  0,  1,  0,  0),   # 00:00-01:00 UTC (Post-NY Close / Globex)
+    'globex':                (0,  0,  1,  0,  0),   # alias
+
+    # ── Asia ──
+    'sydney_open':           (0,  0,  1,  0,  0),   # 00:00-01:00 UTC (08:00-09:00 MYT)
+    'tokyo_open':            (1,  0,  2,  0,  0),   # 01:00-02:00 UTC (09:00-10:00 MYT)
+    'asia_mid':              (2,  0,  4,  0,  0),   # 02:00-04:00 UTC (10:00-12:00 MYT)
+    'asia_afternoon':        (4,  0,  6,  0,  0),   # 04:00-06:00 UTC (12:00-14:00 MYT)
+    'tokyo_close':           (6,  0,  7,  0,  0),   # 06:00-07:00 UTC (14:00-15:00 MYT)
+    'pre_london':            (7,  0,  8,  0,  0),   # 07:00-08:00 UTC (15:00-16:00 MYT)
+    # Compound Asia sessions
+    'asia_early':            (0,  0,  4,  0,  0),   # 00:00-04:00 UTC
+    'asia_full':             (0,  0,  8,  0,  0),   # 00:00-08:00 UTC (entire Asia)
+
+    # ── Europe ──
+    'frankfurt_open':        (7,  0,  8,  0,  0),   # 07:00-08:00 UTC (15:00-16:00 MYT)
+    'london_open':           (8,  0,  9,  0,  0),   # 08:00-09:00 UTC (16:00-17:00 MYT)
+    'london_morning':        (9,  0, 12,  0,  0),   # 09:00-12:00 UTC (17:00-20:00 MYT)
+    'london_midday':        (12,  0, 13, 30,  0),   # 12:00-13:30 UTC (20:00-21:30 MYT)
+    # Compound Europe sessions
+    'europe_core':           (8,  0, 16, 30,  0),   # 08:00-16:30 UTC (full London day)
+    'europe_morning':        (7,  0, 12,  0,  0),   # 07:00-12:00 UTC
+
+    # ── Overlap (EU–US) ──
+    'ny_pre_open':          (12,  0, 13, 30,  0),   # 12:00-13:30 UTC (20:00-21:30 MYT)
+    'ny_open':              (13, 30, 14, 30,  0),   # 13:30-14:30 UTC (21:30-22:30 MYT)
+    'london_ny_overlap':    (13, 30, 16, 30,  0),   # 13:30-16:30 UTC (21:30-00:30 MYT)
+    # Compound overlap
+    'overlap_full':         (12,  0, 16, 30,  0),   # 12:00-16:30 UTC
+
+    # ── New York ──
+    'ny_am':                (14, 30, 17,  0,  0),   # 14:30-17:00 UTC (22:30-01:00 MYT)
+    'ny_lunch':             (17,  0, 18,  0,  0),   # 17:00-18:00 UTC (01:00-02:00 MYT)
+    'ny_pm':                (18,  0, 21,  0,  0),   # 18:00-21:00 UTC (02:00-05:00 MYT)
+    # Compound NY sessions
+    'us_open':              (13, 30, 17,  0,  0),   # 13:30-17:00 UTC
+    'us_afternoon':         (17,  0, 21,  0,  0),   # 17:00-21:00 UTC
+    'us_full':              (13, 30, 21,  0,  0),   # 13:30-21:00 UTC
 
     # ── Next Day ──
-    'next_asia_open':    (0,  0,  5,  0,  1),
-    'next_asia_morning': (0,  0,  8,  0,  1),
-    'next_australia':    (3,  0,  6,  0,  1),
-    'next_asia_overlap': (3,  0,  8,  0,  1),
-    'next_europe_pre':   (6,  0,  8,  0,  1),
-    'next_europe_open':  (7,  0, 12,  0,  1),
-    'next_europe_am':    (7,  0, 11,  0,  1),
-    'next_uk_session':   (8,  0, 16,  30, 1),
-    'next_us_open':      (13, 30, 17, 0,  1),
-    'next_us_afternoon': (17, 0, 21,  0,  1),
+    'next_pre_asia':        (0,  0,  1,  0,  1),
+    'next_sydney_open':     (0,  0,  1,  0,  1),
+    'next_tokyo_open':      (1,  0,  2,  0,  1),
+    'next_asia_mid':        (2,  0,  4,  0,  1),
+    'next_asia_afternoon':  (4,  0,  6,  0,  1),
+    'next_tokyo_close':     (6,  0,  7,  0,  1),
+    'next_pre_london':      (7,  0,  8,  0,  1),
+    'next_frankfurt_open':  (7,  0,  8,  0,  1),
+    'next_london_open':     (8,  0,  9,  0,  1),
+    'next_london_morning':  (9,  0, 12,  0,  1),
+    'next_london_midday':  (12,  0, 13, 30,  1),
+    'next_ny_pre_open':    (12,  0, 13, 30,  1),
+    'next_ny_open':        (13, 30, 14, 30,  1),
+    'next_london_ny_overlap': (13, 30, 16, 30, 1),
+    'next_ny_am':          (14, 30, 17,  0,  1),
+    'next_ny_lunch':       (17,  0, 18,  0,  1),
+    'next_ny_pm':          (18,  0, 21,  0,  1),
+    'next_europe_core':     (8,  0, 16, 30,  1),
+    'next_us_open':        (13, 30, 17,  0,  1),
+    'next_us_afternoon':   (17,  0, 21,  0,  1),
 
     # ── Day +2 ──
-    'd2_asia_open':      (0,  0,  5,  0,  2),
-    'd2_europe_open':    (7,  0, 12,  0,  2),
-    'd2_us_open':        (13, 30, 17, 0,  2),
+    'd2_tokyo_open':        (1,  0,  2,  0,  2),
+    'd2_london_open':       (8,  0,  9,  0,  2),
+    'd2_ny_open':          (13, 30, 14, 30,  2),
 }
 
 
@@ -125,68 +157,118 @@ ALL_SESSIONS = {
 
 GEOGRAPHY_ITINERARIES = {
     'europe': {
-        'description': 'Europe release → UK → US Open → US PM → Asia → Asia PM → EU Reopen',
+        'description': 'Europe release → granular EU/US/Asia chain until EU reopen',
         'sessions': [
-            'europe_open', 'uk_session', 'us_open', 'us_afternoon',
-            'next_asia_open', 'next_asia_overlap', 'next_europe_open',
+            'frankfurt_open', 'london_open', 'london_morning', 'london_midday',
+            'ny_pre_open', 'ny_open', 'london_ny_overlap',
+            'ny_am', 'ny_lunch', 'ny_pm',
+            'next_pre_asia', 'next_tokyo_open', 'next_asia_mid',
+            'next_asia_afternoon', 'next_tokyo_close',
+            'next_frankfurt_open', 'next_london_open',
         ],
         'transitions': [
-            ('europe_open',    'uk_session',       'Europe Open → UK Session'),
-            ('uk_session',     'us_open',          'UK Session → US Open'),
-            ('us_open',        'us_afternoon',     'US Open → US Afternoon'),
-            ('us_afternoon',   'next_asia_open',   'US Afternoon → Asia Open'),
-            ('next_asia_open', 'next_asia_overlap', 'Asia Open → Asia PM'),
-            ('next_asia_overlap', 'next_europe_open', 'Asia PM → Europe Reopen'),
+            ('frankfurt_open',      'london_open',          'Frankfurt → London Open'),
+            ('london_open',         'london_morning',       'London Open → London AM'),
+            ('london_morning',      'london_midday',        'London AM → London Midday'),
+            ('london_midday',       'ny_pre_open',          'London Midday → NY Pre-Open'),
+            ('ny_pre_open',         'ny_open',              'NY Pre-Open → NY Open'),
+            ('ny_open',             'london_ny_overlap',    'NY Open → London-NY Overlap'),
+            ('london_ny_overlap',   'ny_am',                'Overlap → NY AM'),
+            ('ny_am',               'ny_lunch',             'NY AM → NY Lunch'),
+            ('ny_lunch',            'ny_pm',                'NY Lunch → NY PM'),
+            ('ny_pm',               'next_pre_asia',        'NY PM → Pre-Asia'),
+            ('next_pre_asia',       'next_tokyo_open',      'Pre-Asia → Tokyo Open'),
+            ('next_tokyo_open',     'next_asia_mid',        'Tokyo Open → Asia Mid'),
+            ('next_asia_mid',       'next_asia_afternoon',  'Asia Mid → Asia Afternoon'),
+            ('next_asia_afternoon', 'next_tokyo_close',     'Asia Afternoon → Tokyo Close'),
+            ('next_tokyo_close',    'next_frankfurt_open',  'Tokyo Close → Frankfurt Reopen'),
+            ('next_frankfurt_open', 'next_london_open',     'Frankfurt → London Reopen'),
         ],
-        'full_cycle': ('europe_open', 'next_europe_open'),  # for 24h calc
+        'full_cycle': ('frankfurt_open', 'next_london_open'),
     },
     'us': {
-        'description': 'US release → US PM → Asia → Asia PM → Europe → UK → US Reopen',
+        'description': 'US release → granular US/Asia/EU chain until US reopen',
         'sessions': [
-            'us_open', 'us_afternoon', 'next_asia_open', 'next_asia_overlap',
-            'next_europe_open', 'next_uk_session', 'next_us_open',
+            'ny_open', 'london_ny_overlap', 'ny_am', 'ny_lunch', 'ny_pm',
+            'next_pre_asia', 'next_tokyo_open', 'next_asia_mid',
+            'next_asia_afternoon', 'next_tokyo_close',
+            'next_frankfurt_open', 'next_london_open', 'next_london_morning',
+            'next_london_midday', 'next_ny_pre_open', 'next_ny_open',
         ],
         'transitions': [
-            ('us_open',        'us_afternoon',     'US Open → US Afternoon'),
-            ('us_afternoon',   'next_asia_open',   'US Afternoon → Asia Open'),
-            ('next_asia_open', 'next_asia_overlap', 'Asia Open → Asia PM'),
-            ('next_asia_overlap', 'next_europe_open', 'Asia PM → Europe Open'),
-            ('next_europe_open', 'next_uk_session', 'Europe → UK Session'),
-            ('next_uk_session',  'next_us_open',    'UK → US Reopen'),
+            ('ny_open',             'london_ny_overlap',    'NY Open → London-NY Overlap'),
+            ('london_ny_overlap',   'ny_am',                'Overlap → NY AM'),
+            ('ny_am',               'ny_lunch',             'NY AM → NY Lunch'),
+            ('ny_lunch',            'ny_pm',                'NY Lunch → NY PM'),
+            ('ny_pm',               'next_pre_asia',        'NY PM → Pre-Asia'),
+            ('next_pre_asia',       'next_tokyo_open',      'Pre-Asia → Tokyo Open'),
+            ('next_tokyo_open',     'next_asia_mid',        'Tokyo Open → Asia Mid'),
+            ('next_asia_mid',       'next_asia_afternoon',  'Asia Mid → Asia Afternoon'),
+            ('next_asia_afternoon', 'next_tokyo_close',     'Asia Afternoon → Tokyo Close'),
+            ('next_tokyo_close',    'next_frankfurt_open',  'Tokyo Close → Frankfurt Open'),
+            ('next_frankfurt_open', 'next_london_open',     'Frankfurt → London Open'),
+            ('next_london_open',    'next_london_morning',  'London Open → London AM'),
+            ('next_london_morning', 'next_london_midday',   'London AM → London Midday'),
+            ('next_london_midday',  'next_ny_pre_open',     'London Midday → NY Pre-Open'),
+            ('next_ny_pre_open',    'next_ny_open',         'NY Pre-Open → NY Reopen'),
         ],
-        'full_cycle': ('us_open', 'next_us_open'),
+        'full_cycle': ('ny_open', 'next_ny_open'),
     },
     'asia': {
-        'description': 'Asia release → Europe → UK → US Open → US PM → Asia Reopen',
+        'description': 'Asia release → granular Asia/EU/US chain until Asia reopen',
         'sessions': [
-            'asia_open', 'asia_overlap', 'europe_open', 'uk_session',
-            'us_open', 'us_afternoon', 'next_asia_open',
+            'tokyo_open', 'asia_mid', 'asia_afternoon', 'tokyo_close',
+            'pre_london', 'frankfurt_open', 'london_open', 'london_morning',
+            'london_midday', 'ny_pre_open', 'ny_open', 'london_ny_overlap',
+            'ny_am', 'ny_lunch', 'ny_pm',
+            'next_pre_asia', 'next_tokyo_open',
         ],
         'transitions': [
-            ('asia_open',      'asia_overlap',     'Asia Open → Asia Overlap'),
-            ('asia_overlap',   'europe_open',      'Asia Overlap → Europe Open'),
-            ('europe_open',    'uk_session',       'Europe Open → UK Session'),
-            ('uk_session',     'us_open',          'UK Session → US Open'),
-            ('us_open',        'us_afternoon',     'US Open → US Afternoon'),
-            ('us_afternoon',   'next_asia_open',   'US Afternoon → Asia Reopen'),
+            ('tokyo_open',          'asia_mid',             'Tokyo Open → Asia Mid'),
+            ('asia_mid',            'asia_afternoon',       'Asia Mid → Asia Afternoon'),
+            ('asia_afternoon',      'tokyo_close',          'Asia Afternoon → Tokyo Close'),
+            ('tokyo_close',         'pre_london',           'Tokyo Close → Pre-London'),
+            ('pre_london',          'frankfurt_open',       'Pre-London → Frankfurt Open'),
+            ('frankfurt_open',      'london_open',          'Frankfurt → London Open'),
+            ('london_open',         'london_morning',       'London Open → London AM'),
+            ('london_morning',      'london_midday',        'London AM → London Midday'),
+            ('london_midday',       'ny_pre_open',          'London Midday → NY Pre-Open'),
+            ('ny_pre_open',         'ny_open',              'NY Pre-Open → NY Open'),
+            ('ny_open',             'london_ny_overlap',    'NY Open → London-NY Overlap'),
+            ('london_ny_overlap',   'ny_am',                'Overlap → NY AM'),
+            ('ny_am',               'ny_lunch',             'NY AM → NY Lunch'),
+            ('ny_lunch',            'ny_pm',                'NY Lunch → NY PM'),
+            ('ny_pm',               'next_pre_asia',        'NY PM → Pre-Asia'),
+            ('next_pre_asia',       'next_tokyo_open',      'Pre-Asia → Tokyo Reopen'),
         ],
-        'full_cycle': ('asia_open', 'next_asia_open'),
+        'full_cycle': ('tokyo_open', 'next_tokyo_open'),
     },
     'australia': {
-        'description': 'AU release → Asia overlap → Europe → UK → US → Asia Reopen',
+        'description': 'AU release → granular chain until AU reopen',
         'sessions': [
-            'australia', 'asia_overlap', 'europe_open', 'uk_session',
-            'us_open', 'us_afternoon', 'next_asia_open',
+            'sydney_open', 'tokyo_open', 'asia_mid', 'asia_afternoon',
+            'tokyo_close', 'frankfurt_open', 'london_open', 'london_morning',
+            'london_midday', 'ny_pre_open', 'ny_open', 'ny_am', 'ny_lunch', 'ny_pm',
+            'next_pre_asia', 'next_sydney_open',
         ],
         'transitions': [
-            ('australia',      'asia_overlap',     'Australia → Asia Overlap'),
-            ('asia_overlap',   'europe_open',      'Asia Overlap → Europe Open'),
-            ('europe_open',    'uk_session',       'Europe Open → UK Session'),
-            ('uk_session',     'us_open',          'UK Session → US Open'),
-            ('us_open',        'us_afternoon',     'US Open → US Afternoon'),
-            ('us_afternoon',   'next_asia_open',   'US Afternoon → Asia Reopen'),
+            ('sydney_open',         'tokyo_open',           'Sydney → Tokyo Open'),
+            ('tokyo_open',          'asia_mid',             'Tokyo Open → Asia Mid'),
+            ('asia_mid',            'asia_afternoon',       'Asia Mid → Asia Afternoon'),
+            ('asia_afternoon',      'tokyo_close',          'Asia Afternoon → Tokyo Close'),
+            ('tokyo_close',         'frankfurt_open',       'Tokyo Close → Frankfurt Open'),
+            ('frankfurt_open',      'london_open',          'Frankfurt → London Open'),
+            ('london_open',         'london_morning',       'London Open → London AM'),
+            ('london_morning',      'london_midday',        'London AM → London Midday'),
+            ('london_midday',       'ny_pre_open',          'London Midday → NY Pre-Open'),
+            ('ny_pre_open',         'ny_open',              'NY Pre-Open → NY Open'),
+            ('ny_open',             'ny_am',                'NY Open → NY AM'),
+            ('ny_am',               'ny_lunch',             'NY AM → NY Lunch'),
+            ('ny_lunch',            'ny_pm',                'NY Lunch → NY PM'),
+            ('ny_pm',               'next_pre_asia',        'NY PM → Pre-Asia'),
+            ('next_pre_asia',       'next_sydney_open',     'Pre-Asia → Sydney Reopen'),
         ],
-        'full_cycle': ('australia', 'next_asia_open'),
+        'full_cycle': ('sydney_open', 'next_sydney_open'),
     },
 }
 
@@ -269,6 +351,166 @@ def classify_rate_decision(release, thresholds=None):
         elif bias == 'hawkish':
             return 'HAWKISH_HOLD'
         return 'AS_EXPECTED'
+
+
+# ═══════════════════════════════════════════════════════════════
+# WYCKOFF PHASE CLASSIFIER (simplified, from ETH structure)
+# ═══════════════════════════════════════════════════════════════
+
+def classify_wyckoff(df, release_date):
+    """Simplified Wyckoff phase from 4H structure."""
+    from scipy import stats as sp_stats
+    lookback_start = pd.Timestamp(release_date) - timedelta(days=20)
+    mask = (df.index >= lookback_start) & (df.index < pd.Timestamp(release_date))
+    recent = df[mask]
+    if len(recent) < 500:
+        return 'UNKNOWN'
+    h4 = recent.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
+    if len(h4) < 48:
+        return 'UNKNOWN'
+    closes = h4['Close'].values
+    highs = h4['High'].values
+    lows = h4['Low'].values
+    x = np.arange(len(closes))
+    slope, _, r_val, _, _ = sp_stats.linregress(x[-48:], closes[-48:])
+    trend_strength = r_val ** 2
+    recent_high = np.max(highs[-48:])
+    recent_low = np.min(lows[-48:])
+    range_pct = (recent_high - recent_low) / recent_low * 100
+    current = closes[-1]
+    range_pos = (current - recent_low) / (recent_high - recent_low) if recent_high != recent_low else 0.5
+    slope_pct = slope / closes[-1] * 100
+    if trend_strength > 0.3 and slope_pct > 0.02:
+        return 'MARKUP'
+    elif trend_strength > 0.3 and slope_pct < -0.02:
+        return 'MARKDOWN'
+    elif range_pct < 8 and trend_strength < 0.15:
+        if range_pos > 0.7:
+            return 'DISTRIBUTION'
+        elif range_pos < 0.3:
+            return 'ACCUMULATION'
+        else:
+            return 'RANGE'
+    else:
+        return 'RANGE'
+
+
+def classify_wyckoff_simple(df, release_date):
+    """Fallback Wyckoff classifier (no scipy)."""
+    lookback_start = pd.Timestamp(release_date) - timedelta(days=20)
+    mask = (df.index >= lookback_start) & (df.index < pd.Timestamp(release_date))
+    recent = df[mask]
+    if len(recent) < 200:
+        return 'UNKNOWN'
+    h4 = recent.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
+    if len(h4) < 48:
+        return 'UNKNOWN'
+    closes = h4['Close'].values
+    highs = h4['High'].values
+    lows = h4['Low'].values
+    recent_high = np.max(highs[-48:])
+    recent_low = np.min(lows[-48:])
+    range_pct = (recent_high - recent_low) / recent_low * 100
+    current = closes[-1]
+    range_pos = (current - recent_low) / (recent_high - recent_low) if recent_high != recent_low else 0.5
+    ema12 = np.convolve(closes, np.ones(12)/12, mode='valid')[-1] if len(closes) >= 12 else closes[-1]
+    ema26 = np.convolve(closes, np.ones(26)/26, mode='valid')[-1] if len(closes) >= 26 else closes[-1]
+    trend_dir = 'UP' if ema12 > ema26 else 'DOWN'
+    if range_pct < 8:
+        if range_pos > 0.7:
+            return 'DISTRIBUTION'
+        elif range_pos < 0.3:
+            return 'ACCUMULATION'
+        else:
+            return 'RANGE'
+    elif trend_dir == 'UP':
+        return 'MARKUP'
+    else:
+        return 'MARKDOWN'
+
+
+# ═══════════════════════════════════════════════════════════════
+# VOL REGIME CLASSIFIER (simplified, from ETH volatility)
+# ═══════════════════════════════════════════════════════════════
+
+def classify_vol(df, release_date):
+    """Simplified vol regime from 15m ATR + Bollinger width."""
+    lookback_start = pd.Timestamp(release_date) - timedelta(days=5)
+    mask = (df.index >= lookback_start) & (df.index < pd.Timestamp(release_date))
+    recent = df[mask]
+    if len(recent) < 100:
+        return 'UNKNOWN'
+    high = recent['High'].values.astype(float)
+    low = recent['Low'].values.astype(float)
+    close = recent['Close'].values.astype(float)
+    tr = np.maximum(high[1:] - low[1:], np.maximum(np.abs(high[1:] - close[:-1]), np.abs(low[1:] - close[:-1])))
+    atr_14 = np.convolve(tr, np.ones(14)/14, mode='valid')
+    if len(atr_14) < 2:
+        return 'UNKNOWN'
+    current_atr = atr_14[-1]
+    atr_p50 = np.percentile(atr_14, 50)
+    atr_p90 = np.percentile(atr_14, 90)
+    if len(close) >= 20:
+        sma20 = np.convolve(close, np.ones(20)/20, mode='valid')
+        std20 = np.array([np.std(close[i:i+20]) for i in range(len(close)-19)])
+        bb_width = (2 * std20) / sma20 * 100
+        current_bb = bb_width[-1] if len(bb_width) > 0 else 0
+        bb_p30 = np.percentile(bb_width, 30) if len(bb_width) > 0 else 0
+    else:
+        current_bb = 0
+        bb_p30 = 0
+    returns = np.diff(close) / close[:-1] * 100
+    pos_ratio = np.sum(returns > 0) / len(returns) if len(returns) > 0 else 0.5
+    direction_consistency = abs(pos_ratio - 0.5) * 2
+    if current_atr > atr_p90:
+        return 'CRISIS'
+    elif current_bb < bb_p30:
+        return 'COMPRESSING'
+    elif direction_consistency > 0.3 and current_atr > atr_p50:
+        return 'TRENDING'
+    elif direction_consistency < 0.15 and current_atr < atr_p50:
+        return 'LOW_VOL'
+    else:
+        return 'CHOP'
+
+
+# ═══════════════════════════════════════════════════════════════
+# M22 PROXY: INFLATION REGIME (from price action context)
+# ═══════════════════════════════════════════════════════════════
+
+def classify_macro_regime(df, release_date):
+    """Simplified macro regime from 30d price action.
+
+    Not a true M22 replacement — M22 uses PPI/CPI/Fed data.
+    This is a structural proxy: trend + volatility over 30d.
+    """
+    lookback_start = pd.Timestamp(release_date) - timedelta(days=30)
+    mask = (df.index >= lookback_start) & (df.index < pd.Timestamp(release_date))
+    recent = df[mask]
+    if len(recent) < 1000:
+        return 'UNKNOWN'
+    closes = recent['Close'].values.astype(float)
+    # 30d return
+    ret_30d = (closes[-1] - closes[0]) / closes[0] * 100
+    # 30d volatility (annualized daily vol proxy)
+    daily = recent.resample('1D')['Close'].last().dropna()
+    if len(daily) < 10:
+        return 'UNKNOWN'
+    daily_ret = daily.pct_change().dropna()
+    vol_30d = daily_ret.std() * np.sqrt(252) * 100
+    # Classify
+    if ret_30d > 10 and vol_30d < 80:
+        return 'GOLDILOCKS'     # strong up, low vol
+    elif ret_30d > 5:
+        return 'REFLATION'      # trending up
+    elif ret_30d < -10 and vol_30d > 100:
+        return 'CRISIS'         # crash + high vol
+    elif ret_30d < -5:
+        return 'DEFLATION'      # trending down
+    elif vol_30d > 80:
+        return 'VOLATILE'       # high vol, no direction
+    else:
+        return 'NEUTRAL'
 
 
 # Registry of classifiers
@@ -436,6 +678,27 @@ def run_backtest(df, releases, config):
         # Classify signal
         signal = classifier(release_data, thresholds)
 
+        # Classify Wyckoff phase
+        try:
+            wyckoff = classify_wyckoff(df, date_str)
+        except Exception:
+            try:
+                wyckoff = classify_wyckoff_simple(df, date_str)
+            except Exception:
+                wyckoff = 'UNKNOWN'
+
+        # Classify vol regime
+        try:
+            vol = classify_vol(df, date_str)
+        except Exception:
+            vol = 'UNKNOWN'
+
+        # Classify macro regime (M22 proxy)
+        try:
+            macro = classify_macro_regime(df, date_str)
+        except Exception:
+            macro = 'UNKNOWN'
+
         # Get surprise
         actual = release_data.get('actual', release_data.get('composite', 0))
         consensus = release_data.get('consensus', release_data.get('prior', actual))
@@ -447,6 +710,9 @@ def run_backtest(df, releases, config):
             'consensus': consensus,
             'surprise': surprise,
             'signal': signal,
+            'wyckoff': wyckoff,
+            'vol': vol,
+            'macro': macro,
         }
 
         # Session returns
@@ -531,7 +797,71 @@ def run_backtest(df, releases, config):
             analyze_transition(subset, from_s, to_s, t_label, indent="    ")
 
     # ═══════════════════════════════════════════════════════════
-    # 4. STATISTICAL SIGNIFICANCE
+    # 4. CROSS-TABULATION: Wyckoff × Vol × Signal
+    # ═══════════════════════════════════════════════════════════
+    print("\n" + "=" * 80)
+    print("4. CROSS-TABULATION: Wyckoff × Vol × Signal → 24h Return")
+    print("=" * 80)
+
+    fc_col = 'full_cycle' if 'full_cycle' in data.columns else session_names[-1]
+    combo_data = data.dropna(subset=[fc_col])
+
+    if len(combo_data) >= 10:
+        combo_stats = combo_data.groupby(['wyckoff', 'vol', 'signal']).agg(
+            avg_24h=(fc_col, 'mean'),
+            win_rate=(fc_col, lambda x: (x > 0).sum() / len(x) * 100),
+            sample_size=(fc_col, 'count'),
+            median_24h=(fc_col, 'median'),
+        ).reset_index()
+        combo_stats = combo_stats[combo_stats['sample_size'] >= 2].sort_values('avg_24h', ascending=False)
+
+        print(f"\n  {'Wyckoff':<14} {'Vol':<12} {'Signal':<18} {'Avg%':>8} {'Win%':>7} {'N':>4} {'Med%':>8}")
+        print("  " + "-" * 75)
+        for _, row in combo_stats.iterrows():
+            edge = ""
+            if abs(row['avg_24h']) >= 0.5 and row['sample_size'] >= 3:
+                edge = " ⚡"
+            elif abs(row['avg_24h']) >= 1.0:
+                edge = " 🔥"
+            print(f"  {row['wyckoff']:<14} {row['vol']:<12} {row['signal']:<18} "
+                  f"{row['avg_24h']:>+7.2f}% {row['win_rate']:>6.1f}% {row['sample_size']:>4.0f} "
+                  f"{row['median_24h']:>+7.2f}%{edge}")
+
+        # Actionable combos
+        edges = combo_stats[(combo_stats['sample_size'] >= 3) & (combo_stats['avg_24h'].abs() >= 0.5)]
+        if len(edges) > 0:
+            print(f"\n  Actionable combos (n≥3, |avg|≥0.5%):")
+            for _, row in edges.iterrows():
+                direction = "LONG" if row['avg_24h'] > 0 else "SHORT"
+                print(f"    {direction}: {row['wyckoff']} + {row['vol']} + {row['signal']}  "
+                      f"→ {row['avg_24h']:+.2f}% (win {row['win_rate']:.0f}%, n={row['sample_size']:.0f})")
+    else:
+        print("\n  Insufficient data for cross-tabulation")
+
+    # ═══════════════════════════════════════════════════════════
+    # 5. MACRO REGIME × SIGNAL
+    # ═══════════════════════════════════════════════════════════
+    print("\n" + "=" * 80)
+    print("5. MACRO REGIME × SIGNAL → 24h Return")
+    print("=" * 80)
+
+    if len(combo_data) >= 10:
+        macro_stats = combo_data.groupby(['macro', 'signal']).agg(
+            avg_24h=(fc_col, 'mean'),
+            win_rate=(fc_col, lambda x: (x > 0).sum() / len(x) * 100),
+            n=(fc_col, 'count'),
+        ).reset_index()
+        macro_stats = macro_stats[macro_stats['n'] >= 2].sort_values('avg_24h', ascending=False)
+
+        print(f"\n  {'Macro':<16} {'Signal':<18} {'Avg%':>8} {'Win%':>7} {'N':>4}")
+        print("  " + "-" * 55)
+        for _, row in macro_stats.iterrows():
+            edge = " ⚡" if abs(row['avg_24h']) >= 0.5 and row['n'] >= 3 else ""
+            print(f"  {row['macro']:<16} {row['signal']:<18} "
+                  f"{row['avg_24h']:>+7.2f}% {row['win_rate']:>6.1f}% {row['n']:>4.0f}{edge}")
+
+    # ═══════════════════════════════════════════════════════════
+    # 6. STATISTICAL SIGNIFICANCE
     # ═══════════════════════════════════════════════════════════
     print("\n" + "=" * 80)
     print("4. STATISTICAL SIGNIFICANCE")
@@ -561,10 +891,10 @@ def run_backtest(df, releases, config):
         print(f"  {first_session} pos vs neg: pos={sum(fc_pos)/len(fc_pos):+.3f}% (n={len(fc_pos)})  neg={sum(fc_neg)/len(fc_neg):+.3f}% (n={len(fc_neg)})  t={t3:+.3f}  p={p3:.4f}  {'✅' if p3<0.05 else '❌'}")
 
     # ═══════════════════════════════════════════════════════════
-    # 5. SESSION RETURN PROFILE
+    # 7. SESSION RETURN PROFILE
     # ═══════════════════════════════════════════════════════════
     print("\n" + "=" * 80)
-    print("5. SESSION RETURN PROFILE (by signal)")
+    print("7. SESSION RETURN PROFILE (by signal)")
     print("=" * 80)
 
     for sig in sorted(data['signal'].unique()):
@@ -581,10 +911,10 @@ def run_backtest(df, releases, config):
                 print(f"    {sname:<24} {avg:>+6.2f}%  win {win:.0f}%  n={len(sdata)}")
 
     # ═══════════════════════════════════════════════════════════
-    # 6. SUMMARY
+    # 8. SUMMARY
     # ═══════════════════════════════════════════════════════════
     print("\n" + "=" * 80)
-    print("6. SUMMARY")
+    print("8. SUMMARY")
     print("=" * 80)
 
     print(f"\n  Event: {event_name}")
