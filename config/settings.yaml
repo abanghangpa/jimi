@@ -624,6 +624,14 @@ M22_PPI_EXPECTED: 4.0         # PPI consensus expectation (manual — not on FRE
 M24_ENABLED: true
 M24_WINDOW_DAYS: 1            # Days after release to consider active (0=release day only)
 
+# ─── M25: CAIXIN PMI SESSION BIAS ───────────────────────────
+# Regime-conditional 24h bias on Caixin Manufacturing PMI release day.
+# Backtested: 101 releases (2018-2026), ETH/USDT 15m.
+# BIG_MISS contrarian: +3.68% avg, 91% win. BEAT: +1.37%, 67% win.
+# Phase0 filters: <0.15 BLOCK, >0.70 BOOST.
+M25_ENABLED: true
+M25_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

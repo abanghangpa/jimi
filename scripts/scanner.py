@@ -53,6 +53,7 @@ from src.modules.cross_asset import score_cross_asset
 from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
 from src.modules.m22_inflation_regime_v2 import score_m22, format_m22
 from src.modules.m24_nbs_pmi import score_m24_nbs_pmi, format_m24
+from src.modules.m25_caixin_pmi import score_m25_caixin_pmi, format_m25
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -975,6 +976,61 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m24'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M25: Caixin PMI Session Bias (regime-conditional) ──
+    m25_score_adj = 0.0
+    m25_size_mult = 1.0
+    m25_details = {}
+    try:
+        # Get Phase0 and 30d trend for Caixin filters
+        _phase0_for_m25 = result.get('m21', {}).get('phase0')
+        if _phase0_for_m25 is None:
+            _phase0_for_m25 = result.get('phase0')
+        _trend30_for_m25 = None
+        _price_now = float(df_15m['Close'].iloc[-1]) if len(df_15m) > 2880 else None
+        if _price_now and len(df_15m) > 2880:
+            _price_30d = float(df_15m['Close'].iloc[-2880])
+            _trend30_for_m25 = (_price_now - _price_30d) / _price_30d * 100
+
+        # Check if Caixin PMI data is available (from macro_fetch cache)
+        _caixin_surprise = None
+        try:
+            from src.utils.macro_fetch import get_surprise_for_event
+            _caixin_surprise = get_surprise_for_event('cn_caixin_mfg_pmi')
+            if _caixin_surprise == 'UNKNOWN':
+                _caixin_surprise = None
+        except Exception:
+            pass
+
+        m25_status, m25_score_adj, m25_size_mult, m25_details = score_m25_caixin_pmi(
+            surprise=_caixin_surprise,
+            phase0=_phase0_for_m25,
+            trend_30d=_trend30_for_m25,
+            direction=direction,
+            config=cfg)
+        if m25_details and m25_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_DATA'):
+            result['m25'] = {
+                'status': m25_status,
+                'score_adj': m25_score_adj,
+                'size_mult': m25_size_mult,
+                'regime': m25_details.get('regime', '?'),
+                'bias': m25_details.get('bias', '?'),
+                'surprise': m25_details.get('surprise'),
+                'caixin_actual': m25_details.get('caixin_actual'),
+                'caixin_prev': m25_details.get('caixin_prev'),
+                'avg_ret_24h': m25_details.get('avg_ret_24h'),
+                'win_rate': m25_details.get('win_rate'),
+                'sample_size': m25_details.get('sample_size'),
+                'phase0_bucket': m25_details.get('phase0_bucket'),
+                'trend_bucket': m25_details.get('trend_bucket'),
+                'release_date': m25_details.get('release_date'),
+                'details': m25_details,
+            }
+            # Apply M25 size multiplier
+            if m25_size_mult < 1.0:
+                result['_m25_size_mult'] = m25_size_mult
+    except Exception as e:
+        result['m25'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1317,6 +1373,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))  # clamp to [0, 1]
         result['ics'] = round(float(ics), 4)
         result['m24_ics_adj'] = m24_score_adj
+
+    # ── M25 Caixin PMI ICS adjustment (regime-conditional bias on release days) ──
+    if m25_score_adj != 0.0 and m25_status == 'PASS':
+        ics += m25_score_adj
+        ics = max(0.0, min(1.0, ics))  # clamp to [0, 1]
+        result['ics'] = round(float(ics), 4)
+        result['m25_ics_adj'] = m25_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -1700,6 +1763,12 @@ def print_signal(result):
         m24_out = format_m24(result['m24'].get('details', {}))
         if m24_out:
             print(m24_out)
+
+    # M25 Caixin PMI Session Bias
+    if 'm25' in result and result['m25'].get('status') not in ('SKIP', 'NO_DATA'):
+        m25_out = format_m25(result['m25'].get('details', {}))
+        if m25_out:
+            print(m25_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -2412,6 +2481,28 @@ def print_summary(result):
         conf_icon = '🟢' if m24_conf >= 0.7 else '🟡' if m24_conf >= 0.4 else '🟠'
         print(f"  {'M24 NBS PMI':<22} {bias_icon} {m24_bias:>8}  mfg={m24_mfg:.1f}({m24_signal}) svc={m24_svc:.1f}  econ={m24_econ}")
         print(f"  {'  Backtest':<22} {conf_icon} 24h={m24_avg:+.2f}%  win={m24_win*100:.0f}%  n={m24_n}  src={m24_src}  adj={m24_adj:+.3f}  size={m24_sm:.2f}x")
+
+    # M25 Caixin PMI Session Bias summary
+    m25 = result.get('m25', {})
+    if m25 and m25.get('status') not in ('SKIP', 'NO_DATA', 'ERROR'):
+        m25_regime = m25.get('regime', '?')
+        m25_surprise = m25.get('surprise', '?')
+        m25_bias = m25.get('bias', '?')
+        m25_actual = m25.get('caixin_actual', 0)
+        m25_prev = m25.get('caixin_prev', 0)
+        m25_avg = m25.get('avg_ret_24h', 0)
+        m25_win = m25.get('win_rate', 0)
+        m25_n = m25.get('sample_size', 0)
+        m25_adj = m25.get('score_adj', 0)
+        m25_sm = m25.get('size_mult', 1.0)
+        m25_p0b = m25.get('phase0_bucket', '?')
+        m25_tb = m25.get('trend_bucket', '?')
+        bias_icon = '🟢' if m25_bias == 'LONG' else '🔴' if m25_bias == 'SHORT' else '⚪'
+        if m25_bias in ('LONG', 'SHORT'):
+            print(f"  {'M25 Caixin PMI':<22} {bias_icon} {m25_surprise:>12}  actual={m25_actual:.1f} prev={m25_prev:.1f}  24h={m25_avg:+.2f}%  win={m25_win*100:.0f}%  n={m25_n}")
+            print(f"  {'  Filters':<22} Phase0={m25_p0b}  Trend={m25_tb}  adj={m25_adj:+.3f}  size={m25_sm:.2f}x")
+        else:
+            print(f"  {'M25 Caixin PMI':<22} {bias_icon} {m25_surprise:>12}  {m25_regime}")
 
     # Breakout Confirmation summary
     bc = result.get('breakout_confirm')

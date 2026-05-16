@@ -306,6 +306,19 @@ def fetch_caixin_pmi(force_refresh=False):
             result = fetcher()
             if result and result.get('actual') is not None:
                 print(f"  ✅ Caixin PMI from {name}: actual={result['actual']}")
+
+                # ── Feed live Caixin PMI into M25 cache ──
+                try:
+                    from src.modules.m25_caixin_pmi import update_caixin_cache
+                    _today = datetime.now(UTC).strftime('%Y-%m-%d')
+                    update_caixin_cache(
+                        actual=result['actual'],
+                        previous=result.get('previous'),
+                        release_date=_today,
+                    )
+                except Exception:
+                    pass  # non-critical
+
                 break
         except Exception as e:
             print(f"  ⚠️  {name} failed: {e}")
