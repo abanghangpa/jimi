@@ -58,6 +58,7 @@ from src.modules.m23_ppi_session import (
     get_claims_trend, classify_macro_combo,
 )
 from src.modules.macro_lifecycle import evaluate_macro_lifecycle, format_lifecycle
+from src.modules.macro_calendar import get_macro_calendar, format_macro_calendar, format_macro_calendar_compact, calendar_to_dict
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
@@ -2750,6 +2751,14 @@ def main():
         print(f"  ⚠️  Dual strategy error: {e}")
         result['dual_strategy'] = None
 
+    # ── Macro Calendar ──
+    try:
+        macro_cal = get_macro_calendar()
+        result['macro_calendar'] = calendar_to_dict(macro_cal)
+    except Exception as e:
+        print(f"  ⚠️  Macro calendar error: {e}")
+        result['macro_calendar'] = None
+
     # Always save scan result to data/scans/
     scan_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'scans')
     os.makedirs(scan_dir, exist_ok=True)
@@ -2808,6 +2817,14 @@ def main():
         # Re-save with phase data
         with open(scan_file, 'w') as f:
             json.dump(result, f, indent=2, default=str)
+
+    # ── Macro Calendar ──
+    try:
+        if result.get('macro_calendar'):
+            macro_cal = get_macro_calendar()
+            print(format_macro_calendar(macro_cal))
+    except Exception:
+        pass
 
     # ── Collect derivatives snapshot ──
     try:
