@@ -334,7 +334,11 @@ def fetch_caixin_pmi(force_refresh=False):
 
 
 def fetch_nbs_pmi(force_refresh=False):
-    """Fetch latest NBS Manufacturing PMI data."""
+    """Fetch latest NBS Manufacturing PMI data.
+
+    Also updates M24's NBS PMI cache so the session bias module
+    has fresh data for release-day scoring.
+    """
     cache = _load_cache()
     cache_key = 'nbs_mfg_pmi'
 
@@ -357,6 +361,22 @@ def fetch_nbs_pmi(force_refresh=False):
         cache[cache_key] = result
         _save_cache(cache)
         print(f"  ✅ NBS PMI: actual={result['actual']}")
+
+        # ── Feed live NBS PMI into M24 cache ──
+        try:
+            from src.modules.m24_nbs_pmi import update_nbs_cache
+            _today = datetime.now(UTC).strftime('%Y-%m-%d')
+            # Try to fetch NBS Services PMI too (released ~3 days later)
+            svc_result = _fetch_trading_economics('services-pmi')
+            svc_val = svc_result.get('actual') if svc_result else None
+            update_nbs_cache(
+                mfg_pmi=result['actual'],
+                services_pmi=svc_val,
+                release_date=_today,
+            )
+        except Exception:
+            pass  # non-critical
+
         return result
 
     if cache_key in cache:
