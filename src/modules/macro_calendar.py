@@ -1,18 +1,21 @@
 """
-Macro Calendar Tracker — tracks upcoming economic data releases across
-US, China, EU, Japan, UK, and South Korea.
+Macro Calendar Tracker v2 — Full 38-event global cycle tracker.
 
-Shows:
-  - Next event countdown
-  - Full monthly cascade chain
-  - What to watch after each release
-  - Expected ETH impact by historical pattern
+Tracks scheduled economic data releases across:
+  🇺🇸 US | 🇪🇺 Eurozone/ECB | 🇬🇧 UK | 🇯🇵 Japan | 🇨🇳 China | 🇦🇺 Australia
+
+Features:
+  - 38 scheduled events + real-time signals
+  - "What comes next" cascade chains per event
+  - 4 narrative chains: Inflation, Labour, Growth, Central Bank
+  - Regime-adjusted expected moves for CPI
+  - Phase detection (where in the monthly cycle)
+  - Countdown timers with 1h/4h/24h alerts
 
 Usage:
     from src.modules.macro_calendar import get_macro_calendar, format_macro_calendar
-
     cal = get_macro_calendar()
-    print(format_macro_calendar(cal))
+    print(format_macro_calendar(cal, current_regime='STAGFLATION_HOT'))
 """
 
 import json
@@ -20,485 +23,12 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-# ── Time references ──
 UTC = timezone.utc
 
-# ── Release schedule definitions ──
-# Each entry: (name, country, tier, schedule_func, time_utc, impact, cascade_notes)
 
-def _first_friday(year, month):
-    """First Friday of the month."""
-    d = datetime(year, month, 1, tzinfo=UTC)
-    while d.weekday() != 4:  # Friday
-        d += timedelta(days=1)
-    return d
-
-
-def _nth_weekday(year, month, weekday, n):
-    """Nth weekday of month (0=Mon, 4=Fri)."""
-    d = datetime(year, month, 1, tzinfo=UTC)
-    count = 0
-    while d.month == month:
-        if d.weekday() == weekday:
-            count += 1
-            if count == n:
-                return d
-        d += timedelta(days=1)
-    return None
-
-
-def _last_day(year, month):
-    """Last day of month."""
-    if month == 12:
-        return datetime(year, 12, 31, tzinfo=UTC)
-    return datetime(year, month + 1, 1, tzinfo=UTC) - timedelta(days=1)
-
-
-def _weekdays_in_range(year, month, day_start, day_end, weekday):
-    """Count weekdays in a date range."""
-    count = 0
-    for d in range(day_start, min(day_end + 1, 32)):
-        try:
-            dt = datetime(year, month, d, tzinfo=UTC)
-            if dt.weekday() == weekday:
-                count += 1
-        except ValueError:
-            break
-    return count
-
-
-# ── EVENT DEFINITIONS ──
-
-EVENTS = [
-    # ═══════════════════════════════════════════════
-    # 🇺🇸 TIER 1 — US (Primary Driver)
-    # ═══════════════════════════════════════════════
-    {
-        'id': 'us_nfp',
-        'name': 'US Non-Farm Payrolls',
-        'country': '🇺🇸 US',
-        'tier': 1,
-        'schedule': '1st Friday',
-        'time_utc': '13:30',
-        'impact': 'HIGH',
-        'get_next': lambda y, m: _first_friday(y, m).replace(hour=13, minute=30),
-        'cascade': {
-            'immediate': 'DXY spike → BTC/ETH reaction (seconds)',
-            '1h': 'US futures adjust → risk repricing',
-            'next_event': 'US Claims (Thu) → labor context check',
-            'next_major': 'US CPI (~12-14th) → confirms/denies NFP signal',
-            'eth_historical': 'Avg ±1.2% on release, sets tone for 1-2 weeks',
-        },
-        'what_to_watch': [
-            'NFP surprise vs consensus → immediate ETH direction',
-            'Unemployment rate → recession signal (Sahm rule)',
-            'Wage growth → inflation pipeline → Fed reaction',
-        ],
-    },
-    {
-        'id': 'us_claims',
-        'name': 'US Jobless Claims',
-        'country': '🇺🇸 US',
-        'tier': 1,
-        'schedule': 'Every Thursday',
-        'time_utc': '13:30',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _next_thursday(y, m),
-        'cascade': {
-            'immediate': 'Minor — claims is context, not catalyst',
-            'next_event': 'Next week: more claims or CPI/PPI',
-            'next_major': 'Accumulates into CPI signal — rising claims + hot CPI = recession fear',
-            'eth_historical': 'Avg ±0.3% — only extreme prints (>300K or <200K) matter',
-        },
-        'what_to_watch': [
-            'Claims trend (4-week avg) — rising = labor softening',
-            'Continuing claims — exhaustion rate',
-            'Sahm rule trigger (unemployment 3m avg rises 0.5%+ from low)',
-        ],
-    },
-    {
-        'id': 'us_cpi',
-        'name': 'US CPI (YoY)',
-        'country': '🇺🇸 US',
-        'tier': 1,
-        'schedule': '~12-14th',
-        'time_utc': '13:30',
-        'impact': 'HIGHEST',
-        'get_next': lambda y, m: _approx_date(y, m, 12).replace(hour=13, minute=30),
-        'cascade': {
-            'immediate': 'BIGGEST ETH MOVER — immediate ±1-3% spike',
-            '30min': 'DXY repricing → EURUSD → global risk assets',
-            'next_event': 'US PPI (next day) → confirms/denies CPI',
-            'next_major': 'PBOC LPR (~20th) → will China react to US inflation?',
-            'next_cycle': 'Next NFP → did labor hold? → cycle repeats',
-            'eth_historical': {
-                'COOL': 'Avg +1.06% (Fed can cut → risk-on)',
-                'HOT': 'Avg -0.45% (Fed stays tight → risk-off)',
-            },
-            'eth_by_regime': {
-                'BEAR':              {'COOL': +9.92, 'HOT': -3.33},
-                'BULL':              {'COOL': +1.88, 'HOT': -0.20},
-                'RECOVERY':          {'COOL': -0.55, 'HOT': +0.84},
-                'ACCELERATION':      {'COOL': -0.09, 'HOT': +0.06},
-                'STAGFLATION':       {'COOL': +3.00, 'HOT': -2.00},
-                'STAGFLATION_HOT':   {'COOL': +4.00, 'HOT': -3.00},
-            },
-            'regime_sensitivity': {
-                'TIGHTENING': 0.60, 'EASING': 0.50, 'CRISIS_RECOVERY': 0.80,
-                'BULL': 0.85, 'BEAR': 1.20, 'RECOVERY': 0.75,
-                'ACCELERATION': 0.65, 'STAGFLATION': 1.00, 'STAGFLATION_HOT': 1.10,
-            },
-        },
-        'what_to_watch': [
-            'CPI vs consensus surprise — direction AND magnitude',
-            'Core CPI (ex food/energy) — sticky inflation indicator',
-            'Shelter/rent component — largest weight, slow-moving',
-            'Market pricing: did DXY already price in the print?',
-            'CURRENT REGIME determines expected move magnitude — see eth_by_regime',
-        ],
-    },
-    {
-        'id': 'us_ppi',
-        'name': 'US PPI (YoY)',
-        'country': '🇺🇸 US',
-        'tier': 1,
-        'schedule': '~13-15th (day after CPI)',
-        'time_utc': '13:30',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _approx_date(y, m, 13).replace(hour=13, minute=30),
-        'cascade': {
-            'immediate': 'Confirms or denies CPI — pipeline inflation check',
-            'next_event': 'PBOC LPR (~20th) → China reaction',
-            'next_major': 'Claims next Thursday → labor context',
-            'eth_historical': 'Modifier on CPI signal: +0.5% (both cool) to -0.8% (both hot)',
-        },
-        'what_to_watch': [
-            'PPI vs CPI alignment — both hot = persistent inflation',
-            'PPI leading CPI by 2-3 months — if PPI >> CPI, CPI will catch up',
-            'Goods vs services split — supply chain signal',
-        ],
-    },
-    {
-        'id': 'us_fomc',
-        'name': 'US FOMC Rate Decision',
-        'country': '🇺🇸 US',
-        'tier': 1,
-        'schedule': '8x/year (~6 weeks)',
-        'time_utc': '19:00',
-        'impact': 'HIGH',
-        'get_next': lambda y, m: _fomc_next(y, m),
-        'cascade': {
-            'immediate': 'Rate + dot plot → DXY → ETH ±1-2%',
-            '30min': 'Powell press conference — forward guidance',
-            'next_event': 'FOMC minutes (3 weeks later)',
-            'next_major': 'Next CPI → did Fed react to latest inflation?',
-            'eth_historical': 'CUT = rally, HOLD = range, HAWKISH = dump',
-        },
-        'what_to_watch': [
-            'Rate decision vs consensus',
-            'Dot plot — median rate projection',
-            'Powell tone — hawkish/dovish shift',
-            'QT taper timing — liquidity signal',
-        ],
-    },
-
-    # ═══════════════════════════════════════════════
-    # 🇨🇳 TIER 1 — China (Second Largest Driver)
-    # ═══════════════════════════════════════════════
-    {
-        'id': 'cn_pmi_official',
-        'name': 'China Official PMI',
-        'country': '🇨🇳 China',
-        'tier': 1,
-        'schedule': 'Last day of month',
-        'time_utc': '01:00',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _last_day(y, m).replace(hour=1, minute=0),
-        'cascade': {
-            'immediate': 'Manufacturing health → risk appetite',
-            'next_event': 'Caixin PMI (1-3rd) → private sector check',
-            'next_major': 'PBOC LPR (~20th) → will PBOC ease?',
-            'eth_historical': 'PMI >50 = expansion (risk-on), <50 = contraction (risk-off)',
-        },
-        'what_to_watch': [
-            'Above/below 50 (expansion threshold)',
-            'New orders component — leading indicator',
-            'Export orders — global demand proxy',
-        ],
-    },
-    {
-        'id': 'cn_pmi_caixin',
-        'name': 'China Caixin PMI',
-        'country': '🇨🇳 China',
-        'tier': 1,
-        'schedule': '1st-3rd of month',
-        'time_utc': '01:45',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: datetime(y, m, 1, tzinfo=UTC).replace(hour=1, minute=45),
-        'cascade': {
-            'immediate': 'Private sector health — complements official PMI',
-            'next_event': 'Trade balance (~7-10th)',
-            'next_major': 'PBOC LPR (~20th)',
-            'eth_historical': 'Divergence from official PMI = policy uncertainty',
-        },
-        'what_to_watch': [
-            'Divergence from official PMI — signals policy transmission',
-            'Services vs manufacturing split',
-        ],
-    },
-    {
-        'id': 'cn_pboc_lpr',
-        'name': 'China PBOC LPR Rate',
-        'country': '🇨🇳 China',
-        'tier': 1,
-        'schedule': '20th of month',
-        'time_utc': '01:30',
-        'impact': 'HIGH',
-        'get_next': lambda y, m: datetime(y, m, 20, tzinfo=UTC).replace(hour=1, minute=30),
-        'cascade': {
-            'immediate': 'Rate CUT = massive liquidity → crypto rally (1-2 week lead)',
-            'immediate_up': 'Rate HIKE = liquidity drain → crypto dump',
-            'next_event': 'Credit data (~15-25th) → did lending respond?',
-            'next_major': 'Next month PMI → did easing work?',
-            'eth_historical': 'PBOC cut has ~70% correlation with ETH rally within 2 weeks',
-        },
-        'what_to_watch': [
-            '1-year LPR (corporate) and 5-year LPR (mortgage)',
-            'Cut magnitude — 10bp expected, 20bp = aggressive',
-            'RRR cut (separate event) — massive liquidity injection',
-        ],
-    },
-    {
-        'id': 'cn_credit',
-        'name': 'China Credit Data',
-        'country': '🇨🇳 China',
-        'tier': 1,
-        'schedule': '~10-15th',
-        'time_utc': '—',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _approx_date(y, m, 12),
-        'cascade': {
-            'immediate': 'Credit impulse — LEADING indicator (1-2 month lead on risk assets)',
-            'next_event': 'PBOC LPR (~20th) — policy response',
-            'next_major': 'Next month PMI — did credit flow work?',
-            'eth_historical': 'Rising credit impulse = risk-on (front-runs ETH by 4-8 weeks)',
-        },
-        'what_to_watch': [
-            'Total social financing (TSF) — broad credit measure',
-            'New yuan loans — bank lending appetite',
-            'Credit impulse (change in credit/GDP) — leading indicator',
-        ],
-    },
-    {
-        'id': 'cn_cpi',
-        'name': 'China CPI/PPI',
-        'country': '🇨🇳 China',
-        'tier': 1,
-        'schedule': '~9-12th',
-        'time_utc': '01:30',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _approx_date(y, m, 10).replace(hour=1, minute=30),
-        'cascade': {
-            'immediate': 'Deflation risk → PBOC may ease more aggressively',
-            'next_event': 'Credit data (~12-15th)',
-            'next_major': 'PBOC LPR (~20th) — deflation = more room to cut',
-            'eth_historical': 'China deflation + PBOC cut = bullish for crypto (liquidity flood)',
-        },
-        'what_to_watch': [
-            'CPI negative = deflation → PBOC forced to ease',
-            'PPI negative = industrial deflation → weak demand',
-            'CPI+PPI both negative = Japan-style trap → massive stimulus expected',
-        ],
-    },
-    {
-        'id': 'cn_trade',
-        'name': 'China Trade Balance',
-        'country': '🇨🇳 China',
-        'tier': 2,
-        'schedule': '~7-10th',
-        'time_utc': '03:00',
-        'impact': 'LOW',
-        'get_next': lambda y, m: _approx_date(y, m, 8).replace(hour=3),
-        'cascade': {
-            'immediate': 'Export strength → global demand signal',
-            'next_event': 'CPI/PPI (~10th)',
-            'eth_historical': 'Weak exports → PBOC easing expectations',
-        },
-        'what_to_watch': ['Export growth', 'Import growth (domestic demand)'],
-    },
-
-    # ═══════════════════════════════════════════════
-    # 🇪🇺 TIER 2 — Eurozone
-    # ═══════════════════════════════════════════════
-    {
-        'id': 'eu_hicp_flash',
-        'name': 'EU HICP Flash',
-        'country': '🇪🇺 Eurozone',
-        'tier': 2,
-        'schedule': '~1st of month',
-        'time_utc': '10:00',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _approx_date(y, m, 1).replace(hour=10),
-        'cascade': {
-            'immediate': 'EURUSD → DXY inverse → ETH',
-            'next_event': 'ECB decision (if scheduled)',
-            'next_major': 'EU HICP Final (~18th)',
-            'eth_historical': 'EU inflation hot → ECB hawkish → EURUSD up → DXY down → ETH up',
-        },
-        'what_to_watch': [
-            'Core HICP (ex food/energy) — sticky inflation',
-            'vs ECB 2% target — gap determines rate path',
-        ],
-    },
-    {
-        'id': 'eu_ecb',
-        'name': 'ECB Rate Decision',
-        'country': '🇪🇺 Eurozone',
-        'tier': 2,
-        'schedule': '8x/year (~6 weeks)',
-        'time_utc': '13:15',
-        'impact': 'HIGH',
-        'get_next': lambda y, m: _ecb_next(y, m),
-        'cascade': {
-            'immediate': 'Rate decision + forward guidance → EURUSD → DXY → ETH',
-            '30min': 'Lagarde press conference',
-            'next_event': 'ECB minutes (4 weeks later)',
-            'next_major': 'Next EU HICP — did inflation respond?',
-            'eth_historical': 'ECB CUT = EURUSD up → DXY down → ETH up (indirect)',
-        },
-        'what_to_watch': [
-            'Rate decision vs consensus',
-            'Lagarde forward guidance — hawkish/dovish pivot',
-            'APP/PEPP taper updates — liquidity signal',
-        ],
-    },
-
-    # ═══════════════════════════════════════════════
-    # 🇯🇵 TIER 2 — Japan (Carry Trade Risk)
-    # ═══════════════════════════════════════════════
-    {
-        'id': 'jp_boj',
-        'name': 'BOJ Rate Decision',
-        'country': '🇯🇵 Japan',
-        'tier': 2,
-        'schedule': '8x/year (~6 weeks)',
-        'time_utc': '~03:00',
-        'impact': 'HIGH',
-        'get_next': lambda y, m: _boj_next(y, m),
-        'cascade': {
-            'immediate': 'Rate HIKE = carry trade unwind = RISK-OFF CRASH',
-            'immediate_cut': 'Rate HOLD/DOVISH = carry continues = risk-on',
-            '1h': 'USDJPY repricing → global risk assets',
-            'next_event': 'Tokyo CPI (~25-28th) — inflation check',
-            'next_major': 'Next BOJ — will they hike again?',
-            'eth_historical': 'Aug 2024: BOJ hike → carry unwind → ETH -20% in 3 days',
-        },
-        'what_to_watch': [
-            'Rate decision — any hike = CRITICAL risk event',
-            'YCC (yield curve control) adjustments',
-            'USDJPY — yen strengthening = carry unwind risk',
-            'Forward guidance — signaling future hikes',
-        ],
-        'alert': '⚠️ BOJ hike = highest-impact single event for crypto downside risk',
-    },
-    {
-        'id': 'jp_cpi_tokyo',
-        'name': 'Japan Tokyo CPI',
-        'country': '🇯🇵 Japan',
-        'tier': 2,
-        'schedule': '~25-28th',
-        'time_utc': '23:30',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _approx_date(y, m, 26).replace(hour=23, minute=30),
-        'cascade': {
-            'immediate': 'Leading indicator for national CPI → BOJ policy',
-            'next_event': 'National CPI (~18-22nd next month)',
-            'next_major': 'Next BOJ — hot Tokyo CPI = more pressure to hike',
-            'eth_historical': 'Tokyo CPI >3% → BOJ hike probability rises → JPY strengthens → risk-off',
-        },
-        'what_to_watch': [
-            'Ex-fresh-food (core) — BOJ target',
-            'Trend — rising = BOJ under pressure to hike',
-        ],
-    },
-    {
-        'id': 'jp_cpi_national',
-        'name': 'Japan National CPI',
-        'country': '🇯🇵 Japan',
-        'tier': 2,
-        'schedule': '~18-22nd',
-        'time_utc': '23:30',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _approx_date(y, m, 20).replace(hour=23, minute=30),
-        'cascade': {
-            'immediate': 'Confirms Tokyo CPI trend → BOJ pressure',
-            'next_event': 'BOJ decision (if scheduled)',
-            'next_major': 'Next Tokyo CPI (~25-28th next month)',
-        },
-        'what_to_watch': ['Core CPI trend', 'Services vs goods inflation'],
-    },
-
-    # ═══════════════════════════════════════════════
-    # 🇬🇧 TIER 3 — UK (London Session)
-    # ═══════════════════════════════════════════════
-    {
-        'id': 'uk_cpi',
-        'name': 'UK CPI',
-        'country': '🇬🇧 UK',
-        'tier': 3,
-        'schedule': '~17-19th',
-        'time_utc': '06:00',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _approx_date(y, m, 18).replace(hour=6),
-        'cascade': {
-            'immediate': 'GBPUSD → minor DXY impact → indirect ETH',
-            'next_event': 'BOE decision (if scheduled)',
-            'next_major': 'London session direction',
-            'eth_historical': 'UK CPI affects London session tone — already tracked in M23',
-        },
-        'what_to_watch': ['Core CPI', 'Services inflation — BOJ-style sticky component'],
-    },
-    {
-        'id': 'uk_boe',
-        'name': 'BOE Rate Decision',
-        'country': '🇬🇧 UK',
-        'tier': 3,
-        'schedule': '8x/year (~6 weeks)',
-        'time_utc': '12:00',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: _boe_next(y, m),
-        'cascade': {
-            'immediate': 'Rate decision → GBPUSD → minor ETH impact',
-            'next_event': 'Next UK CPI',
-        },
-        'what_to_watch': ['Rate decision', 'Bailey forward guidance'],
-    },
-
-    # ═══════════════════════════════════════════════
-    # 🇰🇷 TIER 3 — South Korea (Retail Proxy)
-    # ═══════════════════════════════════════════════
-    {
-        'id': 'kr_kimchi',
-        'name': 'Kimchi Premium',
-        'country': '🇰🇷 Korea',
-        'tier': 3,
-        'schedule': 'Real-time',
-        'time_utc': '—',
-        'impact': 'MEDIUM',
-        'get_next': lambda y, m: None,  # Real-time
-        'cascade': {
-            'immediate': 'Premium = retail FOMO, Discount = fear',
-            'eth_historical': '>5% premium = local top signal, <-2% discount = panic',
-        },
-        'what_to_watch': [
-            'Premium/discount % — retail sentiment proxy',
-            'KRW volume — Korean retail activity',
-        ],
-    },
-]
-
-
-# ── Helper functions ──
+# ══════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ══════════════════════════════════════════════════════════════
 
 def _approx_date(year, month, day):
     """Approximate date, clamped to valid range."""
@@ -507,115 +37,986 @@ def _approx_date(year, month, day):
     return datetime(year, month, min(day, max_day), tzinfo=UTC)
 
 
-def _next_thursday(year, month):
-    """Next Thursday from today (for claims)."""
+def _first_friday(year, month):
+    d = datetime(year, month, 1, tzinfo=UTC)
+    while d.weekday() != 4:
+        d += timedelta(days=1)
+    return d
+
+
+def _first_business_day(year, month):
+    d = datetime(year, month, 1, tzinfo=UTC)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
+def _nth_business_day(year, month, n):
+    d = datetime(year, month, 1, tzinfo=UTC)
+    count = 0
+    while d.month == month:
+        if d.weekday() < 5:
+            count += 1
+            if count == n:
+                return d
+        d += timedelta(days=1)
+    return None
+
+
+def _last_day(year, month):
+    if month == 12:
+        return datetime(year, 12, 31, tzinfo=UTC)
+    return datetime(year, month + 1, 1, tzinfo=UTC) - timedelta(days=1)
+
+
+def _next_thursday():
     now = datetime.now(UTC)
     d = now
-    while d.weekday() != 3:  # Thursday
+    while d.weekday() != 3:
         d += timedelta(days=1)
     return d.replace(hour=13, minute=30, second=0, microsecond=0)
 
 
 def _fomc_next(year, month):
-    """Approximate FOMC dates (8x/year, roughly every 6 weeks)."""
-    # 2026 FOMC dates (approximate): Jan, Mar, May, Jun, Jul, Sep, Oct, Dec
-    fomc_months_2026 = {
-        1: 29, 2: None, 3: 19, 4: None, 5: 7, 6: 18,
-        7: 30, 8: None, 9: 18, 10: 29, 11: None, 12: 17,
+    fomc_2026 = {
+        1: 29, 3: 19, 5: 7, 6: 18, 7: 30, 9: 18, 10: 29, 12: 17,
     }
-    day = fomc_months_2026.get(month)
+    day = fomc_2026.get(month)
     if day:
         return datetime(year, month, day, 19, 0, tzinfo=UTC)
     return None
 
 
 def _ecb_next(year, month):
-    """Approximate ECB dates (8x/year, roughly every 6 weeks)."""
-    ecb_months_2026 = {
-        1: None, 2: 5, 3: None, 4: 16, 5: None, 6: 4,
-        7: None, 8: 6, 9: None, 10: 29, 11: None, 12: 17,
+    ecb_2026 = {
+        2: 5, 4: 16, 6: 4, 8: 6, 10: 29, 12: 17,
     }
-    day = ecb_months_2026.get(month)
+    day = ecb_2026.get(month)
     if day:
         return datetime(year, month, day, 13, 15, tzinfo=UTC)
     return None
 
 
 def _boj_next(year, month):
-    """Approximate BOJ dates (8x/year, roughly every 6 weeks)."""
-    boj_months_2026 = {
-        1: None, 2: 19, 3: None, 4: 17, 5: None, 6: 18,
-        7: None, 8: 6, 9: None, 10: 30, 11: None, 12: 18,
+    boj_2026 = {
+        2: 19, 4: 17, 6: 18, 8: 6, 10: 30, 12: 18,
     }
-    day = boj_months_2026.get(month)
+    day = boj_2026.get(month)
     if day:
         return datetime(year, month, day, 3, 0, tzinfo=UTC)
     return None
 
 
 def _boe_next(year, month):
-    """Approximate BOE dates (8x/year, roughly every 6 weeks)."""
-    boe_months_2026 = {
-        1: None, 2: 5, 3: None, 4: 16, 5: None, 6: 18,
-        7: None, 8: 6, 9: None, 10: 8, 11: None, 12: 17,
+    boe_2026 = {
+        2: 5, 4: 16, 6: 18, 8: 6, 10: 8, 12: 17,
     }
-    day = boe_months_2026.get(month)
+    day = boe_2026.get(month)
     if day:
         return datetime(year, month, day, 12, 0, tzinfo=UTC)
     return None
 
 
-# ── Main API ──
+def _rba_next(year, month):
+    """RBA meets first Tuesday of each month (except January)."""
+    if month == 1:
+        return None
+    d = datetime(year, month, 1, tzinfo=UTC)
+    while d.weekday() != 1:  # Tuesday
+        d += timedelta(days=1)
+    return d.replace(hour=3, minute=30)
+
+
+def _format_countdown(delta):
+    total = int(delta.total_seconds())
+    if total < 0:
+        return 'PASSED'
+    d = total // 86400
+    h = (total % 86400) // 3600
+    m = (total % 3600) // 60
+    if d > 0:
+        return f'{d}d {h}h'
+    elif h > 0:
+        return f'{h}h {m}m'
+    else:
+        return f'{m}m'
+
+
+def _impact_icon(impact):
+    return {'HIGHEST': '🔴', 'HIGH': '🟠', 'MEDIUM': '🟡', 'LOW': '⚪'}.get(impact, '⚪')
+
+
+def _phase_icon(phase):
+    return {
+        'MONTH_START': '📅', 'NFP_WEEK': '💥', 'CPI_WEEK': '🔥',
+        'MID_MONTH': '🏦', 'LATE_MONTH': '📊', 'MONTH_END': '🔄',
+    }.get(phase, '📍')
+
+
+# ══════════════════════════════════════════════════════════════
+# NARRATIVE CHAINS — how data cascades across countries
+# ══════════════════════════════════════════════════════════════
+
+NARRATIVE_CHAINS = {
+    'inflation': {
+        'name': '🔥 INFLATION CHAIN (most ETH-sensitive)',
+        'chain': [
+            'China CPI/PPI',
+            'Germany CPI',
+            'Eurozone CPI Flash',
+            'US CPI (headline + core)',
+            'US PPI',
+            'Core PCE',
+            'FOMC rate decision',
+            'Powell presser',
+            'DXY reaction',
+            'ETH/USDT move',
+        ],
+        'eth_sensitivity': 'HIGHEST',
+        'note': 'CPI is the #1 ETH macro mover. Core PCE is the Fed\'s actual target.',
+    },
+    'labour': {
+        'name': '👷 LABOUR CHAIN',
+        'chain': [
+            'JOLTS Job Openings',
+            'ADP Employment',
+            'Jobless Claims',
+            'NFP + Unemployment + Wages',
+            'Fed speeches',
+            'CME FedWatch repricing',
+            'Rate cut/hike probability',
+            'ETH/USDT trend',
+        ],
+        'eth_sensitivity': 'HIGH',
+        'note': 'NFP sets the tone, CPI confirms. Claims is weekly context.',
+    },
+    'growth': {
+        'name': '📈 GROWTH CHAIN',
+        'chain': [
+            'China GDP',
+            'Eurozone GDP Flash',
+            'Germany GDP',
+            'US GDP Advance',
+            'Corporate earnings backdrop',
+            'Risk-on / risk-off regime',
+        ],
+        'eth_sensitivity': 'MEDIUM',
+        'note': 'GDP is quarterly — sets macro backdrop, not a trade trigger.',
+    },
+    'central_bank': {
+        'name': '🏦 CENTRAL BANK CHAIN',
+        'chain': [
+            'BoJ decision (carry trade)',
+            'ECB decision (EUR/USD)',
+            'BoE decision (GBP/USD)',
+            'FOMC decision (DXY)',
+            'Powell presser',
+            '10Y yield',
+            'ETH/USDT',
+        ],
+        'eth_sensitivity': 'HIGH',
+        'note': 'BoJ is the tail risk (carry unwind). FOMC is the primary driver.',
+    },
+}
+
+# ══════════════════════════════════════════════════════════════
+# REAL-TIME SIGNALS — always watch alongside scheduled data
+# ══════════════════════════════════════════════════════════════
+
+REALTIME_SIGNALS = [
+    {'id': 'usdjpy', 'name': 'USD/JPY', 'note': 'Yen spike = carry unwind = ETH drops fast', 'eth_link': 'direct'},
+    {'id': 'dxy', 'name': 'DXY (Dollar Index)', 'note': 'Strong dollar = crypto headwind', 'eth_link': 'inverse'},
+    {'id': 'us10y', 'name': '10Y Treasury Yield', 'note': 'Yield spike = risk-off = ETH sells', 'eth_link': 'inverse'},
+    {'id': 'vix', 'name': 'VIX (Fear Gauge)', 'note': 'Above 20 = caution, above 30 = panic', 'eth_link': 'inverse'},
+    {'id': 'oil', 'name': 'WTI / Brent Crude', 'note': 'Oil spike = inflation fear = ETH pressure', 'eth_link': 'inverse'},
+    {'id': 'gold', 'name': 'Gold', 'note': 'Safe haven, often co-moves with BTC/ETH', 'eth_link': 'correlated'},
+    {'id': 'fedwatch', 'name': 'CME FedWatch', 'note': 'Real-time rate cut/hike probability', 'eth_link': 'direct'},
+    {'id': 'eth_funding', 'name': 'ETH Funding Rate', 'note': 'Internal crypto signal for leverage bias', 'eth_link': 'direct'},
+]
+
+
+# ══════════════════════════════════════════════════════════════
+# EVENT DEFINITIONS — 38 scheduled events
+# ══════════════════════════════════════════════════════════════
+
+EVENTS = [
+    # ───────────────────────────────────────────────────
+    # 🇨🇳 CHINA
+    # ───────────────────────────────────────────────────
+    {
+        'id': 'cn_caixin_mfg_pmi',
+        'num': '01',
+        'name': 'China Caixin Manufacturing PMI',
+        'country': '🇨🇳 China',
+        'tier': 1,
+        'schedule': '1st of month',
+        'time_utc': '01:45',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: datetime(y, m, 1, 1, 45, tzinfo=UTC),
+        'what_comes_next': [
+            'NBS Manufacturing PMI — official vs private divergence tells full picture',
+            'Eurozone PMI Flash — same-day or next-day, global factory comparison',
+            'US ISM Manufacturing PMI — completes global PMI picture ~2 days later',
+        ],
+        'what_to_watch': ['Above/below 50 (expansion threshold)', 'New orders sub-index', 'Export orders — global demand proxy'],
+    },
+    {
+        'id': 'cn_nbs_pmi',
+        'num': '02',
+        'name': 'NBS Manufacturing + Services PMI',
+        'country': '🇨🇳 China',
+        'tier': 1,
+        'schedule': '1st of month',
+        'time_utc': '01:00',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: datetime(y, m, 1, 1, 0, tzinfo=UTC),
+        'what_comes_next': [
+            'Caixin Services PMI — private services side, divergence from official',
+            'RBA Rate Decision — Australia reacts to China data (top trade partner)',
+            'Eurozone Flash PMI — Europe PMI drops same week, narrative chain',
+        ],
+        'what_to_watch': ['Above/below 50', 'New orders vs inventories split', 'Employment sub-index'],
+    },
+    {
+        'id': 'cn_cpi',
+        'num': '15',
+        'name': 'China CPI + PPI',
+        'country': '🇨🇳 China',
+        'tier': 1,
+        'schedule': '~9th–11th',
+        'time_utc': '01:30',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 10).replace(hour=1, minute=30),
+        'what_comes_next': [
+            'China Trade Balance — released same week, demand story completes',
+            'PBoC LPR Decision — deflation accelerates rate cut probability',
+            'Commodity prices (oil, copper) — China deflation = global demand fear',
+        ],
+        'what_to_watch': ['CPI negative = deflation → PBOC forced to ease', 'PPI negative = industrial deflation', 'Both negative = Japan-style trap → massive stimulus expected'],
+    },
+    {
+        'id': 'cn_gdp',
+        'num': '30',
+        'name': 'China GDP (Quarterly)',
+        'country': '🇨🇳 China',
+        'tier': 1,
+        'schedule': 'Quarterly (~18th)',
+        'time_utc': '03:00',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 18).replace(hour=3) if m in (1, 4, 7, 10) else None,
+        'what_comes_next': [
+            'China Retail Sales — released same day, growth quality check',
+            'China Industrial Output — released same day, supply side of GDP',
+            'PBoC LPR Decision — miss = stimulus expectations spike',
+        ],
+        'what_to_watch': ['vs target (5%)', 'Quarterly acceleration/deceleration', 'Property sector drag'],
+    },
+    {
+        'id': 'cn_pboc_lpr',
+        'num': '31',
+        'name': 'PBoC LPR Decision',
+        'country': '🇨🇳 China',
+        'tier': 1,
+        'schedule': '20th of month',
+        'time_utc': '01:30',
+        'impact': 'HIGH',
+        'get_next': lambda y, m: datetime(y, m, 20, 1, 30, tzinfo=UTC),
+        'what_comes_next': [
+            'CNY/USD fixing — rate cut = CNY weakness = BTC/ETH demand from China',
+            'China property data — LPR cuts aimed at real estate, watch developer stress',
+            'RBA response — Australia top China trade partner, AUD reacts',
+        ],
+        'what_to_watch': ['1-year LPR (corporate) and 5-year LPR (mortgage)', 'Cut magnitude — 10bp expected, 20bp = aggressive', 'RRR cut (separate event) — massive liquidity injection'],
+        'eth_historical': 'PBOC cut has ~70% correlation with ETH rally within 2 weeks',
+    },
+    {
+        'id': 'cn_trade',
+        'num': '—',
+        'name': 'China Trade Balance',
+        'country': '🇨🇳 China',
+        'tier': 2,
+        'schedule': '~7th–10th',
+        'time_utc': '03:00',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 8).replace(hour=3),
+        'what_comes_next': [
+            'China CPI/PPI — released same week, demand + inflation together',
+            'PBoC LPR — weak trade = easing expectations',
+        ],
+        'what_to_watch': ['Export growth', 'Import growth (domestic demand)'],
+    },
+    {
+        'id': 'cn_credit',
+        'num': '—',
+        'name': 'China Credit Data (TSF)',
+        'country': '🇨🇳 China',
+        'tier': 1,
+        'schedule': '~10th–15th',
+        'time_utc': '—',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 12),
+        'what_comes_next': [
+            'PBoC LPR — credit impulse leads policy by 2-4 weeks',
+            'Next month PMI — did credit flow work?',
+        ],
+        'what_to_watch': ['Total social financing (TSF)', 'New yuan loans', 'Credit impulse (change in credit/GDP) — leading indicator'],
+        'eth_historical': 'Rising credit impulse = risk-on, front-runs ETH by 4-8 weeks',
+    },
+
+    # ───────────────────────────────────────────────────
+    # 🇪🇺 EUROPE / ECB
+    # ───────────────────────────────────────────────────
+    {
+        'id': 'eu_pmi_flash',
+        'num': '03',
+        'name': 'Eurozone Flash PMI (Composite)',
+        'country': '🇪🇺 Eurozone',
+        'tier': 1,
+        'schedule': '~22nd',
+        'time_utc': '08:00',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 22).replace(hour=8),
+        'what_comes_next': [
+            'UK Flash PMI — released same day, compare EU vs UK health',
+            'Germany Ifo Business Climate — follows within days, confirms PMI',
+            'ECB Rate Decision — PMI weakness = ECB cut expectations build',
+        ],
+        'what_to_watch': ['Composite above/below 50', 'Manufacturing vs services split', 'Input prices sub-index — inflation preview'],
+    },
+    {
+        'id': 'de_cpi',
+        'num': '10',
+        'name': 'Germany CPI',
+        'country': '🇩🇪 Germany',
+        'tier': 1,
+        'schedule': '~28th–30th',
+        'time_utc': '—',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 29),
+        'what_comes_next': [
+            'Eurozone CPI Flash — released 1-2 days later, Germany leads the number',
+            'ECB Rate Decision — hot German CPI = ECB hawkish pressure',
+            'EUR/USD direction — strong CPI = ECB tightening = EUR up = DXY down',
+        ],
+        'what_to_watch': ['Harmonized index (HICP) — what ECB uses', 'Core vs headline divergence', 'Services vs goods inflation'],
+    },
+    {
+        'id': 'eu_hicp_flash',
+        'num': '11',
+        'name': 'Eurozone CPI Flash',
+        'country': '🇪🇺 Eurozone',
+        'tier': 1,
+        'schedule': 'Last day of month',
+        'time_utc': '10:00',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _last_day(y, m).replace(hour=10),
+        'what_comes_next': [
+            'ECB Rate Decision — CPI is #1 input, hot = hold/hike, cool = cut',
+            'US CPI — released ~2 weeks later, global inflation comparison',
+            'Core PCE (US) — US PCE follows ~4 weeks later, confirms/diverges',
+        ],
+        'what_to_watch': ['Core HICP (ex food/energy) — sticky inflation', 'vs ECB 2% target', 'Services inflation — persistent component'],
+    },
+    {
+        'id': 'eu_ecb',
+        'num': '20',
+        'name': 'ECB Rate Decision + Lagarde Presser',
+        'country': '🇪🇺 Eurozone',
+        'tier': 1,
+        'schedule': '8x/year (~6 weeks)',
+        'time_utc': '13:15',
+        'impact': 'HIGH',
+        'get_next': lambda y, m: _ecb_next(y, m),
+        'what_comes_next': [
+            'Eurozone PMI Flash — released same week, activity validates rate call',
+            'Eurozone GDP Flash — next quarter, growth trajectory post-decision',
+            'Fed Rate Decision — ECB moves first → reprices DXY → ETH reacts',
+        ],
+        'what_to_watch': ['Rate decision vs consensus', 'Lagarde forward guidance — hawkish/dovish pivot', 'APP/PEPP taper updates — liquidity signal'],
+    },
+    {
+        'id': 'eu_gdp',
+        'num': '26',
+        'name': 'Eurozone GDP Flash',
+        'country': '🇪🇺 Eurozone',
+        'tier': 1,
+        'schedule': 'Quarterly (~4th week)',
+        'time_utc': '10:00',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 25).replace(hour=10) if m in (1, 4, 7, 10) else None,
+        'what_comes_next': [
+            'Germany GDP — released same week, biggest component confirmed',
+            'ECB Rate Decision — negative EZ GDP = ECB cuts accelerate',
+            'US GDP Advance — EZ GDP drops first, US follows ~1 week later',
+        ],
+        'what_to_watch': ['Recession threshold (2 consecutive negative quarters)', 'Germany drag', 'Quarterly momentum shift'],
+    },
+    {
+        'id': 'de_ifo',
+        'num': '33',
+        'name': 'Germany Ifo Business Climate',
+        'country': '🇩🇪 Germany',
+        'tier': 2,
+        'schedule': '~23rd',
+        'time_utc': '08:00',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 23).replace(hour=8),
+        'what_comes_next': [
+            'Germany Factory Orders — released 1-2 weeks later, confirms Ifo',
+            'ZEW Economic Sentiment — released same week, analyst vs business view',
+            'Eurozone GDP Flash — Ifo leads GDP by ~6 weeks',
+        ],
+        'what_to_watch': ['9,000 firm survey — best EU forward indicator', 'Expectations vs current conditions', 'Manufacturing vs services'],
+    },
+
+    # ───────────────────────────────────────────────────
+    # 🇬🇧 UNITED KINGDOM
+    # ───────────────────────────────────────────────────
+    {
+        'id': 'uk_pmi',
+        'num': '04',
+        'name': 'UK Flash PMI',
+        'country': '🇬🇧 UK',
+        'tier': 2,
+        'schedule': '~22nd',
+        'time_utc': '08:30',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 22).replace(hour=8, minute=30),
+        'what_comes_next': [
+            'UK CPI — PMI cost pressures preview inflation print',
+            'BoE Rate Decision — weak PMI adds to easing case',
+            'UK GDP Monthly — PMI is leading, GDP confirms with 3-4 week lag',
+        ],
+        'what_to_watch': ['Composite above/below 50', 'Input cost pressures — inflation preview'],
+    },
+    {
+        'id': 'uk_cpi',
+        'num': '12',
+        'name': 'UK CPI',
+        'country': '🇬🇧 UK',
+        'tier': 1,
+        'schedule': '~3rd week',
+        'time_utc': '06:00',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 18).replace(hour=6),
+        'what_comes_next': [
+            'BoE Rate Decision — primary input, services inflation drives BoE stance',
+            'UK Employment + Wages — released same week, wages drive services CPI',
+            'UK GDP Monthly — inflation + growth together = full picture',
+        ],
+        'what_to_watch': ['Services CPI most watched by BoE', 'Core CPI trend', 'Wage-price spiral risk'],
+    },
+    {
+        'id': 'uk_boe',
+        'num': '21',
+        'name': 'BoE Rate Decision + MPC Vote',
+        'country': '🇬🇧 UK',
+        'tier': 1,
+        'schedule': '8x/year (~6 weeks)',
+        'time_utc': '12:00',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _boe_next(y, m),
+        'what_comes_next': [
+            'UK CPI (next month) — MPC dissenters signal what data matters',
+            'UK GDP Monthly — released within 2 weeks, validates rate rationale',
+            'GBP/USD reaction — BoE dovish = GBP falls = DXY up = ETH pressure',
+        ],
+        'what_to_watch': ['Split votes most watched', 'Dissenters direction', 'Bailey forward guidance'],
+    },
+    {
+        'id': 'uk_gdp',
+        'num': '35',
+        'name': 'UK GDP Monthly',
+        'country': '🇬🇧 UK',
+        'tier': 2,
+        'schedule': 'Monthly',
+        'time_utc': '06:00',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 13).replace(hour=6),
+        'what_comes_next': [
+            'BoE Rate Decision — consecutive negative months = recession = cut cycle',
+            'UK Retail Sales — GDP components confirmed, spending leads services',
+            'GBP/USD direction — weak GDP = dovish BoE = GBP falls',
+        ],
+        'what_to_watch': ['Unique: UK releases GDP monthly (not quarterly)', '3-month rolling average', 'Services vs production'],
+    },
+
+    # ───────────────────────────────────────────────────
+    # 🇯🇵 JAPAN
+    # ───────────────────────────────────────────────────
+    {
+        'id': 'jp_boj',
+        'num': '07',
+        'name': 'BoJ Rate Decision',
+        'country': '🇯🇵 Japan',
+        'tier': 1,
+        'schedule': '8x/year (~6 weeks)',
+        'time_utc': '~03:00',
+        'impact': 'HIGH',
+        'get_next': lambda y, m: _boj_next(y, m),
+        'what_comes_next': [
+            'USD/JPY carry trade reaction — immediate, yen strengthens on hike, carry unwinds',
+            'Japan CPI (Tokyo) — released within days, validates BoJ rationale',
+            'Asia equity open — Nikkei reaction sets Asia session tone for ETH',
+        ],
+        'what_to_watch': ['Rate decision — any hike = CRITICAL risk event', 'YCC (yield curve control) adjustments', 'USDJPY — yen strengthening = carry unwind risk', 'Forward guidance — signaling future hikes'],
+        'alert': '⚠️ BOJ hike = highest-impact single event for crypto downside risk',
+        'eth_historical': 'Aug 2024: BOJ hike → carry unwind → ETH -20% in 3 days',
+    },
+    {
+        'id': 'jp_cpi_tokyo',
+        'num': '08',
+        'name': 'Japan CPI (Tokyo + National)',
+        'country': '🇯🇵 Japan',
+        'tier': 1,
+        'schedule': 'Tokyo ~25-28th, National ~18-22nd',
+        'time_utc': '23:30',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 26).replace(hour=23, minute=30),
+        'what_comes_next': [
+            'BoJ Rate Decision — hot CPI accelerates hike timeline',
+            'USD/JPY level shift — inflation = yen strength expectation',
+            'Japan Tankan Survey — quarterly, business confidence follows inflation',
+        ],
+        'what_to_watch': ['Ex-fresh-food (core) — BoJ target', 'Trend — rising = BOJ under pressure to hike', 'Services vs goods'],
+    },
+    {
+        'id': 'jp_tankan',
+        'num': '32',
+        'name': 'Japan Tankan Survey',
+        'country': '🇯🇵 Japan',
+        'tier': 2,
+        'schedule': 'Quarterly',
+        'time_utc': '23:50',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 1).replace(hour=23, minute=50) if m in (3, 6, 9, 12) else None,
+        'what_comes_next': [
+            'BoJ Rate Decision — Tankan is key input, weak = hold, strong = hike risk',
+            'Japan GDP — released same quarter, Tankan forecasts GDP direction',
+            'USD/JPY trend — strong Tankan = yen strength expectations',
+        ],
+        'what_to_watch': ['Large manufacturers index', 'Forward-looking outlook', 'Capex plans'],
+    },
+
+    # ───────────────────────────────────────────────────
+    # 🇦🇺 AUSTRALIA
+    # ───────────────────────────────────────────────────
+    {
+        'id': 'au_rba',
+        'num': '09',
+        'name': 'RBA Rate Decision',
+        'country': '🇦🇺 Australia',
+        'tier': 2,
+        'schedule': 'Monthly (1st Tuesday)',
+        'time_utc': '03:30',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _rba_next(y, m),
+        'what_comes_next': [
+            'Australia CPI (quarterly) — drives next RBA meeting expectations',
+            'Australia Employment — released same week, dual mandate check',
+            'AUD/USD reaction — risk-on proxy, AUD up = ETH often follows',
+        ],
+        'what_to_watch': ['Rate decision', 'Statement tone — hawkish/dovish shift', 'China data dependency — RBA watches China closely'],
+    },
+    {
+        'id': 'au_cpi',
+        'num': '38',
+        'name': 'Australia CPI (Quarterly)',
+        'country': '🇦🇺 Australia',
+        'tier': 2,
+        'schedule': 'Quarterly',
+        'time_utc': '00:30',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 25).replace(hour=0, minute=30) if m in (1, 4, 7, 10) else None,
+        'what_comes_next': [
+            'RBA Rate Decision — CPI is primary RBA input, hot = hold, cool = cut',
+            'Australia Employment — released same quarter, dual mandate both sides',
+            'AUD/USD reaction — AUD is risk proxy, moves with ETH correlation',
+        ],
+        'what_to_watch': ['Trimmed mean watched by RBA', 'Services inflation — sticky component', 'Housing costs'],
+    },
+
+    # ───────────────────────────────────────────────────
+    # 🇺🇸 UNITED STATES
+    # ───────────────────────────────────────────────────
+    {
+        'id': 'us_ism_mfg',
+        'num': '05',
+        'name': 'US ISM Manufacturing PMI',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': '1st business day',
+        'time_utc': '14:00',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _first_business_day(y, m).replace(hour=14),
+        'what_comes_next': [
+            'US ISM Services PMI — released 2 days later, services = 80% of US GDP',
+            'ADP Employment — same week, labour market follows activity',
+            'Fed speeches — weak ISM prompts dovish commentary',
+        ],
+        'what_to_watch': ['50 = expansion line', 'New orders sub-index — leading indicator', 'Employment sub-index', 'Prices paid — inflation pipeline'],
+    },
+    {
+        'id': 'us_ism_svc',
+        'num': '06',
+        'name': 'US ISM Services PMI',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': '3rd business day',
+        'time_utc': '14:00',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _nth_business_day(y, m, 3).replace(hour=14) if _nth_business_day(y, m, 3) else None,
+        'what_comes_next': [
+            'ADP Employment Report — released same week, activity + jobs = full picture',
+            'Jobless Claims (weekly) — Thursday, continuous labour check',
+            'NFP — services employment is largest NFP component',
+        ],
+        'what_to_watch': ['50 = expansion line', 'Services = 80% of US GDP', 'Business activity sub-index', 'New orders'],
+    },
+    {
+        'id': 'us_nfp',
+        'num': '18',
+        'name': 'Non-Farm Payrolls (NFP)',
+        'country': '🇺🇸 US',
+        'tier': 1,
+        'schedule': '1st Friday',
+        'time_utc': '13:30',
+        'impact': 'HIGH',
+        'get_next': lambda y, m: _first_friday(y, m).replace(hour=13, minute=30),
+        'what_comes_next': [
+            'Fed speeches (following week) — Fed officials respond to jobs data within days',
+            'Michigan Consumer Sentiment — released same day or next week, mood follows jobs',
+            'US CPI (2nd week) — jobs data feeds wage inflation → CPI narrative',
+        ],
+        'what_to_watch': ['NFP surprise vs consensus → immediate ETH direction', 'Unemployment rate → recession signal (Sahm rule)', 'Wage growth (Average Hourly Earnings) → inflation pipeline → Fed reaction', 'Participation rate'],
+        'eth_historical': 'Avg ±1.2% on release, sets tone for 1-2 weeks',
+    },
+    {
+        'id': 'us_adp',
+        'num': '16',
+        'name': 'ADP Employment Report',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': 'Wednesday before NFP',
+        'time_utc': '12:15',
+        'impact': 'LOW',
+        'get_next': lambda y, m: (_first_friday(y, m) - timedelta(days=2)).replace(hour=12, minute=15),
+        'what_comes_next': [
+            'Jobless Claims — Thursday, one more data point before NFP Friday',
+            'NFP — ADP is the preview, but often diverges significantly',
+            'Average Hourly Earnings — released with NFP, wages matter as much as jobs',
+        ],
+        'what_to_watch': ['Private payrolls only', 'vs NFP consensus — directional agreement', 'Prior month revision'],
+    },
+    {
+        'id': 'us_claims',
+        'num': '17',
+        'name': 'Jobless Claims (Initial + Continuing)',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': 'Every Thursday',
+        'time_utc': '13:30',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _next_thursday(),
+        'what_comes_next': [
+            'NFP (if Friday follows) — claims Thursday, NFP Friday, back to back',
+            'Next week\'s claims — trend over 4 weeks matters more than single print',
+            'JOLTS Job Openings — monthly, structural demand behind weekly flows',
+        ],
+        'what_to_watch': ['4-week moving average — trend matters', 'Continuing claims — exhaustion rate', 'Sahm rule trigger (unemployment 3m avg rises 0.5%+ from low)'],
+    },
+    {
+        'id': 'us_jolts',
+        'num': '19',
+        'name': 'JOLTS Job Openings',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': '~1st week',
+        'time_utc': '14:00',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 3).replace(hour=14),
+        'what_comes_next': [
+            'ADP Employment — released same week, demand + actual hiring',
+            'NFP — JOLTS openings lead to actual hires in NFP',
+            'Average Hourly Earnings — high openings = wage pressure builds',
+        ],
+        'what_to_watch': ['Quits rate — Fed watches closely', 'Openings vs unemployed ratio', 'Layoffs trend'],
+    },
+    {
+        'id': 'us_cpi',
+        'num': '13',
+        'name': 'US CPI (Headline + Core)',
+        'country': '🇺🇸 US',
+        'tier': 1,
+        'schedule': '~10th–13th',
+        'time_utc': '13:30',
+        'impact': 'HIGHEST',
+        'get_next': lambda y, m: _approx_date(y, m, 12).replace(hour=13, minute=30),
+        'what_comes_next': [
+            'US PPI — released 1-2 days later, upstream cost confirmation',
+            'Core PCE — released ~3 weeks later, Fed\'s actual target metric',
+            'FOMC Rate Decision — CPI reprices the entire Fed rate path immediately',
+        ],
+        'what_to_watch': [
+            'CPI vs consensus surprise — direction AND magnitude',
+            'Core CPI (ex food/energy) — sticky inflation indicator',
+            'Shelter/rent component — largest weight, slow-moving',
+            'Market pricing: did DXY already price in the print?',
+            'CURRENT REGIME determines expected move magnitude — see eth_by_regime',
+        ],
+        'eth_historical': {
+            'COOL': 'Avg +1.06% (Fed can cut → risk-on)',
+            'HOT': 'Avg -0.45% (Fed stays tight → risk-off)',
+        },
+        'eth_by_regime': {
+            'BEAR':              {'COOL': +9.92, 'HOT': -3.33},
+            'BULL':              {'COOL': +1.88, 'HOT': -0.20},
+            'RECOVERY':          {'COOL': -0.55, 'HOT': +0.84},
+            'ACCELERATION':      {'COOL': -0.09, 'HOT': +0.06},
+            'STAGFLATION':       {'COOL': +3.00, 'HOT': -2.00},
+            'STAGFLATION_HOT':   {'COOL': +4.00, 'HOT': -3.00},
+        },
+        'regime_sensitivity': {
+            'TIGHTENING': 0.60, 'EASING': 0.50, 'CRISIS_RECOVERY': 0.80,
+            'BULL': 0.85, 'BEAR': 1.20, 'RECOVERY': 0.75,
+            'ACCELERATION': 0.65, 'STAGFLATION': 1.00, 'STAGFLATION_HOT': 1.10,
+        },
+    },
+    {
+        'id': 'us_ppi',
+        'num': '14',
+        'name': 'US PPI (Producer Price Index)',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': '~11th–14th',
+        'time_utc': '13:30',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 13).replace(hour=13, minute=30),
+        'what_comes_next': [
+            'Core PCE — PPI components feed directly into PCE calculation',
+            'Retail Sales — released same week, demand side vs cost side',
+            'Fed speeches — hot PPI + CPI = hawkish Fed commentary follows',
+        ],
+        'what_to_watch': ['Confirms or denies CPI — pipeline inflation check', 'PPI leading CPI by 2-3 months', 'Goods vs services split'],
+    },
+    {
+        'id': 'us_retail',
+        'num': '28',
+        'name': 'US Retail Sales',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': '~15th',
+        'time_utc': '13:30',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 15).replace(hour=13, minute=30),
+        'what_comes_next': [
+            'PCE (Personal Spending) — released 2 weeks later, retail leads PCE',
+            'GDP Advance — consumer spending is largest GDP component',
+            'ISM Services PMI — retail strength feeds into services activity',
+        ],
+        'what_to_watch': ['Consumer spending = 70% of US GDP', 'Control group (feeds GDP)', 'Auto sales excluded (volatile)'],
+    },
+    {
+        'id': 'us_pce',
+        'num': '24',
+        'name': 'Core PCE Price Index',
+        'country': '🇺🇸 US',
+        'tier': 1,
+        'schedule': '~last Friday',
+        'time_utc': '13:30',
+        'impact': 'HIGH',
+        'get_next': lambda y, m: _approx_date(y, m, 28).replace(hour=13, minute=30),
+        'what_comes_next': [
+            'FOMC Rate Decision — PCE is the Fed\'s number, hot PCE = holds/hike',
+            'Personal Income + Spending — released same day, demand behind inflation',
+            'Michigan Consumer Sentiment — inflation expectations sub-index confirms',
+        ],
+        'what_to_watch': [
+            'THIS IS THE FED\'S ACTUAL TARGET — not CPI!',
+            'Core PCE vs 2% target',
+            'MoM vs YoY — monthly momentum matters',
+            'Services ex-housing — "supercore" Fed metric',
+        ],
+    },
+    {
+        'id': 'us_fomc',
+        'num': '22',
+        'name': 'FOMC Rate Decision',
+        'country': '🇺🇸 US',
+        'tier': 1,
+        'schedule': '8x/year (~6 weeks)',
+        'time_utc': '19:00',
+        'impact': 'HIGH',
+        'get_next': lambda y, m: _fomc_next(y, m),
+        'what_comes_next': [
+            'Powell Press Conference — same day, tone matters more than rate itself',
+            'Fed Dot Plot (if SEP meeting) — quarterly, rate path repricing = major ETH move',
+            'FOMC Minutes (3 weeks later) — details behind the vote, nuance move',
+        ],
+        'what_to_watch': ['Rate decision vs consensus', 'Dot plot — median rate projection', 'QT taper timing — liquidity signal', 'Statement language changes'],
+    },
+    {
+        'id': 'us_powell',
+        'num': '23',
+        'name': 'Powell Press Conference',
+        'country': '🇺🇸 US',
+        'tier': 1,
+        'schedule': 'Same day as FOMC',
+        'time_utc': '19:30',
+        'impact': 'HIGH',
+        'get_next': lambda y, m: _fomc_next(y, m).replace(hour=19, minute=30) if _fomc_next(y, m) else None,
+        'what_comes_next': [
+            'Fed speeches (following days) — voting members clarify/walk back Powell tone',
+            'CME FedWatch repricing — immediate, futures re-price rate path live',
+            '10Y Treasury yield reaction — yields move → DXY moves → ETH follows',
+        ],
+        'what_to_watch': ['Tone: hawkish/dovish shift vs last meeting', 'Q&A highlights — what reporters push on', 'Data dependency language'],
+    },
+    {
+        'id': 'us_fomc_minutes',
+        'num': '34',
+        'name': 'FOMC Meeting Minutes',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': '3 weeks after FOMC',
+        'time_utc': '19:00',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _fomc_next(y, m) + timedelta(weeks=3) if _fomc_next(y, m) else None,
+        'what_comes_next': [
+            'Fed speeches — members respond to minutes coverage',
+            'Next FOMC meeting — minutes reveal what data they\'re watching',
+            'CME FedWatch repricing — subtle = futures drift, not spike',
+        ],
+        'what_to_watch': ['Voting nuance and internal debate', 'Dissent direction', 'What data they\'re watching'],
+    },
+    {
+        'id': 'us_gdp',
+        'num': '25',
+        'name': 'US GDP Advance Estimate',
+        'country': '🇺🇸 US',
+        'tier': 1,
+        'schedule': 'Quarterly (~4th week)',
+        'time_utc': '13:30',
+        'impact': 'MEDIUM',
+        'get_next': lambda y, m: _approx_date(y, m, 28).replace(hour=13, minute=30) if m in (1, 4, 7, 10) else None,
+        'what_comes_next': [
+            'GDP Second Estimate — revised ~4 weeks later, usually smaller move',
+            'Corporate earnings season — GDP sets macro backdrop for earnings',
+            'Fed Rate Decision — negative GDP = recession = rate cuts = ETH up',
+        ],
+        'what_to_watch': ['Recession threshold (2 consecutive negative quarters)', 'vs consensus', 'Consumer spending component (70% of GDP)'],
+    },
+    {
+        'id': 'us_michigan',
+        'num': '27',
+        'name': 'Michigan Consumer Sentiment',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': '2nd + 4th Friday',
+        'time_utc': '14:00',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 14).replace(hour=14),
+        'what_comes_next': [
+            'Conference Board Consumer Confidence — released following week, second sentiment read',
+            'Retail Sales — sentiment leads spending by ~2-4 weeks',
+            'Core PCE — 5yr inflation expectations feed directly into Fed models',
+        ],
+        'what_to_watch': ['Inflation expectations sub-index — Fed watches this', 'Current conditions vs expectations', '5yr inflation expectations'],
+    },
+    {
+        'id': 'us_housing',
+        'num': '36',
+        'name': 'US Housing Starts + Building Permits',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': '~17th',
+        'time_utc': '13:30',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 17).replace(hour=13, minute=30),
+        'what_comes_next': [
+            'Existing Home Sales — released same week, demand side of housing',
+            'Mortgage Rate Watch (MBA) — housing reacts to rate changes with lag',
+            'Fed rate path reassessment — collapsing housing = rate cut pressure',
+        ],
+        'what_to_watch': ['Rate sensitivity proxy', 'Permits lead starts by 1-2 months', 'Single-family vs multi-family'],
+    },
+    {
+        'id': 'us_durables',
+        'num': '37',
+        'name': 'US Durable Goods Orders',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': '~26th',
+        'time_utc': '13:30',
+        'impact': 'LOW',
+        'get_next': lambda y, m: _approx_date(y, m, 26).replace(hour=13, minute=30),
+        'what_comes_next': [
+            'GDP Advance Estimate — capex feeds directly into GDP business investment',
+            'ISM Manufacturing PMI — orders lead production, confirms PMI direction',
+            'Factory Orders (full) — released 1 week later, broader manufacturing picture',
+        ],
+        'what_to_watch': ['Ex-transports (volatile aircraft orders)', 'Core capital goods orders — capex proxy', 'Business investment signal'],
+    },
+    {
+        'id': 'us_treasury',
+        'num': '29',
+        'name': 'US Treasury Auction (10Y / 30Y)',
+        'country': '🇺🇸 US',
+        'tier': 2,
+        'schedule': 'Weekly',
+        'time_utc': '17:00',
+        'impact': 'LOW',
+        'get_next': lambda y, m: None,  # Weekly, varies
+        'what_comes_next': [
+            '10Y yield reaction — weak auction = yield spike = risk-off = ETH sells',
+            'DXY reaction — high yield demand = DXY up = crypto headwind',
+            'Next week\'s auction — series of auctions, trend in demand matters',
+        ],
+        'what_to_watch': ['Bid-to-cover ratio', 'Tail (vs when-issued yield)', 'Indirect bidders (foreign demand)'],
+    },
+]
+
+
+# ══════════════════════════════════════════════════════════════
+# MAIN API
+# ══════════════════════════════════════════════════════════════
 
 def get_macro_calendar(reference_time=None):
-    """Get the macro calendar with upcoming events.
-
-    Args:
-        reference_time: Current time (default: now UTC)
-
-    Returns:
-        dict with:
-          - now: reference time
-          - events: list of upcoming events with countdown
-          - cascade_chain: full monthly cascade
-          - current_phase: where we are in the cycle
-    """
+    """Get the macro calendar with upcoming events."""
     now = reference_time or datetime.now(UTC)
     year, month = now.year, now.month
 
-    upcoming = []
     all_events = []
-
     for evt_def in EVENTS:
-        # Try current month
         next_dt = None
         if evt_def['get_next']:
             try:
                 next_dt = evt_def['get_next'](year, month)
             except (ValueError, TypeError):
                 pass
-
-            # If past or None, try next month
             if next_dt is None or next_dt < now:
                 try:
-                    if month == 12:
-                        next_dt = evt_def['get_next'](year + 1, 1)
-                    else:
-                        next_dt = evt_def['get_next'](year, month + 1)
+                    nm = month + 1 if month < 12 else 1
+                    ny = year if month < 12 else year + 1
+                    next_dt = evt_def['get_next'](ny, nm)
                 except (ValueError, TypeError):
                     pass
 
         entry = {
             'id': evt_def['id'],
+            'num': evt_def.get('num', '—'),
             'name': evt_def['name'],
             'country': evt_def['country'],
             'tier': evt_def['tier'],
             'schedule': evt_def['schedule'],
             'time_utc': evt_def['time_utc'],
             'impact': evt_def['impact'],
-            'cascade': evt_def['cascade'],
-            'what_to_watch': evt_def['what_to_watch'],
+            'what_comes_next': evt_def.get('what_comes_next', []),
+            'what_to_watch': evt_def.get('what_to_watch', []),
             'alert': evt_def.get('alert'),
+            'eth_historical': evt_def.get('eth_historical'),
+            'eth_by_regime': evt_def.get('eth_by_regime'),
+            'regime_sensitivity': evt_def.get('regime_sensitivity'),
             'next_dt': next_dt,
         }
 
@@ -629,49 +1030,31 @@ def get_macro_calendar(reference_time=None):
             entry['is_next_1h'] = hours <= 1
         else:
             entry['hours_until'] = None
-            entry['countdown'] = 'real-time'
+            entry['countdown'] = 'varies'
             entry['is_next_24h'] = False
             entry['is_next_4h'] = False
             entry['is_next_1h'] = False
 
         all_events.append(entry)
 
-    # Sort by time
     all_events.sort(key=lambda e: e['next_dt'] or datetime.max.replace(tzinfo=UTC))
-
-    # Split into upcoming (next 30 days) and later
     cutoff = now + timedelta(days=30)
     upcoming = [e for e in all_events if e['next_dt'] and e['next_dt'] < cutoff]
 
-    # Current phase detection
+    # Phase detection
     day = now.day
     if day <= 3:
-        phase = 'MONTH_START'
-        phase_desc = 'PMI releases, NFP approaching'
-        next_major = 'NFP (1st Friday)'
+        phase, phase_desc, next_major = 'MONTH_START', 'PMI releases, NFP approaching', 'NFP (1st Friday)'
     elif day <= 7:
-        phase = 'NFP_WEEK'
-        phase_desc = 'NFP sets tone for the month'
-        next_major = 'CPI/PPI (~12-14th)'
+        phase, phase_desc, next_major = 'NFP_WEEK', 'NFP sets tone for the month', 'CPI/PPI (~12-14th)'
     elif day <= 14:
-        phase = 'CPI_WEEK'
-        phase_desc = 'CPI/PPI — biggest movers of the month'
-        next_major = 'PBOC LPR (~20th)'
+        phase, phase_desc, next_major = 'CPI_WEEK', 'CPI/PPI — biggest movers of the month', 'PBoC LPR (~20th)'
     elif day <= 21:
-        phase = 'MID_MONTH'
-        phase_desc = 'PBOC, ECB/BOJ, China data cluster'
-        next_major = 'End-of-month PMIs'
+        phase, phase_desc, next_major = 'MID_MONTH', 'PBoC, ECB/BOJ, China data cluster', 'End-of-month PMIs'
     elif day <= 28:
-        phase = 'LATE_MONTH'
-        phase_desc = 'Tokyo CPI, claims accumulation, PMI prep'
-        next_major = 'Month-end PMIs → next NFP'
+        phase, phase_desc, next_major = 'LATE_MONTH', 'Tokyo CPI, Core PCE, PMI prep', 'Month-end PMIs → next NFP'
     else:
-        phase = 'MONTH_END'
-        phase_desc = 'PMI releases, cycle reset'
-        next_major = 'Next month NFP'
-
-    # Cascade chain for the month
-    cascade_chain = _build_cascade_chain(upcoming, now)
+        phase, phase_desc, next_major = 'MONTH_END', 'PMI releases, cycle reset', 'Next month NFP'
 
     return {
         'now': now.isoformat(),
@@ -680,70 +1063,38 @@ def get_macro_calendar(reference_time=None):
         'next_major': next_major,
         'events': upcoming,
         'all_events': all_events,
-        'cascade_chain': cascade_chain,
+        'narrative_chains': NARRATIVE_CHAINS,
+        'realtime_signals': REALTIME_SIGNALS,
     }
 
 
-def _format_countdown(delta):
-    """Format timedelta as human-readable countdown."""
-    total_seconds = int(delta.total_seconds())
-    if total_seconds < 0:
-        return 'PASSED'
-    days = total_seconds // 86400
-    hours = (total_seconds % 86400) // 3600
-    minutes = (total_seconds % 3600) // 60
+# ══════════════════════════════════════════════════════════════
+# FORMATTING
+# ══════════════════════════════════════════════════════════════
 
-    if days > 0:
-        return f'{days}d {hours}h'
-    elif hours > 0:
-        return f'{hours}h {minutes}m'
-    else:
-        return f'{minutes}m'
+def _regime_impact_str(evt, current_regime):
+    """Get regime-adjusted impact string for an event."""
+    if not current_regime or evt['id'] != 'us_cpi':
+        return ''
+    regime_data = evt.get('eth_by_regime', {})
+    if current_regime in regime_data:
+        rd = regime_data[current_regime]
+        return f'  COOL:{rd.get("COOL",0):+.1f}% HOT:{rd.get("HOT",0):+.1f}%'
+    return ''
 
-
-def _build_cascade_chain(events, now):
-    """Build the cascade chain showing what follows what."""
-    chain = []
-    for evt in events:
-        if evt['hours_until'] is None or evt['hours_until'] > 30 * 24:
-            continue
-        cascade = evt.get('cascade', {})
-        entry = {
-            'event': evt['name'],
-            'country': evt['country'],
-            'countdown': evt['countdown'],
-            'hours_until': evt['hours_until'],
-            'impact': evt['impact'],
-            'triggers': [],
-        }
-        for key, val in cascade.items():
-            if key == 'eth_historical':
-                continue
-            entry['triggers'].append(f'{key}: {val}')
-        chain.append(entry)
-    return chain
-
-
-# ── Formatting ──
 
 def format_macro_calendar(cal, current_regime=None):
-    """Format macro calendar for terminal output.
-
-    Args:
-        cal: calendar dict from get_macro_calendar()
-        current_regime: current market regime (e.g. 'STAGFLATION_HOT')
-                        if provided, shows regime-specific expected moves
-    """
+    """Format macro calendar for terminal output."""
     lines = []
     lines.append('')
-    lines.append('═' * 60)
-    lines.append('  📅 MACRO CALENDAR — LIVE TRACKER')
-    lines.append('═' * 60)
+    lines.append('═' * 70)
+    lines.append('  📅 MACRO CALENDAR v2 — GLOBAL DATA RELEASE TRACKER')
+    lines.append('═' * 70)
     lines.append(f'\n  Now: {cal["now"]}')
     lines.append(f'  Phase: {_phase_icon(cal["phase"])} {cal["phase"]} — {cal["phase_desc"]}')
     lines.append(f'  Next major: {cal["next_major"]}')
     if current_regime:
-        lines.append(f'  Regime: {current_regime} (impacts adjusted for current regime)')
+        lines.append(f'  Regime: {current_regime}')
 
     # ── Next 24h ──
     next_24h = [e for e in cal['events'] if e.get('is_next_24h')]
@@ -753,153 +1104,100 @@ def format_macro_calendar(cal, current_regime=None):
             icon = _impact_icon(evt['impact'])
             alert = ' 🚨' if evt.get('is_next_1h') else ''
             regime_str = _regime_impact_str(evt, current_regime)
-            lines.append(f'    {icon} {evt["countdown"]:>10}  {evt["name"]:30}  {evt["time_utc"]}{alert}{regime_str}')
+            lines.append(f'    {icon} {evt["countdown"]:>10}  {evt["name"]:40} {evt["country"]}{alert}{regime_str}')
     else:
         lines.append(f'\n  ⚡ NEXT 24 HOURS: (none)')
 
-    # ── Upcoming events (full list) ──
+    # ── Upcoming events ──
     lines.append(f'\n  📋 UPCOMING EVENTS (next 30 days):')
-    if current_regime:
-        lines.append(f'    {"Countdown":>10}  {"Event":32} {"Country":12} {"Impact":8} {"Regime Adj":>10}')
-        lines.append(f'    {"─" * 10}  {"─" * 32} {"─" * 12} {"─" * 8} {"─" * 10}')
-    else:
-        lines.append(f'    {"Countdown":>10}  {"Event":32} {"Country":12} {"Impact":8} {"Time":>6}')
-        lines.append(f'    {"─" * 10}  {"─" * 32} {"─" * 12} {"─" * 8} {"─" * 6}')
+    lines.append(f'    {"#":>3} {"Countdown":>10}  {"Event":40} {"Country":12} {"Impact":8}')
+    lines.append(f'    {"─"*3} {"─"*10}  {"─"*40} {"─"*12} {"─"*8}')
 
-    for evt in cal['events'][:20]:  # Show next 20 events
+    for evt in cal['events'][:25]:
         icon = _impact_icon(evt['impact'])
         cd = evt['countdown']
-        name = evt['name'][:30]
+        num = evt.get('num', '—')
+        name = evt['name'][:38]
         country = evt['country']
         impact = evt['impact']
         alert = ' 🚨' if evt.get('is_next_4h') else ''
+        regime_str = _regime_impact_str(evt, current_regime)
+        lines.append(f'    {num:>3} {icon} {cd:>10}  {name:40} {country:12} {impact:8}{alert}{regime_str}')
 
-        if current_regime:
-            regime_str = _regime_impact_str(evt, current_regime)
-            lines.append(f'    {icon} {cd:>10}  {name:32} {country:12} {impact:8}{regime_str}{alert}')
-        else:
-            time = evt['time_utc']
-            lines.append(f'    {icon} {cd:>10}  {name:32} {country:12} {impact:8} {time:>6}{alert}')
-
-    # ── Regime-specific CPI preview ──
+    # ── Regime-adjusted CPI preview ──
     if current_regime:
-        lines.append(f'\n  📊 REGIME-ADJUSTED EXPECTED MOVES ({current_regime}):')
         cpi_evt = next((e for e in cal['events'] if e['id'] == 'us_cpi'), None)
         if cpi_evt:
-            regime_data = cpi_evt.get('cascade', {}).get('eth_by_regime', {})
+            regime_data = cpi_evt.get('eth_by_regime', {})
             if current_regime in regime_data:
                 rd = regime_data[current_regime]
-                cool_move = rd.get('COOL', 0)
-                hot_move = rd.get('HOT', 0)
-                lines.append(f'    🔴 US CPI if COOL: {cool_move:+.2f}%  (avg base: +1.06%)')
-                lines.append(f'    🔴 US CPI if HOT:  {hot_move:+.2f}%  (avg base: -0.45%)')
-                lines.append(f'    ⚠️  Regime multiplier: {cool_move/1.06:.1f}x (COOL) / {hot_move/-0.45:.1f}x (HOT) vs base')
+                sens = cpi_evt.get('regime_sensitivity', {}).get(current_regime, 1.0)
+                lines.append(f'\n  📊 REGIME-ADJUSTED CPI EXPECTED MOVES ({current_regime}):')
+                lines.append(f'    🔴 CPI COOL: {rd["COOL"]:+.2f}%  (base avg: +1.06%)')
+                lines.append(f'    🔴 CPI HOT:  {rd["HOT"]:+.2f}%  (base avg: -0.45%)')
+                lines.append(f'    📐 Sensitivity: {sens:.2f}x — how much macro matters in this era')
 
-                # Sensitivity
-                sens = cpi_evt.get('cascade', {}).get('regime_sensitivity', {})
-                if current_regime in sens:
-                    lines.append(f'    📐 Sensitivity: {sens[current_regime]:.2f}x (how much macro matters in this era)')
+    # ── "What comes next" for next 3 events ──
+    lines.append(f'\n  🔗 WHAT COMES NEXT (next 3 events):')
+    for evt in cal['events'][:3]:
+        lines.append(f'\n    {_impact_icon(evt["impact"])} {evt["name"]}  ({evt["countdown"]})')
+        for i, nxt in enumerate(evt.get('what_comes_next', []), 1):
+            lines.append(f'      → {nxt}')
 
-    # ── Cascade chain ──
-    if cal['cascade_chain']:
-        lines.append(f'\n  🔗 CASCADE CHAIN (what follows what):')
-        for i, entry in enumerate(cal['cascade_chain'][:8]):
-            icon = _impact_icon(entry['impact'])
-            lines.append(f'    {i+1}. {icon} {entry["event"]}  ({entry["countdown"]})')
-            for trigger in entry['triggers'][:2]:
-                lines.append(f'       → {trigger}')
+    # ── Narrative Chains ──
+    lines.append(f'\n  🔗 NARRATIVE CHAINS:')
+    for key, chain in cal['narrative_chains'].items():
+        lines.append(f'\n    {chain["name"]}')
+        chain_str = ' → '.join(chain['chain'][:6])
+        if len(chain['chain']) > 6:
+            chain_str += ' → ...'
+        lines.append(f'      {chain_str}')
+        lines.append(f'      Sensitivity: {chain["eth_sensitivity"]} | {chain["note"]}')
 
-    # ── Current phase context ──
+    # ── Real-time Signals ──
+    lines.append(f'\n  📡 REAL-TIME SIGNALS (watch alongside scheduled data):')
+    for sig in cal['realtime_signals']:
+        link_icon = {'direct': '📈', 'inverse': '📉', 'correlated': '↔️'}.get(sig['eth_link'], '•')
+        lines.append(f'    {link_icon} {sig["name"]:<22} {sig["note"]}  ({sig["eth_link"]})')
+
+    # ── Phase context ──
     lines.append(f'\n  📍 WHERE ARE WE IN THE CYCLE?')
     lines.append(f'    Phase: {_phase_icon(cal["phase"])} {cal["phase"]}')
     lines.append(f'    {cal["phase_desc"]}')
-    lines.append(f'    Next major: {cal["next_major"]}')
 
-    # Phase-specific advice
     phase_advice = {
         'MONTH_START': 'PMI data incoming — watch for China/EU demand signals before NFP',
         'NFP_WEEK': 'NFP sets the tone — wait for CPI confirmation before positioning',
-        'CPI_WEEK': '⚠️ BIGGEST MOVERS — CPI/PPI are the primary ETH catalysts',
-        'MID_MONTH': 'PBOC LPR — watch for China easing signal (1-2 week ETH lead)',
-        'LATE_MONTH': 'Tokyo CPI → BOJ risk — carry trade unwind is the tail risk',
-        'MONTH_END': 'PMI releases → cycle resets → prepare for next NFP',
+        'CPI_WEEK': '⚠️ BIGGEST MOVERS — CPI/PPI are the primary ETH catalysts. Core PCE follows ~3 weeks later.',
+        'MID_MONTH': 'PBoC LPR — watch for China easing signal (1-2 week ETH lead). Retail Sales same week.',
+        'LATE_MONTH': 'Core PCE (Fed target!) + Tokyo CPI → BOJ risk. Germany CPI previews EU CPI.',
+        'MONTH_END': 'EU CPI Flash + PMI releases → cycle resets → prepare for next NFP',
     }
     advice = phase_advice.get(cal['phase'], '')
     if advice:
         lines.append(f'    💡 {advice}')
 
-    lines.append('═' * 60)
+    lines.append('\n' + '═' * 70)
     return '\n'.join(lines)
 
 
-def _regime_impact_str(evt, current_regime):
-    """Get regime-adjusted impact string for an event."""
-    if not current_regime:
-        return ''
-
-    cascade = evt.get('cascade', {})
-
-    # CPI has regime-specific expected moves
-    if evt['id'] == 'us_cpi':
-        regime_data = cascade.get('eth_by_regime', {})
-        if current_regime in regime_data:
-            rd = regime_data[current_regime]
-            cool = rd.get('COOL', 0)
-            hot = rd.get('HOT', 0)
-            return f'  COOL:{cool:+.1f}% HOT:{hot:+.1f}%'
-        return ''
-
-    # PPI modifier is regime-independent (acts on CPI signal)
-    # NFP, Claims, etc. use flat averages
-    return ''
-
-
-def _phase_icon(phase):
-    return {
-        'MONTH_START': '📅',
-        'NFP_WEEK': '💥',
-        'CPI_WEEK': '🔥',
-        'MID_MONTH': '🏦',
-        'LATE_MONTH': '📊',
-        'MONTH_END': '🔄',
-    }.get(phase, '📍')
-
-
-def _impact_icon(impact):
-    return {
-        'HIGHEST': '🔴',
-        'HIGH': '🟠',
-        'MEDIUM': '🟡',
-        'LOW': '⚪',
-    }.get(impact, '⚪')
-
-
-def format_macro_calendar_compact(cal):
+def format_macro_calendar_compact(cal, current_regime=None):
     """Compact one-line format for scanner integration."""
     lines = []
     lines.append('\n  📅 MACRO CALENDAR:')
-
-    phase_icons = {
-        'MONTH_START': '📅', 'NFP_WEEK': '💥', 'CPI_WEEK': '🔥',
-        'MID_MONTH': '🏦', 'LATE_MONTH': '📊', 'MONTH_END': '🔄',
-    }
-    lines.append(f'    Phase: {phase_icons.get(cal["phase"], "📍")} {cal["phase"]} — {cal["phase_desc"]}')
-
-    # Next 3 events
+    lines.append(f'    Phase: {_phase_icon(cal["phase"])} {cal["phase"]} — {cal["phase_desc"]}')
     for evt in cal['events'][:3]:
         icon = _impact_icon(evt['impact'])
         alert = ' 🚨' if evt.get('is_next_4h') else ''
-        lines.append(f'    {icon} {evt["countdown"]:>10} → {evt["name"]} ({evt["country"]}){alert}')
-
-    # Cascade
-    if cal['cascade_chain']:
-        first = cal['cascade_chain'][0]
-        lines.append(f'    → After {first["event"]}: {first["triggers"][0] if first["triggers"] else "?"}')
-
+        regime_str = _regime_impact_str(evt, current_regime)
+        lines.append(f'    {icon} {evt["countdown"]:>10} → {evt["name"]} ({evt["country"]}){alert}{regime_str}')
+    if cal['events']:
+        first = cal['events'][0]
+        nxt = first.get('what_comes_next', [])
+        if nxt:
+            lines.append(f'    → After {first["name"]}: {nxt[0]}')
     return '\n'.join(lines)
 
-
-# ── For JSON output ──
 
 def calendar_to_dict(cal):
     """Convert calendar to JSON-serializable dict."""
@@ -909,11 +1207,13 @@ def calendar_to_dict(cal):
         'phase_desc': cal['phase_desc'],
         'next_major': cal['next_major'],
         'events': [],
-        'cascade_chain': cal['cascade_chain'],
+        'narrative_chains': cal['narrative_chains'],
+        'realtime_signals': cal['realtime_signals'],
     }
     for evt in cal['events']:
         result['events'].append({
             'id': evt['id'],
+            'num': evt.get('num'),
             'name': evt['name'],
             'country': evt['country'],
             'tier': evt['tier'],
@@ -923,14 +1223,13 @@ def calendar_to_dict(cal):
             'time_utc': evt['time_utc'],
             'is_next_24h': evt['is_next_24h'],
             'is_next_4h': evt['is_next_4h'],
-            'cascade': evt['cascade'],
-            'what_to_watch': evt['what_to_watch'],
+            'what_comes_next': evt.get('what_comes_next', []),
+            'what_to_watch': evt.get('what_to_watch', []),
+            'eth_by_regime': evt.get('eth_by_regime'),
         })
     return result
 
 
-# ── Test ──
-
 if __name__ == '__main__':
     cal = get_macro_calendar()
-    print(format_macro_calendar(cal))
+    print(format_macro_calendar(cal, current_regime='STAGFLATION_HOT'))
