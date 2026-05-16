@@ -224,15 +224,486 @@ NARRATIVE_CHAINS = {
 # ══════════════════════════════════════════════════════════════
 
 REALTIME_SIGNALS = [
-    {'id': 'usdjpy', 'name': 'USD/JPY', 'note': 'Yen spike = carry unwind = ETH drops fast', 'eth_link': 'direct'},
-    {'id': 'dxy', 'name': 'DXY (Dollar Index)', 'note': 'Strong dollar = crypto headwind', 'eth_link': 'inverse'},
-    {'id': 'us10y', 'name': '10Y Treasury Yield', 'note': 'Yield spike = risk-off = ETH sells', 'eth_link': 'inverse'},
-    {'id': 'vix', 'name': 'VIX (Fear Gauge)', 'note': 'Above 20 = caution, above 30 = panic', 'eth_link': 'inverse'},
-    {'id': 'oil', 'name': 'WTI / Brent Crude', 'note': 'Oil spike = inflation fear = ETH pressure', 'eth_link': 'inverse'},
-    {'id': 'gold', 'name': 'Gold', 'note': 'Safe haven, often co-moves with BTC/ETH', 'eth_link': 'correlated'},
-    {'id': 'fedwatch', 'name': 'CME FedWatch', 'note': 'Real-time rate cut/hike probability', 'eth_link': 'direct'},
-    {'id': 'eth_funding', 'name': 'ETH Funding Rate', 'note': 'Internal crypto signal for leverage bias', 'eth_link': 'direct'},
+    {'id': 'usdjpy', 'name': 'USD/JPY', 'note': 'Yen spike = carry unwind = ETH drops fast', 'eth_link': 'direct',
+     'classification': 'transmission', 'class_note': 'Trend driver — determines whether setups are valid or fragile'},
+    {'id': 'dxy', 'name': 'DXY (Dollar Index)', 'note': 'Strong dollar = crypto headwind', 'eth_link': 'inverse',
+     'classification': 'transmission', 'class_note': 'Liquidity structure — decides if SMC/FVG setups work'},
+    {'id': 'us10y', 'name': '10Y Treasury Yield', 'note': 'Yield spike = risk-off = ETH sells', 'eth_link': 'inverse',
+     'classification': 'transmission', 'class_note': 'Real-time discount rate for all risk assets'},
+    {'id': 'vix', 'name': 'VIX (Fear Gauge)', 'note': 'Above 20 = caution, above 30 = panic', 'eth_link': 'inverse',
+     'classification': 'sentiment', 'class_note': 'Cross-asset risk-off positioning gauge'},
+    {'id': 'oil', 'name': 'WTI / Brent Crude', 'note': 'Oil spike = inflation fear = ETH pressure', 'eth_link': 'inverse',
+     'classification': 'sentiment', 'class_note': 'Inflation fear proxy'},
+    {'id': 'gold', 'name': 'Gold', 'note': 'Safe haven, often co-moves with BTC/ETH', 'eth_link': 'correlated',
+     'classification': 'sentiment', 'class_note': 'Safe haven demand indicator'},
+    {'id': 'fedwatch', 'name': 'CME FedWatch', 'note': 'Real-time rate cut/hike probability', 'eth_link': 'direct',
+     'classification': 'sentiment', 'class_note': 'Forward pricing of policy (expectation engine)'},
+    {'id': 'eth_funding', 'name': 'ETH Funding Rate', 'note': 'Internal crypto signal for leverage bias', 'eth_link': 'direct',
+     'classification': 'sentiment', 'class_note': 'Crypto-native positioning pressure'},
 ]
+
+
+# ══════════════════════════════════════════════════════════════
+# STRUCTURAL CLASSIFICATION — how events impact ETH
+# ══════════════════════════════════════════════════════════════
+
+EVENT_CLASSIFICATION = {
+    'regime_breakers': {
+        'label': '🔴 REGIME BREAKERS (setup invalidation risk)',
+        'description': 'CPI/FOMC events cause regime shifts — repricing trend changes. Powell pressers cause second-leg volatility after the decision.',
+        'events': ['us_cpi', 'us_fomc', 'us_powell'],
+        'trading_impact': 'Do NOT hold directional positions through these. Wait for dust to settle.',
+    },
+    'directional_triggers': {
+        'label': '💥 DIRECTIONAL TRIGGERS (trend acceleration or reversal)',
+        'description': 'NFP sets directional volatility. Jobs + wages = full picture.',
+        'events': ['us_nfp'],
+        'trading_impact': 'Avg ±1.2% on release, sets tone for 1-2 weeks. Fade extreme reactions after 4h.',
+    },
+    'transmission_variables': {
+        'label': '📊 TRANSMISSION VARIABLES (trend drivers)',
+        'description': '10Y yield and DXY are not "events" — they are continuous structure. They determine whether setups like SMC, FVG, or BOS are valid or fragile.',
+        'events': ['usdjpy', 'dxy', 'us10y'],  # realtime IDs
+        'trading_impact': 'Monitor continuously. Rising DXY + rising yields = crypto headwind regardless of on-chain signals.',
+    },
+    'continuous_sentiment': {
+        'label': '🔄 CONTINUOUS SENTIMENT / POSITIONING (filters)',
+        'description': 'VIX, FedWatch, funding rates. Not news events — positioning pressure gauges.',
+        'events': ['vix', 'fedwatch', 'eth_funding', 'oil', 'gold'],
+        'trading_impact': 'Use as filters, not triggers. VIX >20 = caution, >30 = panic.',
+    },
+    'micro_catalysts': {
+        'label': '⚡ MICRO CATALYSTS (often overlooked)',
+        'description': 'Treasury auctions, jobless claims, PPI. Short-lived unless reinforcing a broader trend. More of a confirmation catalyst than primary driver.',
+        'events': ['us_claims', 'us_ppi', 'us_treasury', 'us_adp'],
+        'trading_impact': 'Auction impact is usually short-lived unless it reinforces a broader yield trend. Claims trend over 4 weeks matters more than single print.',
+    },
+}
+
+
+# ══════════════════════════════════════════════════════════════
+# SESSION TRANSMISSION — how macro data cascades across trading sessions
+# ══════════════════════════════════════════════════════════════
+#
+# When a macro event fires, it doesn't create a single move — it cascades
+# across sessions. Each session's trading desks interpret and build on the
+# previous session's price action. Understanding this cascade is critical
+# for timing entries and avoiding false signals.
+#
+# Session order: Asia (00:00-08:00 UTC) → Europe (08:00-14:00) → US (14:00-22:00) → Asia re-open
+#
+# Key insight: Session-to-session correlation ≈ 0.00. Each session re-evaluates
+# independently, but macro data creates a narrative thread they all respond to.
+
+SESSION_TRANSMISSION = {
+    'cn_caixin_mfg_pmi': {
+        'release_session': 'asia',
+        'release_time_myt': '09:45',
+        'cascade': [
+            {
+                'session': 'ASIA (release)',
+                'action': 'First mover. Hot print → local market makers shift up bid depth, shorts squeezed. Miss → spot whales dump, fast drop.',
+                'duration': '~2h',
+                'key_signal': 'Immediate price reaction + volume spike on 15m',
+            },
+            {
+                'session': 'EUROPE (same day)',
+                'action': 'London desks inherit trend. Hot Caixin = leading indicator for upcoming Eurozone Flash PMI. Front-run by establishing early longs.',
+                'duration': '~6h',
+                'key_signal': 'Continuation or consolidation of Asia move',
+            },
+            {
+                'session': 'US (same day)',
+                'action': 'New York calibrates baseline for US ISM Manufacturing PMI (~2 days later). Hot Caixin sets inflationary, high-demand pre-market bias.',
+                'duration': '~8h',
+                'key_signal': 'US pre-market positioning for ISM',
+            },
+            {
+                'session': 'ASIA RE-OPEN (next day)',
+                'action': 'NBS PMI drops. If NBS diverges from Caixin, Asian institutional desks aggressively correct previous day momentum, flattening trend.',
+                'duration': '~2h',
+                'key_signal': 'NBS vs Caixin divergence = reversal signal',
+            },
+        ],
+        'trading_implication': 'If Caixin and NBS agree → trend holds 2-3 sessions. If they diverge → fade the Caixin move at Asia re-open.',
+    },
+    'cn_nbs_pmi': {
+        'release_session': 'asia',
+        'release_time_utc': '01:00',
+        'cascade': [
+            {
+                'session': 'ASIA (release)',
+                'action': 'Official state survey. Larger sample than Caixin. Divergence from Caixin = government vs private sector split.',
+                'duration': '~2h',
+                'key_signal': 'Above/below 50. Divergence from Caixin = confusion → vol spike',
+            },
+            {
+                'session': 'EUROPE (same day)',
+                'action': 'European desks use NBS + Caixin together. Agreement = strong signal. Disagreement = wait for EU PMI to break tie.',
+                'duration': '~6h',
+                'key_signal': 'EU PMI same week confirms or denies',
+            },
+            {
+                'session': 'US (same day)',
+                'action': 'US uses China PMI cluster to position for ISM. Strong China = commodity bid, risk-on.',
+                'duration': '~8h',
+                'key_signal': 'Commodity prices + USD/CNY reaction',
+            },
+        ],
+        'trading_implication': 'NBS vs Caixin divergence = reduced conviction. Agreement = high conviction directional.',
+    },
+    'us_nfp': {
+        'release_session': 'us_open',
+        'release_time_utc': '13:30',
+        'cascade': [
+            {
+                'session': 'US (release)',
+                'action': 'Biggest single release. Immediate ±1.2% avg move. Employment + wages + unemployment = full picture.',
+                'duration': '~2h',
+                'key_signal': 'NFP surprise vs consensus → immediate ETH direction. Watch wages as much as jobs.',
+            },
+            {
+                'session': 'ASIA (next day)',
+                'action': 'Asian desks digest NFP. If strong → Fed hawkish repricing → USD up → ETH pressure. If weak → rate cut expectations → ETH bid.',
+                'duration': '~8h',
+                'key_signal': 'CME FedWatch overnight repricing. Carry trade adjustments.',
+            },
+            {
+                'session': 'EUROPE (next day)',
+                'action': 'London confirms or fades Asia interpretation. ECB positioning adjusts to Fed expectations shift.',
+                'duration': '~6h',
+                'key_signal': 'DXY trend confirmation. Bond yield direction.',
+            },
+            {
+                'session': 'US (next day, 2nd pass)',
+                'action': 'Full digestion. Fed speeches begin. Market reprices rate path. CPI (2nd week) becomes the next catalyst.',
+                'duration': '~8h',
+                'key_signal': 'Fed speakers tone. Rate path repricing complete.',
+            },
+        ],
+        'trading_implication': 'NFP sets tone for 1-2 weeks. Extreme reactions fade after 4h. Wait for 2nd US session for trend confirmation.',
+    },
+    'us_cpi': {
+        'release_session': 'us_open',
+        'release_time_utc': '13:30',
+        'cascade': [
+            {
+                'session': 'US (release)',
+                'action': 'Biggest ETH mover of the month. Immediate repricing of entire Fed rate path. ±1-3% move depending on regime.',
+                'duration': '~2h',
+                'key_signal': 'CPI vs consensus surprise — direction AND magnitude. Core CPI is sticky indicator.',
+            },
+            {
+                'session': 'ASIA (next day)',
+                'action': 'Asian desks react to repricing. Carry trade adjusts. If CPI was hot → USD/JPY moves → carry unwind risk.',
+                'duration': '~8h',
+                'key_signal': 'USD/JPY reaction. CNY fixing adjustment.',
+            },
+            {
+                'session': 'EUROPE (next day)',
+                'action': 'ECB adjusts expectations based on global inflation picture. PPI (1-2 days later) is next confirmation.',
+                'duration': '~6h',
+                'key_signal': 'Bond yield direction. DXY trend.',
+            },
+            {
+                'session': 'US (2nd pass)',
+                'action': 'PPI confirms or denies CPI. Fed speakers respond. Core PCE (~3 weeks later) is final target.',
+                'duration': '~8h',
+                'key_signal': 'PPI vs CPI alignment. FedWatch repricing.',
+            },
+        ],
+        'trading_implication': 'CPI is a regime breaker. Do NOT hold through it. Position after dust settles (2nd US session).',
+    },
+    'us_fomc': {
+        'release_session': 'us',
+        'release_time_utc': '19:00',
+        'cascade': [
+            {
+                'session': 'US (decision)',
+                'action': 'Rate decision + statement. Immediate repricing. But the REAL move comes from Powell presser (30min later).',
+                'duration': '~1h',
+                'key_signal': 'Rate vs consensus. Statement language changes.',
+            },
+            {
+                'session': 'US (presser)',
+                'action': 'Powell press conference — biggest single ETH mover. Tone matters more than rate. Q&A = second-leg volatility.',
+                'duration': '~1h',
+                'key_signal': 'Hawkish/dovish pivot. Data dependency language. Q&A highlights.',
+            },
+            {
+                'session': 'ASIA (next day)',
+                'action': 'Carry trade repricing. If hawkish → USD/JPY moves → carry unwind → ETH pressure. If dovish → risk-on.',
+                'duration': '~8h',
+                'key_signal': 'USD/JPY. CME FedWatch overnight shift. Asia equity open.',
+            },
+            {
+                'session': 'EUROPE (next day)',
+                'action': 'ECB positioning adjusts. DXY trend confirmed. Bond yields settle.',
+                'duration': '~6h',
+                'key_signal': 'DXY direction. 10Y yield. Cross-asset flows.',
+            },
+            {
+                'session': 'US (next day, 2nd pass)',
+                'action': 'Fed voting members clarify/walk back Powell tone. Full repricing complete. FOMC Minutes (3 weeks later) = nuance.',
+                'duration': '~8h',
+                'key_signal': 'Fed speaker consensus. Rate path settled.',
+            },
+        ],
+        'trading_implication': 'FOMC is a two-part event (decision + presser). Wait for presser. Then wait for Asia re-open for carry trade reaction.',
+    },
+    'us_ppi': {
+        'release_session': 'us_open',
+        'release_time_utc': '13:30',
+        'cascade': [
+            {
+                'session': 'US (release)',
+                'action': 'CPI confirmation/denial. If PPI aligns with CPI → trend strengthened. If PPI diverges → confusion, chop.',
+                'duration': '~2h',
+                'key_signal': 'PPI vs CPI alignment. Pipeline inflation check.',
+            },
+            {
+                'session': 'ASIA (next day)',
+                'action': 'Digest PPI + CPI together. Hot combo = hawkish Fed = pressure. Cool combo = easing expectations = bid.',
+                'duration': '~8h',
+                'key_signal': 'Combined CPI+PPI narrative for Fed.',
+            },
+        ],
+        'trading_implication': 'PPI is a confirmation catalyst, not a primary driver. Its value is in confirming or denying CPI.',
+    },
+    'cn_pboc_lpr': {
+        'release_session': 'asia',
+        'release_time_utc': '01:30',
+        'cascade': [
+            {
+                'session': 'ASIA (release)',
+                'action': 'China monetary policy. Rate cut = CNY weakness = BTC/ETH demand from China. 70% correlation with ETH rally within 2 weeks.',
+                'duration': '~2h',
+                'key_signal': 'Cut magnitude. 10bp expected, 20bp = aggressive.',
+            },
+            {
+                'session': 'EUROPE (same day)',
+                'action': 'London assesses China easing impact on global demand. Commodity bid if cut is aggressive.',
+                'duration': '~6h',
+                'key_signal': 'CNY/USD fixing. Commodity prices.',
+            },
+            {
+                'session': 'US (same day)',
+                'action': 'US desks price in China stimulus. Risk-on if cut is meaningful. Property data follows to validate.',
+                'duration': '~8h',
+                'key_signal': 'China property developer stress signals.',
+            },
+        ],
+        'trading_implication': 'PBOC cut = slow-burn catalyst. Effect builds over 1-2 weeks, not immediate. Front-run by credit impulse data.',
+    },
+    'eu_ecb': {
+        'release_session': 'europe',
+        'release_time_utc': '13:15',
+        'cascade': [
+            {
+                'session': 'EUROPE (decision + presser)',
+                'action': 'Rate + QT guidance. Lagarde presser = forward guidance. EUR/USD driver.',
+                'duration': '~2h',
+                'key_signal': 'Rate vs consensus. Lagarde hawkish/dovish pivot.',
+            },
+            {
+                'session': 'US (same day)',
+                'action': 'NY uses ECB to adjust DXY positioning. ECB hawkish = EUR up = DXY down = ETH bid.',
+                'duration': '~8h',
+                'key_signal': 'DXY reaction. EUR/USD direction.',
+            },
+            {
+                'session': 'ASIA (next day)',
+                'action': 'Carry trade adjustment. Global rate differential repricing.',
+                'duration': '~8h',
+                'key_signal': 'USD/JPY. Cross-asset flows.',
+            },
+        ],
+        'trading_implication': 'ECB moves first → reprices DXY → FOMC adjusts. Watch for DXY trend reversal.',
+    },
+    'jp_boj': {
+        'release_session': 'asia',
+        'release_time_utc': '~03:00',
+        'cascade': [
+            {
+                'session': 'ASIA (release)',
+                'action': 'HIGHEST SINGLE-EVENT RISK. BoJ hike = carry unwind = ETH drops fast. Aug 2024: -20% in 3 days.',
+                'duration': '~4h',
+                'key_signal': 'Rate decision. YCC adjustment. Forward guidance.',
+            },
+            {
+                'session': 'EUROPE (same day)',
+                'action': 'London inherits carry unwind. If BoJ hiked → massive yen strengthening → global risk-off cascade.',
+                'duration': '~6h',
+                'key_signal': 'USD/JPY level. Nikkei direction. Cross-asset contagion.',
+            },
+            {
+                'session': 'US (same day)',
+                'action': 'NY amplifies or fades the move. If carry unwind is happening → US risk assets sell too.',
+                'duration': '~8h',
+                'key_signal': 'VIX spike. Treasury yield reaction. DXY.',
+            },
+            {
+                'session': 'ASIA (next day)',
+                'action': 'Second wave positioning. If initial move was extreme → potential reversal. If measured → continuation.',
+                'duration': '~8h',
+                'key_signal': 'Nikkei recovery. USD/JPY stabilization.',
+            },
+        ],
+        'trading_implication': 'BoJ hike = reduce ALL crypto exposure immediately. Carry unwind is the #1 tail risk for ETH.',
+    },
+}
+
+
+def get_current_transmission_phase(event_id, release_dt, reference_time=None):
+    """Determine which session transmission phase we're in for a recent event.
+
+    Returns:
+        dict with current_phase, next_phase, hours_since_release, or None if event has no itinerary.
+    """
+    if event_id not in SESSION_TRANSMISSION:
+        return None
+
+    now = reference_time or datetime.now(UTC)
+    delta = now - release_dt
+    hours_since = delta.total_seconds() / 3600
+
+    itinerary = SESSION_TRANSMISSION[event_id]
+    cascade = itinerary['cascade']
+
+    # Approximate session durations from the cascade
+    session_hours = {'ASIA': 8, 'EUROPE': 6, 'US': 8}
+    release_session = itinerary.get('release_session', 'asia')
+
+    # Map release session to phase index
+    session_order = ['asia', 'europe', 'us', 'asia_reopen']
+    release_idx = 0
+    for i, s in enumerate(session_order):
+        if s.startswith(release_session) or release_session.startswith(s):
+            release_idx = i
+            break
+
+    # Determine current phase based on hours since release
+    cumulative = 0
+    current_phase = None
+    next_phase = None
+    for i, step in enumerate(cascade):
+        # Parse duration string
+        dur_str = step.get('duration', '~8h')
+        dur_hours = float(dur_str.replace('~', '').replace('h', '').strip())
+        if cumulative <= hours_since < cumulative + dur_hours:
+            current_phase = step
+            next_phase = cascade[i + 1] if i + 1 < len(cascade) else None
+            break
+        cumulative += dur_hours
+
+    if current_phase is None:
+        # Past all phases
+        return {
+            'status': 'RESOLVED',
+            'hours_since': round(hours_since, 1),
+            'phases_complete': len(cascade),
+            'trading_implication': itinerary.get('trading_implication', ''),
+        }
+
+    return {
+        'status': 'ACTIVE',
+        'hours_since': round(hours_since, 1),
+        'current_phase': current_phase,
+        'next_phase': next_phase,
+        'total_phases': len(cascade),
+        'trading_implication': itinerary.get('trading_implication', ''),
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# MONTHLY CYCLE SEQUENCE — approximate week-by-week ordering
+# ══════════════════════════════════════════════════════════════
+
+MONTHLY_CYCLE = {
+    'week1': {
+        'label': 'WEEK 1 (1st–7th)',
+        'theme': 'PMI + NFP — tone-setting week',
+        'events': [
+            {'id': 'cn_caixin_mfg_pmi', 'day': '1st'},
+            {'id': 'cn_nbs_pmi', 'day': '1st'},
+            {'id': 'eu_pmi_flash', 'day': '~1st–2nd'},
+            {'id': 'uk_pmi', 'day': '~1st–2nd'},
+            {'id': 'us_ism_mfg', 'day': '1st business day'},
+            {'id': 'us_ism_svc', 'day': '3rd business day'},
+            {'id': 'us_jolts', 'day': '~1st week'},
+            {'id': 'us_nfp', 'day': '1st Friday'},
+        ],
+        'trading_note': 'NFP sets the tone. Wait for CPI confirmation before large positions.',
+    },
+    'week2': {
+        'label': 'WEEK 2 (8th–14th)',
+        'theme': 'CPI/PPI — biggest movers of the month',
+        'events': [
+            {'id': 'cn_cpi', 'day': '~9th–11th'},
+            {'id': 'us_cpi', 'day': '~10th–13th'},
+            {'id': 'us_ppi', 'day': '~11th–14th'},
+            {'id': 'uk_cpi', 'day': '~3rd week (sometimes 2nd)'},
+        ],
+        'trading_note': '⚠️ BIGGEST MOVERS — CPI/PPI are primary ETH catalysts. Reduce size before, trade reaction after.',
+    },
+    'week3': {
+        'label': 'WEEK 3 (15th–21st)',
+        'theme': 'Mid-month — PBoC, retail, housing',
+        'events': [
+            {'id': 'us_retail', 'day': '~15th'},
+            {'id': 'us_housing', 'day': '~17th'},
+            {'id': 'cn_pboc_lpr', 'day': '20th'},
+            {'id': 'us_adp', 'day': 'Wednesday'},
+            {'id': 'us_claims', 'day': 'every Thursday'},
+            {'id': 'de_ifo', 'day': '~23rd'},
+            {'id': 'eu_pmi_flash', 'day': '~22nd'},
+            {'id': 'us_michigan', 'day': '2nd + 4th Friday'},
+        ],
+        'trading_note': 'PBoC LPR — watch for China easing signal (1-2 week ETH lead). Retail Sales same week.',
+    },
+    'week4': {
+        'label': 'WEEK 4 (22nd–31st)',
+        'theme': 'End-of-month — PCE, PMI prep, cycle reset',
+        'events': [
+            {'id': 'de_cpi', 'day': '~28th–30th'},
+            {'id': 'eu_hicp_flash', 'day': 'last day'},
+            {'id': 'us_durables', 'day': '~26th'},
+            {'id': 'us_pce', 'day': '~last Friday'},
+            {'id': 'jp_cpi_tokyo', 'day': '~last Friday'},
+        ],
+        'trading_note': 'Core PCE (Fed target!) + Tokyo CPI → BOJ risk. Germany CPI previews EU CPI.',
+    },
+}
+
+
+# ══════════════════════════════════════════════════════════════
+# ETH TRADING LOGIC — key takeaways from macro framework
+# ══════════════════════════════════════════════════════════════
+
+MACRO_TRADING_LOGIC = {
+    'regime_hierarchy': [
+        ('CPI / FOMC', 'Regime breakers — setup invalidation risk'),
+        ('NFP', 'Directional volatility trigger — trend acceleration or reversal'),
+        ('DXY + 10Y', 'Structure of liquidity — decides whether SMC works'),
+        ('VIX / futures', 'Positioning pressure — risk appetite gauge'),
+        ('Auctions / claims / PPI', 'Secondary confirmation signals'),
+    ],
+    'transmission_chain': (
+        'Data release → Rate expectations (FedWatch) → DXY/10Y yield → '
+        'Global risk appetite → ETH/USDT price'
+    ),
+    'key_rules': [
+        'CPI surprise is the #1 monthly ETH mover — direction AND magnitude matter',
+        'FOMC + Powell = two-part event (decision + presser). Wait for presser before positioning.',
+        '10Y yield is the "real-time discount rate" for all risk assets',
+        'DXY rising during session = liquidity tightening signal',
+        'VIX above 20 = caution, above 30 = panic — reduce size',
+        'Treasury auctions: short-lived impact unless reinforcing broader yield trend',
+        'Claims trend over 4 weeks matters more than single print',
+        'PPI leads CPI by 2-3 months — watch for divergence',
+        'BOJ hike = highest-impact single event for crypto downside risk (Aug 2024: -20%)',
+    ],
+}
 
 
 # ══════════════════════════════════════════════════════════════
@@ -259,6 +730,7 @@ EVENTS = [
             'US ISM Manufacturing PMI — completes global PMI picture ~2 days later',
         ],
         'what_to_watch': ['Above/below 50 (expansion threshold)', 'New orders sub-index', 'Export orders — global demand proxy'],
+        'session_itinerary': 'cn_caixin_mfg_pmi',
     },
     {
         'id': 'cn_nbs_pmi',
@@ -276,6 +748,7 @@ EVENTS = [
             'Eurozone Flash PMI — Europe PMI drops same week, narrative chain',
         ],
         'what_to_watch': ['Above/below 50', 'New orders vs inventories split', 'Employment sub-index'],
+        'session_itinerary': 'cn_nbs_pmi',
     },
     {
         'id': 'cn_cpi',
@@ -328,6 +801,7 @@ EVENTS = [
         ],
         'what_to_watch': ['1-year LPR (corporate) and 5-year LPR (mortgage)', 'Cut magnitude — 10bp expected, 20bp = aggressive', 'RRR cut (separate event) — massive liquidity injection'],
         'eth_historical': 'PBOC cut has ~70% correlation with ETH rally within 2 weeks',
+        'session_itinerary': 'cn_pboc_lpr',
     },
     {
         'id': 'cn_trade',
@@ -433,6 +907,7 @@ EVENTS = [
             'Fed Rate Decision — ECB moves first → reprices DXY → ETH reacts',
         ],
         'what_to_watch': ['Rate decision vs consensus', 'Lagarde forward guidance — hawkish/dovish pivot', 'APP/PEPP taper updates — liquidity signal'],
+        'session_itinerary': 'eu_ecb',
     },
     {
         'id': 'eu_gdp',
@@ -562,6 +1037,7 @@ EVENTS = [
         'what_to_watch': ['Rate decision — any hike = CRITICAL risk event', 'YCC (yield curve control) adjustments', 'USDJPY — yen strengthening = carry unwind risk', 'Forward guidance — signaling future hikes'],
         'alert': '⚠️ BOJ hike = highest-impact single event for crypto downside risk',
         'eth_historical': 'Aug 2024: BOJ hike → carry unwind → ETH -20% in 3 days',
+        'session_itinerary': 'jp_boj',
     },
     {
         'id': 'jp_cpi_tokyo',
@@ -690,6 +1166,7 @@ EVENTS = [
         ],
         'what_to_watch': ['NFP surprise vs consensus → immediate ETH direction', 'Unemployment rate → recession signal (Sahm rule)', 'Wage growth (Average Hourly Earnings) → inflation pipeline → Fed reaction', 'Participation rate'],
         'eth_historical': 'Avg ±1.2% on release, sets tone for 1-2 weeks',
+        'session_itinerary': 'us_nfp',
     },
     {
         'id': 'us_adp',
@@ -781,6 +1258,7 @@ EVENTS = [
             'BULL': 0.85, 'BEAR': 1.20, 'RECOVERY': 0.75,
             'ACCELERATION': 0.65, 'STAGFLATION': 1.00, 'STAGFLATION_HOT': 1.10,
         },
+        'session_itinerary': 'us_cpi',
     },
     {
         'id': 'us_ppi',
@@ -798,6 +1276,7 @@ EVENTS = [
             'Fed speeches — hot PPI + CPI = hawkish Fed commentary follows',
         ],
         'what_to_watch': ['Confirms or denies CPI — pipeline inflation check', 'PPI leading CPI by 2-3 months', 'Goods vs services split'],
+        'session_itinerary': 'us_ppi',
     },
     {
         'id': 'us_retail',
@@ -854,6 +1333,7 @@ EVENTS = [
             'FOMC Minutes (3 weeks later) — details behind the vote, nuance move',
         ],
         'what_to_watch': ['Rate decision vs consensus', 'Dot plot — median rate projection', 'QT taper timing — liquidity signal', 'Statement language changes'],
+        'session_itinerary': 'us_fomc',
     },
     {
         'id': 'us_powell',
@@ -1017,6 +1497,7 @@ def get_macro_calendar(reference_time=None):
             'eth_historical': evt_def.get('eth_historical'),
             'eth_by_regime': evt_def.get('eth_by_regime'),
             'regime_sensitivity': evt_def.get('regime_sensitivity'),
+            'session_itinerary': evt_def.get('session_itinerary'),
             'next_dt': next_dt,
         }
 
@@ -1056,6 +1537,18 @@ def get_macro_calendar(reference_time=None):
     else:
         phase, phase_desc, next_major = 'MONTH_END', 'PMI releases, cycle reset', 'Next month NFP'
 
+    # Determine current week in monthly cycle
+    current_week = None
+    for wk, info in MONTHLY_CYCLE.items():
+        if wk == 'week1' and day <= 7:
+            current_week = info
+        elif wk == 'week2' and 8 <= day <= 14:
+            current_week = info
+        elif wk == 'week3' and 15 <= day <= 21:
+            current_week = info
+        elif wk == 'week4' and day >= 22:
+            current_week = info
+
     return {
         'now': now.isoformat(),
         'phase': phase,
@@ -1065,6 +1558,11 @@ def get_macro_calendar(reference_time=None):
         'all_events': all_events,
         'narrative_chains': NARRATIVE_CHAINS,
         'realtime_signals': REALTIME_SIGNALS,
+        'event_classification': EVENT_CLASSIFICATION,
+        'monthly_cycle': MONTHLY_CYCLE,
+        'current_week': current_week,
+        'trading_logic': MACRO_TRADING_LOGIC,
+        'session_transmission': SESSION_TRANSMISSION,
     }
 
 
@@ -1144,6 +1642,18 @@ def format_macro_calendar(cal, current_regime=None):
         for i, nxt in enumerate(evt.get('what_comes_next', []), 1):
             lines.append(f'      → {nxt}')
 
+    # ── Session Transmission Cascade (for events with itineraries) ──
+    transmission = cal.get('session_transmission', {})
+    events_with_itinerary = [e for e in cal['events'][:8] if e.get('session_itinerary') and e['session_itinerary'] in transmission]
+    if events_with_itinerary:
+        lines.append(f'\n  🌐 SESSION CASCADE (how data flows across trading desks):')
+        for evt in events_with_itinerary[:3]:
+            itin = transmission[evt['session_itinerary']]
+            lines.append(f'\n    {_impact_icon(evt["impact"])} {evt["name"]}  ({evt["countdown"]})')
+            for step in itin['cascade']:
+                lines.append(f'      {step["session"]}: {step["action"][:90]}')
+            lines.append(f'      💡 {itin["trading_implication"]}')
+
     # ── Narrative Chains ──
     lines.append(f'\n  🔗 NARRATIVE CHAINS:')
     for key, chain in cal['narrative_chains'].items():
@@ -1159,6 +1669,30 @@ def format_macro_calendar(cal, current_regime=None):
     for sig in cal['realtime_signals']:
         link_icon = {'direct': '📈', 'inverse': '📉', 'correlated': '↔️'}.get(sig['eth_link'], '•')
         lines.append(f'    {link_icon} {sig["name"]:<22} {sig["note"]}  ({sig["eth_link"]})')
+
+    # ── Current Week in Monthly Cycle ──
+    current_week = cal.get('current_week')
+    if current_week:
+        lines.append(f'\n  📍 CURRENT WEEK:')
+        lines.append(f'    {current_week["label"]} — {current_week["theme"]}')
+        lines.append(f'    💡 {current_week["trading_note"]}')
+
+    # ── Event Classification (structural) ──
+    lines.append(f'\n  🏗️ EVENT CLASSIFICATION (how events move ETH):')
+    for key, cls in cal.get('event_classification', {}).items():
+        lines.append(f'\n    {cls["label"]}')
+        lines.append(f'      {cls["description"]}')
+        lines.append(f'      💡 {cls["trading_impact"]}')
+
+    # ── Trading Logic Hierarchy ──
+    logic = cal.get('trading_logic', {})
+    if logic.get('regime_hierarchy'):
+        lines.append(f'\n  📐 REGIME HIERARCHY (most → least impact):')
+        for label, desc in logic['regime_hierarchy']:
+            lines.append(f'    • {label} — {desc}')
+    if logic.get('transmission_chain'):
+        lines.append(f'\n  🔗 TRANSMISSION CHAIN:')
+        lines.append(f'    {logic["transmission_chain"]}')
 
     # ── Phase context ──
     lines.append(f'\n  📍 WHERE ARE WE IN THE CYCLE?')
@@ -1209,6 +1743,11 @@ def calendar_to_dict(cal):
         'events': [],
         'narrative_chains': cal['narrative_chains'],
         'realtime_signals': cal['realtime_signals'],
+        'event_classification': cal.get('event_classification', {}),
+        'monthly_cycle': cal.get('monthly_cycle', {}),
+        'current_week': cal.get('current_week'),
+        'trading_logic': cal.get('trading_logic', {}),
+        'session_transmission': cal.get('session_transmission', {}),
     }
     for evt in cal['events']:
         result['events'].append({
@@ -1226,6 +1765,7 @@ def calendar_to_dict(cal):
             'what_comes_next': evt.get('what_comes_next', []),
             'what_to_watch': evt.get('what_to_watch', []),
             'eth_by_regime': evt.get('eth_by_regime'),
+            'session_itinerary': evt.get('session_itinerary'),
         })
     return result
 
