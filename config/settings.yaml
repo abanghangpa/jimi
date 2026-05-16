@@ -652,6 +652,17 @@ M26_WINDOW_DAYS: 1            # Days after release to consider active
 M27_ENABLED: true
 M27_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M28: US ISM SERVICES PMI SESSION BIAS ───────────────────
+# Session transmission chain bias on ISM Services PMI release day.
+# Backtested: 101 releases (2018-2026), ETH/USDT 15m.
+# HOT+SQUEEZE: -2.31% (SHORT). WARM+TREND: +1.35% (LONG). COOL NO: -1.15% (SHORT).
+# Chain: Spike→NY AM 81.8% → Sydney→Tokyo 67.9% → Frankfurt→LDN 72.4%.
+# Breaks at NY PM→Post-NY (40.7%). Services→NFP direction does NOT persist.
+# COOL New Orders → Thursday claims positioning edge (+1.31%).
+# Session-aware: size decays after London (chain breaks at NY PM).
+M28_ENABLED: true
+M28_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
