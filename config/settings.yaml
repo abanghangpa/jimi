@@ -904,6 +904,18 @@ M47_WINDOW_DAYS: 1            # Days after release to consider active
 M48_ENABLED: true
 M48_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M49: BoE Rate Decision + MPC Vote Split Session Bias (regime-conditional) ───
+# BoE MPC announcements (~8/year, 12:00 UTC = 20:00 MYT)
+# Backtested: 68 BoE decisions, 2018-2026, ETH/USDT 15m
+# Key edges:
+#   NEUTRAL_HOLD (0-9-0) + CHOP + MARKUP: +3.15% avg, 66.7% win, n=6 → LONG
+#   NEUTRAL_HOLD + LOW_VOL + MARKDOWN:    +2.08% avg, 57.1% win, n=7 → LONG
+#   Unanimous hold (0-9-0):               +1.48% avg, 68% win, n=22 → LONG
+# Transmission: BoE→Midday 96%, Midday→NY Pre-Open 96%, Overlap→NY AM 78%
+# Mechanism: MPC vote split → GBP direction → DXY → ETH
+M49_ENABLED: true
+M49_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

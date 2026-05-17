@@ -71,6 +71,7 @@ from src.modules.m45_pce import score_m45_pce, format_m45
 from src.modules.m46_japan_cpi import score_m46_japan_cpi, format_m46
 from src.modules.m47_boj_rate import score_m47_boj_rate, format_m47
 from src.modules.m48_ecb_rate import score_m48_ecb_rate, format_m48
+from src.modules.m49_boe_rate import score_m49_boe_rate, format_m49
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1693,6 +1694,44 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m48'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M49: BoE Rate Decision + MPC Vote Split Session Bias (regime-conditional) ──
+    m49_score_adj = 0.0
+    m49_size_mult = 1.0
+    m49_status = 'SKIP'
+    m49_details = {}
+    try:
+        _wyckoff_for_m49 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m49 = result.get('m9', {}).get('regime', 'CHOP')
+        m49_status, m49_score_adj, m49_size_mult, m49_details = score_m49_boe_rate(
+            wyckoff_phase=_wyckoff_for_m49,
+            vol_regime=_vol_for_m49,
+            direction=direction, today_str=today_str, config=cfg)
+        if m49_details and m49_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m49'] = {
+                'status': m49_status,
+                'score_adj': m49_score_adj,
+                'size_mult': m49_size_mult,
+                'regime': m49_details.get('regime', '?'),
+                'bias': m49_details.get('bias', '?'),
+                'rate': m49_details.get('rate'),
+                'prev_rate': m49_details.get('prev_rate'),
+                'rate_change': m49_details.get('rate_change'),
+                'signal': m49_details.get('signal'),
+                'signal_hint': m49_details.get('signal_hint'),
+                'vote_split': m49_details.get('vote_split'),
+                'avg_ret_24h': m49_details.get('avg_ret_24h'),
+                'win_rate': m49_details.get('win_rate'),
+                'sample_size': m49_details.get('sample_size'),
+                'confidence': m49_details.get('confidence'),
+                'source': m49_details.get('source'),
+                'release_date': m49_details.get('release_date'),
+                'details': m49_details,
+            }
+            if m49_size_mult < 1.0:
+                result['_m49_size_mult'] = m49_size_mult
+    except Exception as e:
+        result['m49'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2161,6 +2200,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m48_ics_adj'] = m48_score_adj
+
+    # ── M49 BoE Rate ICS adjustment (GBP→DXY→ETH mechanism) ──
+    if m49_score_adj != 0.0 and m49_status in ('PASS', 'WEAK'):
+        ics += m49_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m49_ics_adj'] = m49_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2652,6 +2698,12 @@ def print_signal(result):
         m48_out = format_m48(result['m48'].get('details', {}))
         if m48_out:
             print(m48_out)
+
+    # M49 BoE Rate Decision + MPC Vote Split Session Bias
+    if 'm49' in result and result['m49'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m49_out = format_m49(result['m49'].get('details', {}))
+        if m49_out:
+            print(m49_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
