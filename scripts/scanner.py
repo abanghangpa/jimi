@@ -74,6 +74,7 @@ from src.modules.m48_ecb_rate import score_m48_ecb_rate, format_m48
 from src.modules.m49_boe_rate import score_m49_boe_rate, format_m49
 from src.modules.m50_cb_consumer_confidence import score_m50_cb_confidence, format_m50
 from src.modules.m51_uk_gdp_monthly import score_m51_uk_gdp, format_m51
+from src.modules.m52_rba_rate import score_m52_rba_rate, format_m52
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1803,6 +1804,41 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m51'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M52: RBA Rate Decision Session Bias (regime-conditional) ──
+    m52_score_adj = 0.0
+    m52_size_mult = 1.0
+    m52_status = 'SKIP'
+    m52_details = {}
+    try:
+        _wyckoff_for_m52 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m52 = result.get('m9', {}).get('regime', 'CHOP')
+        m52_status, m52_score_adj, m52_size_mult, m52_details = score_m52_rba_rate(
+            wyckoff_phase=_wyckoff_for_m52,
+            vol_regime=_vol_for_m52,
+            direction=direction, date_str=today_str)
+        if m52_details and m52_status in ('ACTIVE', 'NO_EDGE'):
+            result['m52'] = {
+                'status': m52_status,
+                'score_adj': m52_score_adj,
+                'size_mult': m52_size_mult,
+                'signal': m52_details.get('signal'),
+                'level': m52_details.get('level'),
+                'cycle': m52_details.get('cycle'),
+                'rate': m52_details.get('rate'),
+                'prev_rate': m52_details.get('prev_rate'),
+                'rate_change': m52_details.get('rate_change'),
+                'edge_key': m52_details.get('edge_key'),
+                'edge_dir': m52_details.get('edge_dir'),
+                'edge_avg': m52_details.get('edge_avg'),
+                'edge_wr': m52_details.get('edge_wr'),
+                'edge_n': m52_details.get('edge_n'),
+                'details': m52_details,
+            }
+            if m52_size_mult < 1.0:
+                result['_m52_size_mult'] = m52_size_mult
+    except Exception as e:
+        result['m52'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2292,6 +2328,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m51_ics_adj'] = m51_score_adj
+
+    # ── M52 RBA Rate ICS adjustment ──
+    if m52_score_adj != 0.0 and m52_status == 'ACTIVE':
+        ics += m52_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m52_ics_adj'] = m52_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto

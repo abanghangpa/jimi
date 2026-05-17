@@ -1256,6 +1256,41 @@ def fetch_uk_gdp_monthly(force_refresh=False):
     return None
 
 
+def fetch_rba_rate(force_refresh=False):
+    """Fetch latest RBA rate decision data and update M52 cache."""
+    cache = _load_cache()
+    cache_key = 'rba_rate'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching RBA Rate Decision...")
+    result = _fetch_trading_economics('australia/interest-rate')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ RBA Rate: actual={result['actual']}")
+        try:
+            from src.modules.m52_rba_rate import update_fresh_data
+            actual = result['actual']
+            prev = result.get('previous', actual)
+            signal = 'CUT' if actual < prev else ('HIKE' if actual > prev else 'HOLD')
+            update_fresh_data(actual, prev, signal)
+        except ImportError:
+            pass
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -1286,6 +1321,7 @@ def get_latest_macro_indicators():
         'jp_cpi': fetch_jp_cpi(),
         'cb_consumer_confidence': fetch_cb_consumer_confidence(),
         'uk_gdp_monthly': fetch_uk_gdp_monthly(),
+        'rba_rate': fetch_rba_rate(),
     }
 
 
@@ -1314,6 +1350,7 @@ def get_surprise_for_event(event_id):
         'jp_cpi': 'jp_cpi',
         'us_cb_confidence': 'cb_consumer_confidence',
         'uk_gdp': 'uk_gdp_monthly',
+        'au_rba_rate': 'rba_rate',
     }
 
     key = event_map.get(event_id)

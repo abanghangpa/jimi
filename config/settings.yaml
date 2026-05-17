@@ -945,6 +945,21 @@ M50_WINDOW_DAYS: 1            # Days after release to consider active
 M51_ENABLED: true
 M51_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M52: RBA Rate Decision Session Bias (regime-conditional) ───
+# RBA rate decision released ~11x/year, 03:30 UTC (11:30 MYT).
+# Backtested: 86 releases, 2018-2026, ETH/USDT 15m.
+# 24h aggregate: +0.899% avg, 53.5% win — NOT significant (p=0.11)
+# Key edges:
+#   CUT overall:                              +1.520% avg, 54.5% win, n=11 → LONG
+#   ACCUMULATION + COMPRESSING + NEUTRAL_HOLD: +2.085% avg, 67% win, n=6 → LONG
+#   MARKDOWN + CRISIS + NEUTRAL_HOLD:          +3.252% avg, 100% win, n=3 → LONG
+#   MARKUP + TREND + NEUTRAL_HOLD:             +2.882% avg, 67% win, n=3 → LONG
+#   MARKDOWN + TREND + NEUTRAL_HOLD:           -3.022% avg, 0% win, n=3 → SHORT
+# Chain: Sydney→Tokyo 57.6% (marginal). Most breaks.
+# Mechanism: Australia = global risk proxy. AUD strength → ETH bid density.
+M52_ENABLED: true
+M52_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
