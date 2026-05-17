@@ -930,6 +930,21 @@ M49_WINDOW_DAYS: 1            # Days after release to consider active
 M50_ENABLED: true
 M50_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M51: UK Monthly GDP Session Bias (regime-conditional) ───
+# ONS Monthly GDP released ~10-12th of month, 07:00 UTC (15:00 MYT).
+# Backtested: 90 releases, 2018-2026, ETH/USDT 15m.
+# 24h aggregate: -0.259% avg, 48.9% win — NOT significant (p=0.65)
+# Key edges:
+#   STRONG_BEAT overall:              +3.398% avg, 91.7% win, n=12 → LONG
+#   RECESSION level (YoY < -2%):      +1.241% avg, 61.5% win, n=13 → LONG (contrarian)
+#   ACCUMULATION + COMPRESSING + CONTRACTION: -5.466% avg, 0% win, n=3 → SHORT
+#   MARKDOWN + NEUTRAL + CONTRACTION: -4.369% avg, 33% win, n=3 → SHORT
+# Contrarian: recession → BoE cut cycle → yield compression → crypto positive
+# Chain: London Open→Morning 61.1% (marginal). Most breaks.
+# Loopback: UK GDP → UK Retail Sales → BoE rate decision
+M51_ENABLED: true
+M51_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
