@@ -817,6 +817,21 @@ M41_WINDOW_DAYS: 1            # Days after release to consider active
 M42_ENABLED: true
 M42_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M43: US GDP Advance Estimate Session Bias (contrarian, regime-conditional) ───
+# BEA GDP advance released quarterly (~last Thu of month after quarter), 12:30 UTC. 33 releases backtested.
+# 24h aggregate: +0.449% avg, 57.6% win, n=33 — NOT significant (p=0.41)
+# CONTRARIAN SIGNAL — bad GDP is good for ETH (liquidity play):
+#   BEAT mean: -0.445% | MISS mean: +1.281% (inverted!)
+#   Weak GDP: +2.377% avg vs Strong GDP: +0.021% avg
+# Key combos:
+#   STRONG + DECELERATING:    +4.681% avg, 100% win, n=2 → LONG
+#   RECESSION + DECELERATING: +2.271% avg, 67% win, n=3  → LONG
+#   MODERATE + STABLE:        -0.686% avg, 42% win, n=12 → SHORT
+# Transmission chain: Asia→London 85-100%, breaks at NY Pre-Open
+# Loopback: US GDP → Corporate Earnings → FOMC pricing → Fed rate decision
+M43_ENABLED: true
+M43_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
