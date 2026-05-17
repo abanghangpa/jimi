@@ -804,6 +804,19 @@ M40_WINDOW_DAYS: 1            # Days after release to consider active
 M41_ENABLED: true
 M41_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M42: Eurozone GDP Flash Session Bias (regime-conditional) ───
+# Eurostat GDP flash released quarterly (~end of month), 09:00 UTC. 33 releases backtested.
+# 24h aggregate: -0.174% avg, 39.4% win, n=33 — NOT significant (small sample, quarterly)
+# Key combos:
+#   RANGE + COMPRESSING + BEAT:    +1.208% avg, 75% win, n=4  → LONG
+#   STRONG + ACCELERATING + BEAT:  +2.889% avg, 67% win, n=3  → LONG
+#   RECESSION + DECELERATING:      +2.579% avg, 50% win, n=2  → LONG (ECB cut hopes)
+#   STAGNANT + STABLE + INLINE:    -0.660% avg, 27% win, n=11 → SHORT
+# Transmission chain: Asia 81-100%, Asia→Europe 97-100%, London→NY 78-100%
+# Loopback: EZ GDP → US GDP Advance (~1 week) → ECB cut trajectory
+M42_ENABLED: true
+M42_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

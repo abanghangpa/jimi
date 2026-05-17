@@ -64,6 +64,7 @@ from src.modules.m38_ifo import score_m38_ifo, format_m38
 from src.modules.m39_ums import score_m39_ums, format_m39
 from src.modules.m40_germany_cpi import score_m40_germany_cpi, format_m40
 from src.modules.m41_ez_cpi import score_m41_ez_cpi, format_m41
+from src.modules.m42_ez_gdp import score_m42_ez_gdp, format_m42
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1419,6 +1420,44 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m41'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M42: Eurozone GDP Flash Session Bias (regime-conditional) ──
+    m42_score_adj = 0.0
+    m42_size_mult = 1.0
+    m42_status = 'SKIP'
+    m42_details = {}
+    try:
+        _wyckoff_for_m42 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m42 = result.get('m9', {}).get('regime', 'CHOP')
+        m42_status, m42_score_adj, m42_size_mult, m42_details = score_m42_ez_gdp(
+            wyckoff_phase=_wyckoff_for_m42,
+            vol_regime=_vol_for_m42,
+            direction=direction, today_str=today_str, config=cfg)
+        if m42_details and m42_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m42'] = {
+                'status': m42_status,
+                'score_adj': m42_score_adj,
+                'size_mult': m42_size_mult,
+                'regime': m42_details.get('regime', '?'),
+                'bias': m42_details.get('bias', '?'),
+                'gdp_qoq': m42_details.get('gdp_qoq'),
+                'gdp_yoy': m42_details.get('gdp_yoy'),
+                'consensus_qoq': m42_details.get('consensus_qoq'),
+                'signal': m42_details.get('signal'),
+                'health': m42_details.get('health'),
+                'momentum': m42_details.get('momentum'),
+                'avg_ret_24h': m42_details.get('avg_ret_24h'),
+                'win_rate': m42_details.get('win_rate'),
+                'sample_size': m42_details.get('sample_size'),
+                'confidence': m42_details.get('confidence'),
+                'source': m42_details.get('source'),
+                'release_date': m42_details.get('release_date'),
+                'details': m42_details,
+            }
+            if m42_size_mult < 1.0:
+                result['_m42_size_mult'] = m42_size_mult
+    except Exception as e:
+        result['m42'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1838,6 +1877,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m41_ics_adj'] = m41_score_adj
+
+    # ── M42 EZ GDP Flash ICS adjustment (regime-conditional bias on release days) ──
+    if m42_score_adj != 0.0 and m42_status in ('PASS', 'WEAK'):
+        ics += m42_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m42_ics_adj'] = m42_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2287,6 +2333,12 @@ def print_signal(result):
         m41_out = format_m41(result['m41'].get('details', {}))
         if m41_out:
             print(m41_out)
+
+    # M42 EZ GDP Flash Session Bias
+    if 'm42' in result and result['m42'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m42_out = format_m42(result['m42'].get('details', {}))
+        if m42_out:
+            print(m42_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -3211,6 +3263,30 @@ def print_summary(result):
         spread_icon = '🔴' if 'STICKY' in m41_spread else '🟢' if m41_spread == 'CORE_BELOW' else '⚪'
         print(f"  {'M41 EZ CPI Flash':<22} {bias_icon} {m41_bias:>8}  HICP={m41_hicp:.1f}% cons={m41_cons:.1f}% {dir_icon}{m41_dir} core={m41_core:.1f}%{spread_icon}{m41_spread}")
         print(f"  {'  Backtest':<22} {conf_icon} 24h={m41_avg:+.2f}%  win={m41_win*100:.0f}%  n={m41_n}  adj={m41_adj:+.3f}  size={m41_sm:.2f}x  chain: Asia 88-99%, Lon→NY 75-100%  p=0.013✅")
+
+    # M42 Eurozone GDP Flash Session Bias summary
+    m42 = result.get('m42', {})
+    if m42 and m42.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m42_bias = m42.get('bias', '?')
+        m42_gdp = m42.get('gdp_qoq', 0)
+        m42_yoy = m42.get('gdp_yoy', 0)
+        m42_cons = m42.get('consensus_qoq', 0)
+        m42_signal = m42.get('signal', '?')
+        m42_health = m42.get('health', '?')
+        m42_mom = m42.get('momentum', '?')
+        m42_avg = m42.get('avg_ret_24h', 0)
+        m42_win = m42.get('win_rate', 0)
+        m42_n = m42.get('sample_size', 0)
+        m42_conf = m42.get('confidence', 0)
+        m42_adj = m42.get('score_adj', 0)
+        m42_sm = m42.get('size_mult', 1.0)
+        bias_icon = '🟢' if m42_bias == 'LONG' else '🔴' if m42_bias == 'SHORT' else '⚪'
+        conf_icon = '🟠'  # always orange — small sample
+        health_icon = {'RECESSION': '🔴', 'CONTRACTION': '🟠', 'STAGNANT': '🟡',
+                       'MODERATE': '🟢', 'STRONG': '🟢🟢'}.get(m42_health, '⚪')
+        mom_icon = {'ACCELERATING': '📈', 'DECELERATING': '📉', 'STABLE': '➡️'}.get(m42_mom, '➡️')
+        print(f"  {'M42 EZ GDP Flash':<22} {bias_icon} {m42_bias:>8}  GDP={m42_gdp:+.1f}%(qoq) cons={m42_cons:+.1f}% {health_icon}{m42_health} {mom_icon}{m42_mom}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m42_avg:+.2f}%  win={m42_win*100:.0f}%  n={m42_n}  adj={m42_adj:+.3f}  size={m42_sm:.2f}x  chain: Asia 81-100%, Lon→NY 78-100%  (small n)")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})

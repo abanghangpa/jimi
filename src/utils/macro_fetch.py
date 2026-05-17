@@ -1043,6 +1043,35 @@ def fetch_ez_cpi(force_refresh=False):
     return None
 
 
+def fetch_ez_gdp(force_refresh=False):
+    """Fetch latest Eurozone GDP Flash data and update M42 cache."""
+    cache = _load_cache()
+    cache_key = 'ez_gdp'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching Eurozone GDP Flash...")
+    result = _fetch_trading_economics('euro-area/gdp-growth')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ EZ GDP Flash: actual={result['actual']}")
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -1066,6 +1095,7 @@ def get_latest_macro_indicators():
         'ums': fetch_ums(),
         'germany_cpi': fetch_germany_cpi(),
         'ez_cpi': fetch_ez_cpi(),
+        'ez_gdp': fetch_ez_gdp(),
     }
 
 
@@ -1087,6 +1117,7 @@ def get_surprise_for_event(event_id):
         'uk_wages': 'uk_wages',
         'de_cpi': 'germany_cpi',
         'ez_cpi': 'ez_cpi',
+        'ez_gdp': 'ez_gdp',
     }
 
     key = event_map.get(event_id)
