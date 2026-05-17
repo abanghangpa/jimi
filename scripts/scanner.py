@@ -67,6 +67,7 @@ from src.modules.m41_ez_cpi import score_m41_ez_cpi, format_m41
 from src.modules.m42_ez_gdp import score_m42_ez_gdp, format_m42
 from src.modules.m43_us_gdp import score_m43_us_gdp, format_m43
 from src.modules.m44_durables import score_m44_durables, format_m44
+from src.modules.m45_pce import score_m45_pce, format_m45
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1536,6 +1537,46 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m44'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M45: Core PCE + Personal Spending Session Bias (regime-conditional) ──
+    m45_score_adj = 0.0
+    m45_size_mult = 1.0
+    m45_status = 'SKIP'
+    m45_details = {}
+    try:
+        _wyckoff_for_m45 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m45 = result.get('m9', {}).get('regime', 'CHOP')
+        m45_status, m45_score_adj, m45_size_mult, m45_details = score_m45_pce(
+            wyckoff_phase=_wyckoff_for_m45,
+            vol_regime=_vol_for_m45,
+            direction=direction, today_str=today_str, config=cfg)
+        if m45_details and m45_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m45'] = {
+                'status': m45_status,
+                'score_adj': m45_score_adj,
+                'size_mult': m45_size_mult,
+                'regime': m45_details.get('regime', '?'),
+                'bias': m45_details.get('bias', '?'),
+                'core_pce_yoy': m45_details.get('core_pce_yoy'),
+                'core_pce_mom': m45_details.get('core_pce_mom'),
+                'spending_mom': m45_details.get('spending_mom'),
+                'consensus_yoy': m45_details.get('consensus_yoy'),
+                'signal': m45_details.get('signal'),
+                'inflation': m45_details.get('inflation'),
+                'spending_signal': m45_details.get('spending_signal'),
+                'avg_ret_24h': m45_details.get('avg_ret_24h'),
+                'win_rate': m45_details.get('win_rate'),
+                'sample_size': m45_details.get('sample_size'),
+                'confidence': m45_details.get('confidence'),
+                'source': m45_details.get('source'),
+                'release_date': m45_details.get('release_date'),
+                'fomc_metric': m45_details.get('fomc_metric', False),
+                'details': m45_details,
+            }
+            if m45_size_mult < 1.0:
+                result['_m45_size_mult'] = m45_size_mult
+    except Exception as e:
+        result['m45'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1976,6 +2017,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m44_ics_adj'] = m44_score_adj
+
+    # ── M45 Core PCE ICS adjustment (Fed's preferred gauge, Friday weekend lock) ──
+    if m45_score_adj != 0.0 and m45_status in ('PASS', 'WEAK'):
+        ics += m45_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m45_ics_adj'] = m45_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2443,6 +2491,12 @@ def print_signal(result):
         m44_out = format_m44(result['m44'].get('details', {}))
         if m44_out:
             print(m44_out)
+
+    # M45 Core PCE + Personal Spending Session Bias
+    if 'm45' in result and result['m45'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m45_out = format_m45(result['m45'].get('details', {}))
+        if m45_out:
+            print(m45_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -3436,6 +3490,29 @@ def print_summary(result):
         mom_icon = {'ACCELERATING': '📈', 'DECELERATING': '📉', 'STABLE': '➡️'}.get(m44_mom, '➡️')
         print(f"  {'M44 Durables':<22} {bias_icon} {m44_bias:>8}  headline={m44_headline:+.1f}% cons={m44_cons:+.1f}% core={m44_core:+.1f}% {capex_icon}{m44_capex} {mom_icon}{m44_mom}")
         print(f"  {'  Backtest':<22} 24h={m44_avg:+.2f}%  win={m44_win*100:.0f}%  n={m44_n}  adj={m44_adj:+.3f}  size={m44_sm:.2f}x  chain: Asia 88-100%, breaks at Lon→NY")
+
+    # M45 Core PCE + Personal Spending Session Bias summary
+    m45 = result.get('m45', {})
+    if m45 and m45.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m45_bias = m45.get('bias', '?')
+        m45_core = m45.get('core_pce_yoy', 0)
+        m45_mom = m45.get('core_pce_mom', 0)
+        m45_spend = m45.get('spending_mom', 0)
+        m45_cons = m45.get('consensus_yoy', 0)
+        m45_signal = m45.get('signal', '?')
+        m45_infl = m45.get('inflation', '?')
+        m45_spend_sig = m45.get('spending_signal', '?')
+        m45_avg = m45.get('avg_ret_24h', 0)
+        m45_win = m45.get('win_rate', 0)
+        m45_n = m45.get('sample_size', 0)
+        m45_adj = m45.get('score_adj', 0)
+        m45_sm = m45.get('size_mult', 1.0)
+        bias_icon = '🟢' if m45_bias == 'LONG' else '🔴' if m45_bias == 'SHORT' else '⚪'
+        infl_icon = {'RUNAWAY': '🔴🔴', 'HOT': '🔴', 'WARM': '🟠',
+                     'TARGET': '🟢', 'COOL': '🟢🟢', 'DEFLATION': '⚪'}.get(m45_infl, '⚪')
+        spend_icon = {'SURGING': '📈', 'STRONG': '🟢', 'MODERATE': '⚪', 'WEAK': '🔴'}.get(m45_spend_sig, '⚪')
+        print(f"  {'M45 Core PCE':<22} {bias_icon} {m45_bias:>8}  PCE={m45_core:.1f}%(yoy) cons={m45_cons:.1f}% {infl_icon}{m45_infl} spend={m45_spend:+.1f}%{spend_icon}{m45_spend_sig}")
+        print(f"  {'  Backtest':<22} 24h={m45_avg:+.2f}%  win={m45_win*100:.0f}%  n={m45_n}  adj={m45_adj:+.3f}  size={m45_sm:.2f}x  🏛️FOMC metric  weekend lock")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})

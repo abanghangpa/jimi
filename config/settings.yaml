@@ -847,6 +847,23 @@ M43_WINDOW_DAYS: 1            # Days after release to consider active
 M44_ENABLED: true
 M44_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M45: Core PCE + Personal Spending Session Bias (regime-conditional) ───
+# BEA Core PCE released ~final Friday of month, 12:30 UTC. 91 releases backtested.
+# 24h aggregate: +0.148% avg, 56.0% win, n=91 — NOT significant (p=0.71)
+# Weekend return (Fri→Mon): +0.691% avg, 57.1% win — positive bias
+# Fed's preferred inflation gauge. Sets weekend crypto trend.
+# Key combos:
+#   RANGE + CHOP + INLINE:           -3.921% avg, 67% win, n=3  → SHORT
+#   RANGE + NEUTRAL + INLINE:        +1.388% avg, 50% win, n=14 → LONG
+#   MARKDOWN + NEUTRAL + INLINE:     +1.624% avg, 80% win, n=5  → LONG
+#   RUNAWAY + SURGING + INLINE:      +2.744% avg, 80% win, n=5  → LONG
+#   COOL + STRONG + INLINE:          +2.743% avg, 100% win, n=4 → LONG
+#   RANGE + COMPRESSING + MILD_MISS: -1.074% avg, 14% win, n=7  → SHORT
+# Transmission chain: Asia 92-100%, breaks at London→NY (51.6%)
+# Loopback: Core PCE → FOMC Rate Decision (primary metric)
+M45_ENABLED: true
+M45_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
