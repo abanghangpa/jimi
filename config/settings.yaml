@@ -892,6 +892,18 @@ M46_WINDOW_DAYS: 1            # Days after release to consider active
 M47_ENABLED: true
 M47_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M48: ECB Rate Decision + Lagarde Presser Session Bias (regime-conditional) ───
+# ECB Governing Council announcements (~8/year, 13:45 UTC = 20:15 MYT)
+# Backtested: 67 ECB decisions, 2018-2026, ETH/USDT 15m
+# Key edges:
+#   HOLD + LOW_VOL + MARKUP: -2.03% avg, 42.9% win, n=7 → SHORT
+#   HIKE + CHOP + MARKUP:    +4.90% avg, 100% win, n=2 → LONG (small n)
+#   DOVE + CHOP + MARKDOWN:  -1.42% avg, 33% win, n=3 → SHORT
+# Transmission: ECB Decision→NY Open 96%, Presser→Overlap 96%, Overlap→NY AM 69%
+# Mechanism: hawkish tone → EUR up → DXY down → ETH boost
+M48_ENABLED: true
+M48_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

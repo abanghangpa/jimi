@@ -70,6 +70,7 @@ from src.modules.m44_durables import score_m44_durables, format_m44
 from src.modules.m45_pce import score_m45_pce, format_m45
 from src.modules.m46_japan_cpi import score_m46_japan_cpi, format_m46
 from src.modules.m47_boj_rate import score_m47_boj_rate, format_m47
+from src.modules.m48_ecb_rate import score_m48_ecb_rate, format_m48
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1655,6 +1656,43 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m47'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M48: ECB Rate Decision + Lagarde Presser Session Bias (regime-conditional) ──
+    m48_score_adj = 0.0
+    m48_size_mult = 1.0
+    m48_status = 'SKIP'
+    m48_details = {}
+    try:
+        _wyckoff_for_m48 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m48 = result.get('m9', {}).get('regime', 'CHOP')
+        m48_status, m48_score_adj, m48_size_mult, m48_details = score_m48_ecb_rate(
+            wyckoff_phase=_wyckoff_for_m48,
+            vol_regime=_vol_for_m48,
+            direction=direction, today_str=today_str, config=cfg)
+        if m48_details and m48_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m48'] = {
+                'status': m48_status,
+                'score_adj': m48_score_adj,
+                'size_mult': m48_size_mult,
+                'regime': m48_details.get('regime', '?'),
+                'bias': m48_details.get('bias', '?'),
+                'deposit_rate': m48_details.get('deposit_rate'),
+                'prev_rate': m48_details.get('prev_rate'),
+                'rate_change': m48_details.get('rate_change'),
+                'signal': m48_details.get('signal'),
+                'signal_hint': m48_details.get('signal_hint'),
+                'avg_ret_24h': m48_details.get('avg_ret_24h'),
+                'win_rate': m48_details.get('win_rate'),
+                'sample_size': m48_details.get('sample_size'),
+                'confidence': m48_details.get('confidence'),
+                'source': m48_details.get('source'),
+                'release_date': m48_details.get('release_date'),
+                'details': m48_details,
+            }
+            if m48_size_mult < 1.0:
+                result['_m48_size_mult'] = m48_size_mult
+    except Exception as e:
+        result['m48'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2116,6 +2154,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m47_ics_adj'] = m47_score_adj
+
+    # ── M48 ECB Rate ICS adjustment (DXY repricing, EUR/USD impact) ──
+    if m48_score_adj != 0.0 and m48_status in ('PASS', 'WEAK'):
+        ics += m48_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m48_ics_adj'] = m48_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2601,6 +2646,12 @@ def print_signal(result):
         m47_out = format_m47(result['m47'].get('details', {}))
         if m47_out:
             print(m47_out)
+
+    # M48 ECB Rate Decision + Lagarde Presser Session Bias
+    if 'm48' in result and result['m48'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m48_out = format_m48(result['m48'].get('details', {}))
+        if m48_out:
+            print(m48_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
