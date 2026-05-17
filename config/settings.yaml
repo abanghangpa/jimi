@@ -973,6 +973,19 @@ M52_WINDOW_DAYS: 1            # Days after release to consider active
 M53_ENABLED: true
 M53_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M54: China Quarterly GDP Session Bias (regime-conditional) ───
+# NBS China GDP released ~4x/year, 02:00 UTC (10:00 MYT).
+# Backtested: 34 releases, 2018-2026, ETH/USDT 15m.
+# 24h aggregate: +0.741% avg, 52.9% win — NOT significant (p=0.15)
+# Key edges:
+#   BEAT overall:  +1.313% avg, 66.7% win, n=9  → LONG
+#   MISS overall:  +1.370% avg, 75% win, n=4    → LONG (stimulus expectations)
+#   STRONG_BEAT:   -0.882% avg, 33% win, n=3    → SHORT (sell the news)
+# Chain: NY Close→Pre-Asia D2 67.6% ✅. Tokyo→Asia 64.7% ⚠️.
+# Mechanism: miss → PBoC stimulus expectations → V-bottom. Same day: Retail + Industrial.
+M54_ENABLED: true
+M54_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

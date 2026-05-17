@@ -1,0 +1,2756 @@
+[
+  {
+    "date": "2018-01-18",
+    "gdp_yoy": 6.8,
+    "consensus_yoy": 6.7,
+    "prev_yoy": 6.8,
+    "retail_yoy": 9.4,
+    "industrial_yoy": 6.2,
+    "quarter": "Q4",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.3606930664651105
+      },
+      "Tokyo Open": {
+        "return": -0.7416728631623074
+      },
+      "Asia Mid": {
+        "return": -10.39185555128698
+      },
+      "Asia Afternoon": {
+        "return": 5.16398713826366
+      },
+      "Tokyo Close": {
+        "return": -3.0718114922847986
+      },
+      "Pre-London": {
+        "return": 3.685439098250344
+      },
+      "Frankfurt Open": {
+        "return": 0.89951221490939
+      },
+      "London Open": {
+        "return": 1.1809519980702743
+      },
+      "London Morning": {
+        "return": 0.6446742358772645
+      },
+      "London Midday": {
+        "return": 5.112514804579545
+      },
+      "NY Pre-Open": {
+        "return": -3.003755868544602
+      },
+      "NY Open": {
+        "return": -2.0338622084974967
+      },
+      "London-NY Overlap": {
+        "return": 2.5652173913043512
+      },
+      "NY AM": {
+        "return": -4.17357123588578
+      },
+      "NY Lunch": {
+        "return": -0.9209362181291693
+      },
+      "NY PM": {
+        "return": 2.7255753541421455
+      },
+      "NY Close": {
+        "return": -6.3733528261256085
+      },
+      "Pre-Asia D2": {
+        "return": 5.505264712709159
+      },
+      "Sydney Open D2": {
+        "return": -0.29199999999999593
+      },
+      "Tokyo Open D2": {
+        "return": 1.0962009066474054
+      },
+      "Asia Mid D2": {
+        "return": 3.216237934147486
+      },
+      "24h_aggregate": {
+        "return": -2.4109987466633545
+      }
+    }
+  },
+  {
+    "date": "2018-04-17",
+    "gdp_yoy": 6.8,
+    "consensus_yoy": 6.7,
+    "prev_yoy": 6.8,
+    "retail_yoy": 10.1,
+    "industrial_yoy": 6.0,
+    "quarter": "Q1",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.811506494016858
+      },
+      "Tokyo Open": {
+        "return": 0.5843898573692529
+      },
+      "Asia Mid": {
+        "return": -0.10832102412604852
+      },
+      "Asia Afternoon": {
+        "return": 1.3781545741325052
+      },
+      "Tokyo Close": {
+        "return": 0.26838328244423176
+      },
+      "Pre-London": {
+        "return": 0.5333902282910177
+      },
+      "Frankfurt Open": {
+        "return": -0.6829757678654261
+      },
+      "London Open": {
+        "return": 0.6099693072768924
+      },
+      "London Morning": {
+        "return": -0.8167284522706026
+      },
+      "London Midday": {
+        "return": 0.03309388931066578
+      },
+      "NY Pre-Open": {
+        "return": 0.4573230062663026
+      },
+      "NY Open": {
+        "return": -0.24408670889753992
+      },
+      "London-NY Overlap": {
+        "return": -2.2778910573842155
+      },
+      "NY AM": {
+        "return": 0.6975080481697847
+      },
+      "NY Lunch": {
+        "return": -0.7479328241864543
+      },
+      "NY PM": {
+        "return": 1.006084224758421
+      },
+      "NY Close": {
+        "return": -0.39370078740157477
+      },
+      "Pre-Asia D2": {
+        "return": 0.30632411067193904
+      },
+      "Sydney Open D2": {
+        "return": 0.029553738547921832
+      },
+      "Tokyo Open D2": {
+        "return": 1.3511916486113762
+      },
+      "Asia Mid D2": {
+        "return": -0.11660447761192264
+      },
+      "24h_aggregate": {
+        "return": -0.06484192325073862
+      }
+    }
+  },
+  {
+    "date": "2018-07-16",
+    "gdp_yoy": 6.7,
+    "consensus_yoy": 6.7,
+    "prev_yoy": 6.8,
+    "retail_yoy": 9.0,
+    "industrial_yoy": 6.0,
+    "quarter": "Q2",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.03145219266714287
+      },
+      "Tokyo Open": {
+        "return": 0.46040515653775577
+      },
+      "Asia Mid": {
+        "return": 0.10283695870872092
+      },
+      "Asia Afternoon": {
+        "return": 0.9670143153851399
+      },
+      "Tokyo Close": {
+        "return": 0.008847600088467954
+      },
+      "Pre-London": {
+        "return": 0.6325474410580824
+      },
+      "Frankfurt Open": {
+        "return": 2.520879120879127
+      },
+      "London Open": {
+        "return": 0.5209338221107359
+      },
+      "London Morning": {
+        "return": 1.0876519513755647
+      },
+      "London Midday": {
+        "return": 0.22362869198312285
+      },
+      "NY Pre-Open": {
+        "return": -0.37258451564012585
+      },
+      "NY Open": {
+        "return": 0.857825012149
+      },
+      "London-NY Overlap": {
+        "return": -0.6179951817324909
+      },
+      "NY AM": {
+        "return": 0.3773187183811173
+      },
+      "NY Lunch": {
+        "return": 0.5061005061005114
+      },
+      "NY PM": {
+        "return": -0.4095277893857159
+      },
+      "NY Close": {
+        "return": 0.4951325948304829
+      },
+      "Pre-Asia D2": {
+        "return": -1.1628392484342367
+      },
+      "Sydney Open D2": {
+        "return": -0.5153877025114584
+      },
+      "Tokyo Open D2": {
+        "return": 0.3821737191872463
+      },
+      "Asia Mid D2": {
+        "return": 0.15017238097252045
+      },
+      "24h_aggregate": {
+        "return": 7.105948957584471
+      }
+    }
+  },
+  {
+    "date": "2018-10-19",
+    "gdp_yoy": 6.5,
+    "consensus_yoy": 6.6,
+    "prev_yoy": 6.7,
+    "retail_yoy": 9.2,
+    "industrial_yoy": 5.8,
+    "quarter": "Q3",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "MARKDOWN",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.12618296529969392
+      },
+      "Tokyo Open": {
+        "return": 0.2964186792361211
+      },
+      "Asia Mid": {
+        "return": 0.0872093023255847
+      },
+      "Asia Afternoon": {
+        "return": -0.9342627553490206
+      },
+      "Tokyo Close": {
+        "return": 0.0
+      },
+      "Pre-London": {
+        "return": 0.0
+      },
+      "Frankfurt Open": {
+        "return": 1.079892499389205
+      },
+      "London Open": {
+        "return": 0.09184956008894794
+      },
+      "London Morning": {
+        "return": -0.4781453755131654
+      },
+      "London Midday": {
+        "return": -0.15044161894593916
+      },
+      "NY Pre-Open": {
+        "return": 0.1409477521263631
+      },
+      "NY Open": {
+        "return": 0.05338769171035413
+      },
+      "London-NY Overlap": {
+        "return": -0.15037593984962516
+      },
+      "NY AM": {
+        "return": -0.4615235134084809
+      },
+      "NY Lunch": {
+        "return": 0.19522670701352224
+      },
+      "NY PM": {
+        "return": -0.3020117882020579
+      },
+      "NY Close": {
+        "return": 0.5179068744808728
+      },
+      "Pre-Asia D2": {
+        "return": 0.10207553589656733
+      },
+      "Sydney Open D2": {
+        "return": 0.7963484510051543
+      },
+      "Tokyo Open D2": {
+        "return": 0.6648039310145464
+      },
+      "Asia Mid D2": {
+        "return": -0.3541347626340013
+      },
+      "24h_aggregate": {
+        "return": 0.05338510070370552
+      }
+    }
+  },
+  {
+    "date": "2019-01-21",
+    "gdp_yoy": 6.4,
+    "consensus_yoy": 6.4,
+    "prev_yoy": 6.5,
+    "retail_yoy": 8.2,
+    "industrial_yoy": 5.7,
+    "quarter": "Q4",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "MARKDOWN",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": 0.17930327868851925
+      },
+      "Tokyo Open": {
+        "return": -0.4517173783346128
+      },
+      "Asia Mid": {
+        "return": -1.8321917808219184
+      },
+      "Asia Afternoon": {
+        "return": 0.898308041165185
+      },
+      "Tokyo Close": {
+        "return": -0.07779410493560672
+      },
+      "Pre-London": {
+        "return": 0.17301038062283985
+      },
+      "Frankfurt Open": {
+        "return": 0.38860103626943254
+      },
+      "London Open": {
+        "return": 0.2580645161290298
+      },
+      "London Morning": {
+        "return": 0.41184041184041525
+      },
+      "London Midday": {
+        "return": -0.9484747500640857
+      },
+      "NY Pre-Open": {
+        "return": 0.5607315389924012
+      },
+      "NY Open": {
+        "return": -0.3517199965685825
+      },
+      "London-NY Overlap": {
+        "return": 0.24104683195592386
+      },
+      "NY AM": {
+        "return": -1.2968052215733348
+      },
+      "NY Lunch": {
+        "return": 0.79178630470721
+      },
+      "NY PM": {
+        "return": 0.6301795580110409
+      },
+      "NY Close": {
+        "return": -0.2316204855451626
+      },
+      "Pre-Asia D2": {
+        "return": -0.2579535683576932
+      },
+      "Sydney Open D2": {
+        "return": -0.2500000000000054
+      },
+      "Tokyo Open D2": {
+        "return": -0.2592688618096942
+      },
+      "Asia Mid D2": {
+        "return": 0.46789706264622327
+      },
+      "24h_aggregate": {
+        "return": -0.2305327868852546
+      }
+    }
+  },
+  {
+    "date": "2019-04-17",
+    "gdp_yoy": 6.4,
+    "consensus_yoy": 6.3,
+    "prev_yoy": 6.4,
+    "retail_yoy": 8.7,
+    "industrial_yoy": 8.5,
+    "quarter": "Q1",
+    "signal": "BEAT",
+    "level": "STRONG",
+    "wyckoff": "MARKUP",
+    "vol": "TREND",
+    "returns": {
+      "Release Spike": {
+        "return": -0.235095545240814
+      },
+      "Tokyo Open": {
+        "return": -0.1873111782477355
+      },
+      "Asia Mid": {
+        "return": 0.4479690053877408
+      },
+      "Asia Afternoon": {
+        "return": -0.33146507563431044
+      },
+      "Tokyo Close": {
+        "return": 0.08465352521466608
+      },
+      "Pre-London": {
+        "return": -0.7008216529724484
+      },
+      "Frankfurt Open": {
+        "return": -0.09126308104161941
+      },
+      "London Open": {
+        "return": 0.6394251263625741
+      },
+      "London Morning": {
+        "return": -0.16942998910807283
+      },
+      "London Midday": {
+        "return": 0.6182567583949632
+      },
+      "NY Pre-Open": {
+        "return": -0.4156626506024083
+      },
+      "NY Open": {
+        "return": -0.16937874296775823
+      },
+      "London-NY Overlap": {
+        "return": 0.39992728594800736
+      },
+      "NY AM": {
+        "return": 0.5190415836803751
+      },
+      "NY Lunch": {
+        "return": -0.43230261182827906
+      },
+      "NY PM": {
+        "return": 3.955858409214239
+      },
+      "NY Close": {
+        "return": -0.4350600382852834
+      },
+      "Pre-Asia D2": {
+        "return": -0.13400139827545432
+      },
+      "Sydney Open D2": {
+        "return": -0.36753981681348546
+      },
+      "Tokyo Open D2": {
+        "return": 0.2166530038646238
+      },
+      "Asia Mid D2": {
+        "return": -0.5492258252994436
+      },
+      "24h_aggregate": {
+        "return": 3.225028633431806
+      }
+    }
+  },
+  {
+    "date": "2019-07-15",
+    "gdp_yoy": 6.2,
+    "consensus_yoy": 6.2,
+    "prev_yoy": 6.4,
+    "retail_yoy": 9.8,
+    "industrial_yoy": 6.3,
+    "quarter": "Q2",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "MARKDOWN",
+    "vol": "CRISIS",
+    "returns": {
+      "Release Spike": {
+        "return": 1.0129773130426605
+      },
+      "Tokyo Open": {
+        "return": 3.0130782383659183
+      },
+      "Asia Mid": {
+        "return": -1.955946346058941
+      },
+      "Asia Afternoon": {
+        "return": 2.672157401052379
+      },
+      "Tokyo Close": {
+        "return": 0.10695663799634972
+      },
+      "Pre-London": {
+        "return": -0.45853180786181774
+      },
+      "Frankfurt Open": {
+        "return": 0.9570661896243359
+      },
+      "London Open": {
+        "return": 0.0708780012403635
+      },
+      "London Morning": {
+        "return": -1.9477644975652968
+      },
+      "London Midday": {
+        "return": 3.2821670428893954
+      },
+      "NY Pre-Open": {
+        "return": 1.145255059666904
+      },
+      "NY Open": {
+        "return": -2.0484895630753193
+      },
+      "London-NY Overlap": {
+        "return": 2.364879770571359
+      },
+      "NY AM": {
+        "return": -1.430972802896424
+      },
+      "NY Lunch": {
+        "return": 1.0144737417464662
+      },
+      "NY PM": {
+        "return": 0.19046794511060028
+      },
+      "NY Close": {
+        "return": -1.0931086627781383
+      },
+      "Pre-Asia D2": {
+        "return": -0.6727240957539717
+      },
+      "Sydney Open D2": {
+        "return": 0.3694256311021213
+      },
+      "Tokyo Open D2": {
+        "return": -0.4819910612566797
+      },
+      "Asia Mid D2": {
+        "return": -0.11447692849594526
+      },
+      "24h_aggregate": {
+        "return": 7.665017271963396
+      }
+    }
+  },
+  {
+    "date": "2019-10-18",
+    "gdp_yoy": 6.0,
+    "consensus_yoy": 6.1,
+    "prev_yoy": 6.2,
+    "retail_yoy": 7.8,
+    "industrial_yoy": 5.8,
+    "quarter": "Q3",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.09635003400590338
+      },
+      "Tokyo Open": {
+        "return": -0.2604609025536538
+      },
+      "Asia Mid": {
+        "return": -0.26114107294919553
+      },
+      "Asia Afternoon": {
+        "return": -1.5083385508566256
+      },
+      "Tokyo Close": {
+        "return": -1.4100785945446126
+      },
+      "Pre-London": {
+        "return": 0.550996483001171
+      },
+      "Frankfurt Open": {
+        "return": -0.1748863238894619
+      },
+      "London Open": {
+        "return": 0.47886007942069214
+      },
+      "London Morning": {
+        "return": -0.07555503893990204
+      },
+      "London Midday": {
+        "return": 0.3315302739486961
+      },
+      "NY Pre-Open": {
+        "return": 0.08695652173913374
+      },
+      "NY Open": {
+        "return": 0.4112366058499901
+      },
+      "London-NY Overlap": {
+        "return": 0.43262574988463304
+      },
+      "NY AM": {
+        "return": -0.42501866636035207
+      },
+      "NY Lunch": {
+        "return": -0.5191209551825609
+      },
+      "NY PM": {
+        "return": -0.24352061228038935
+      },
+      "NY Close": {
+        "return": 0.23830281894797822
+      },
+      "Pre-Asia D2": {
+        "return": 0.672619737910238
+      },
+      "Sydney Open D2": {
+        "return": -0.11519410206198424
+      },
+      "Tokyo Open D2": {
+        "return": 0.051897128358899446
+      },
+      "Asia Mid D2": {
+        "return": 0.29969454210132573
+      },
+      "24h_aggregate": {
+        "return": -2.7374744955792245
+      }
+    }
+  },
+  {
+    "date": "2020-01-17",
+    "gdp_yoy": 6.0,
+    "consensus_yoy": 6.0,
+    "prev_yoy": 6.0,
+    "retail_yoy": 8.0,
+    "industrial_yoy": 6.9,
+    "quarter": "Q4",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.22418807561803475
+      },
+      "Tokyo Open": {
+        "return": 1.0640227313947106
+      },
+      "Asia Mid": {
+        "return": -0.2811509242088885
+      },
+      "Asia Afternoon": {
+        "return": 1.4817036592681458
+      },
+      "Tokyo Close": {
+        "return": 2.098480818111965
+      },
+      "Pre-London": {
+        "return": -0.43422880963408983
+      },
+      "Frankfurt Open": {
+        "return": -0.1628190963540159
+      },
+      "London Open": {
+        "return": -0.5707962024579124
+      },
+      "London Morning": {
+        "return": -1.3590299338058822
+      },
+      "London Midday": {
+        "return": -0.9858067581210266
+      },
+      "NY Pre-Open": {
+        "return": 2.567024530678343
+      },
+      "NY Open": {
+        "return": -0.29238056254020234
+      },
+      "London-NY Overlap": {
+        "return": 1.7652923582194706
+      },
+      "NY AM": {
+        "return": -1.1987090825265172
+      },
+      "NY Lunch": {
+        "return": 0.2566495566962189
+      },
+      "NY PM": {
+        "return": 0.034908075401444194
+      },
+      "NY Close": {
+        "return": -0.2559032220542036
+      },
+      "Pre-Asia D2": {
+        "return": -2.1282798833819276
+      },
+      "Sydney Open D2": {
+        "return": -1.078343759308908
+      },
+      "Tokyo Open D2": {
+        "return": 1.072030835943147
+      },
+      "Asia Mid D2": {
+        "return": 0.780598260040521
+      },
+      "24h_aggregate": {
+        "return": 4.283809985458084
+      }
+    }
+  },
+  {
+    "date": "2020-04-17",
+    "gdp_yoy": -6.8,
+    "consensus_yoy": -6.5,
+    "prev_yoy": 6.0,
+    "retail_yoy": -15.8,
+    "industrial_yoy": -1.1,
+    "quarter": "Q1",
+    "signal": "MISS",
+    "level": "CONTRACTION",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.04659560836391899
+      },
+      "Tokyo Open": {
+        "return": -0.5472434068812934
+      },
+      "Asia Mid": {
+        "return": -0.2517122285312924
+      },
+      "Asia Afternoon": {
+        "return": -0.892018779342729
+      },
+      "Tokyo Close": {
+        "return": 0.710563713879688
+      },
+      "Pre-London": {
+        "return": 0.38805268109124913
+      },
+      "Frankfurt Open": {
+        "return": 0.4041232283003383
+      },
+      "London Open": {
+        "return": 0.08166598611677439
+      },
+      "London Morning": {
+        "return": -0.8684501952555697
+      },
+      "London Midday": {
+        "return": -0.1117121354656786
+      },
+      "NY Pre-Open": {
+        "return": 0.22956030372594904
+      },
+      "NY Open": {
+        "return": -0.32887009631195807
+      },
+      "London-NY Overlap": {
+        "return": 0.29460287532406315
+      },
+      "NY AM": {
+        "return": -0.011749500646228548
+      },
+      "NY Lunch": {
+        "return": 0.4876615746181037
+      },
+      "NY PM": {
+        "return": 1.1284569958486856
+      },
+      "NY Close": {
+        "return": 0.42784458834411465
+      },
+      "Pre-Asia D2": {
+        "return": -0.241796200345416
+      },
+      "Sydney Open D2": {
+        "return": 0.2539242843951972
+      },
+      "Tokyo Open D2": {
+        "return": -0.37416532350909837
+      },
+      "Asia Mid D2": {
+        "return": 0.12133818686081237
+      },
+      "24h_aggregate": {
+        "return": 0.8387209505504093
+      }
+    }
+  },
+  {
+    "date": "2020-07-16",
+    "gdp_yoy": 3.2,
+    "consensus_yoy": 2.5,
+    "prev_yoy": -6.8,
+    "retail_yoy": -1.1,
+    "industrial_yoy": 4.8,
+    "quarter": "Q2",
+    "signal": "STRONG_BEAT",
+    "level": "WEAK",
+    "wyckoff": "ACCUMULATION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.07952785567786938
+      },
+      "Tokyo Open": {
+        "return": -0.029323056300265236
+      },
+      "Asia Mid": {
+        "return": -0.24303373140582965
+      },
+      "Asia Afternoon": {
+        "return": -2.675683622463983
+      },
+      "Tokyo Close": {
+        "return": 0.5869659041864539
+      },
+      "Pre-London": {
+        "return": -0.7980777482193484
+      },
+      "Frankfurt Open": {
+        "return": 0.060553633217999475
+      },
+      "London Open": {
+        "return": 0.15129246995763565
+      },
+      "London Morning": {
+        "return": 0.37981786007164553
+      },
+      "London Midday": {
+        "return": 0.0
+      },
+      "NY Pre-Open": {
+        "return": 0.07309627209013024
+      },
+      "NY Open": {
+        "return": 0.24061184153991674
+      },
+      "London-NY Overlap": {
+        "return": -0.08144020574367669
+      },
+      "NY AM": {
+        "return": 0.02144910128264894
+      },
+      "NY Lunch": {
+        "return": 0.32166752444673186
+      },
+      "NY PM": {
+        "return": -0.021375742807055256
+      },
+      "NY Close": {
+        "return": -0.17531856666382664
+      },
+      "Pre-Asia D2": {
+        "return": -0.42835724994645535
+      },
+      "Sydney Open D2": {
+        "return": 0.36567003656701347
+      },
+      "Tokyo Open D2": {
+        "return": 0.06858122588941132
+      },
+      "Asia Mid D2": {
+        "return": -0.3212541763042919
+      },
+      "24h_aggregate": {
+        "return": -2.1221380436147474
+      }
+    }
+  },
+  {
+    "date": "2020-10-19",
+    "gdp_yoy": 4.9,
+    "consensus_yoy": 5.5,
+    "prev_yoy": 3.2,
+    "retail_yoy": 3.3,
+    "industrial_yoy": 6.9,
+    "quarter": "Q3",
+    "signal": "BIG_MISS",
+    "level": "SLOWING",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "CRISIS",
+    "returns": {
+      "Release Spike": {
+        "return": -0.21286219833435635
+      },
+      "Tokyo Open": {
+        "return": -0.050662613657573456
+      },
+      "Asia Mid": {
+        "return": -0.28812293245117493
+      },
+      "Asia Afternoon": {
+        "return": 0.3692208904109577
+      },
+      "Tokyo Close": {
+        "return": -0.05864477261821466
+      },
+      "Pre-London": {
+        "return": 0.28539421743305055
+      },
+      "Frankfurt Open": {
+        "return": -0.03191574243995972
+      },
+      "London Open": {
+        "return": 0.02394444887859499
+      },
+      "London Morning": {
+        "return": 0.6011277795510288
+      },
+      "London Midday": {
+        "return": 0.39130664692505984
+      },
+      "NY Pre-Open": {
+        "return": 0.6478799051883162
+      },
+      "NY Open": {
+        "return": -0.42128951224618316
+      },
+      "London-NY Overlap": {
+        "return": -0.420444094074372
+      },
+      "NY AM": {
+        "return": -0.3113867264810679
+      },
+      "NY Lunch": {
+        "return": 0.43147947163617956
+      },
+      "NY PM": {
+        "return": -0.28993147074326986
+      },
+      "NY Close": {
+        "return": 0.20882897171556003
+      },
+      "Pre-Asia D2": {
+        "return": -0.07386108839588824
+      },
+      "Sydney Open D2": {
+        "return": -0.24814550830231452
+      },
+      "Tokyo Open D2": {
+        "return": 0.1693704183978581
+      },
+      "Asia Mid D2": {
+        "return": -0.9828009828009749
+      },
+      "24h_aggregate": {
+        "return": 0.7769470239203938
+      }
+    }
+  },
+  {
+    "date": "2021-01-18",
+    "gdp_yoy": 6.5,
+    "consensus_yoy": 6.5,
+    "prev_yoy": 4.9,
+    "retail_yoy": 4.6,
+    "industrial_yoy": 7.3,
+    "quarter": "Q4",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": 0.037129112452784385
+      },
+      "Tokyo Open": {
+        "return": -1.2248059513627831
+      },
+      "Asia Mid": {
+        "return": -1.7529815389642243
+      },
+      "Asia Afternoon": {
+        "return": 1.05841661539485
+      },
+      "Tokyo Close": {
+        "return": 0.30194081301883824
+      },
+      "Pre-London": {
+        "return": 1.131945469757366
+      },
+      "Frankfurt Open": {
+        "return": -0.7104968611611263
+      },
+      "London Open": {
+        "return": -0.7662271888121117
+      },
+      "London Morning": {
+        "return": 2.343595653605534
+      },
+      "London Midday": {
+        "return": -0.04986849196070772
+      },
+      "NY Pre-Open": {
+        "return": -0.69609302699876
+      },
+      "NY Open": {
+        "return": -1.1393841166936747
+      },
+      "London-NY Overlap": {
+        "return": 0.9049625391412661
+      },
+      "NY AM": {
+        "return": 0.7205641033972843
+      },
+      "NY Lunch": {
+        "return": 1.3227406541113917
+      },
+      "NY PM": {
+        "return": 5.27601990049751
+      },
+      "NY Close": {
+        "return": 1.133433646117669
+      },
+      "Pre-Asia D2": {
+        "return": -1.6971708834260457
+      },
+      "Sydney Open D2": {
+        "return": 1.1104181560974231
+      },
+      "Tokyo Open D2": {
+        "return": -0.039114801943703405
+      },
+      "Asia Mid D2": {
+        "return": 3.3373466777033567
+      },
+      "24h_aggregate": {
+        "return": 6.691311787686038
+      }
+    }
+  },
+  {
+    "date": "2021-04-16",
+    "gdp_yoy": 18.3,
+    "consensus_yoy": 18.5,
+    "prev_yoy": 6.5,
+    "retail_yoy": 34.2,
+    "industrial_yoy": 14.1,
+    "quarter": "Q1",
+    "signal": "MISS",
+    "level": "STRONG",
+    "wyckoff": "MARKUP",
+    "vol": "TREND",
+    "returns": {
+      "Release Spike": {
+        "return": -0.020307074825606754
+      },
+      "Tokyo Open": {
+        "return": -0.6993424747006068
+      },
+      "Asia Mid": {
+        "return": -1.8994373077401137
+      },
+      "Asia Afternoon": {
+        "return": -1.553959305154117
+      },
+      "Tokyo Close": {
+        "return": 1.188538205980062
+      },
+      "Pre-London": {
+        "return": -1.7015373755448135
+      },
+      "Frankfurt Open": {
+        "return": 0.22378463234189483
+      },
+      "London Open": {
+        "return": -1.2897205605452167
+      },
+      "London Morning": {
+        "return": 1.159708975506002
+      },
+      "London Midday": {
+        "return": 0.13600106798385586
+      },
+      "NY Pre-Open": {
+        "return": 0.6628338124401055
+      },
+      "NY Open": {
+        "return": -0.095604272807411
+      },
+      "London-NY Overlap": {
+        "return": 0.315671734537466
+      },
+      "NY AM": {
+        "return": 0.5285936106247391
+      },
+      "NY Lunch": {
+        "return": -0.4239376910184431
+      },
+      "NY PM": {
+        "return": 2.4925742574257455
+      },
+      "NY Close": {
+        "return": -0.35501243751057243
+      },
+      "Pre-Asia D2": {
+        "return": -0.04241396025204909
+      },
+      "Sydney Open D2": {
+        "return": -0.12325473318381855
+      },
+      "Tokyo Open D2": {
+        "return": -0.1998786162249668
+      },
+      "Asia Mid D2": {
+        "return": -0.2270368448365298
+      },
+      "24h_aggregate": {
+        "return": -1.2984582550250106
+      }
+    }
+  },
+  {
+    "date": "2021-07-15",
+    "gdp_yoy": 7.9,
+    "consensus_yoy": 8.0,
+    "prev_yoy": 18.3,
+    "retail_yoy": 12.1,
+    "industrial_yoy": 8.3,
+    "quarter": "Q2",
+    "signal": "INLINE",
+    "level": "STRONG",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.7502610252075732
+      },
+      "Tokyo Open": {
+        "return": -0.7053366128814066
+      },
+      "Asia Mid": {
+        "return": -0.8516091275547067
+      },
+      "Asia Afternoon": {
+        "return": -0.45235975066785905
+      },
+      "Tokyo Close": {
+        "return": 0.18605982539001514
+      },
+      "Pre-London": {
+        "return": 0.3479591836734661
+      },
+      "Frankfurt Open": {
+        "return": 0.30912844083343444
+      },
+      "London Open": {
+        "return": -2.6640985351513087
+      },
+      "London Morning": {
+        "return": -0.8493287646979153
+      },
+      "London Midday": {
+        "return": 1.0483028103548808
+      },
+      "NY Pre-Open": {
+        "return": -0.8617508407008315
+      },
+      "NY Open": {
+        "return": -0.05085429980969101
+      },
+      "London-NY Overlap": {
+        "return": 0.11120203101067387
+      },
+      "NY AM": {
+        "return": 0.67747411661148
+      },
+      "NY Lunch": {
+        "return": -0.9877751120224418
+      },
+      "NY PM": {
+        "return": 1.0186543040509701
+      },
+      "NY Close": {
+        "return": 1.6769950413395038
+      },
+      "Pre-Asia D2": {
+        "return": -0.621763248930458
+      },
+      "Sydney Open D2": {
+        "return": -0.9341029985015268
+      },
+      "Tokyo Open D2": {
+        "return": -0.42727268001850616
+      },
+      "Asia Mid D2": {
+        "return": -2.5829892305845026
+      },
+      "24h_aggregate": {
+        "return": -2.9836424203251624
+      }
+    }
+  },
+  {
+    "date": "2021-10-18",
+    "gdp_yoy": 4.9,
+    "consensus_yoy": 5.0,
+    "prev_yoy": 7.9,
+    "retail_yoy": 4.4,
+    "industrial_yoy": 3.1,
+    "quarter": "Q3",
+    "signal": "INLINE",
+    "level": "SLOWING",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.1781734893341241
+      },
+      "Tokyo Open": {
+        "return": -0.1210638094227956
+      },
+      "Asia Mid": {
+        "return": 0.1393403348829892
+      },
+      "Asia Afternoon": {
+        "return": 0.03129501891926238
+      },
+      "Tokyo Close": {
+        "return": -1.150313886504426
+      },
+      "Pre-London": {
+        "return": 0.22625322051188393
+      },
+      "Frankfurt Open": {
+        "return": -1.3722010543347873
+      },
+      "London Open": {
+        "return": 0.11933679436498057
+      },
+      "London Morning": {
+        "return": -1.8066828235629953
+      },
+      "London Midday": {
+        "return": 1.4038978621241036
+      },
+      "NY Pre-Open": {
+        "return": -0.9961433618312315
+      },
+      "NY Open": {
+        "return": -0.001072386058980258
+      },
+      "London-NY Overlap": {
+        "return": -0.5546976375081785
+      },
+      "NY AM": {
+        "return": 0.6265383754755043
+      },
+      "NY Lunch": {
+        "return": 0.5465491050258308
+      },
+      "NY PM": {
+        "return": 0.9965600027711854
+      },
+      "NY Close": {
+        "return": 0.5163166073487436
+      },
+      "Pre-Asia D2": {
+        "return": 0.2708746732180465
+      },
+      "Sydney Open D2": {
+        "return": -0.40102612428667894
+      },
+      "Tokyo Open D2": {
+        "return": -0.48385231597317935
+      },
+      "Asia Mid D2": {
+        "return": -0.09111388707687683
+      },
+      "24h_aggregate": {
+        "return": -1.8770189767677277
+      }
+    }
+  },
+  {
+    "date": "2022-01-17",
+    "gdp_yoy": 4.0,
+    "consensus_yoy": 4.0,
+    "prev_yoy": 4.9,
+    "retail_yoy": 1.7,
+    "industrial_yoy": 4.3,
+    "quarter": "Q4",
+    "signal": "INLINE",
+    "level": "SLOWING",
+    "wyckoff": "MARKDOWN",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.17348749079762005
+      },
+      "Tokyo Open": {
+        "return": 0.05150431762803149
+      },
+      "Asia Mid": {
+        "return": -2.3378750203201952
+      },
+      "Asia Afternoon": {
+        "return": 1.4136170842375262
+      },
+      "Tokyo Close": {
+        "return": -0.5313037610713618
+      },
+      "Pre-London": {
+        "return": 0.1763156447285589
+      },
+      "Frankfurt Open": {
+        "return": -0.11957380479576589
+      },
+      "London Open": {
+        "return": -0.17743762960429105
+      },
+      "London Morning": {
+        "return": -0.007954524594770926
+      },
+      "London Midday": {
+        "return": -1.0360062662162863
+      },
+      "NY Pre-Open": {
+        "return": -0.10264464547405637
+      },
+      "NY Open": {
+        "return": -1.2039094561052783
+      },
+      "London-NY Overlap": {
+        "return": 0.9491767536275526
+      },
+      "NY AM": {
+        "return": -2.1616488856616165
+      },
+      "NY Lunch": {
+        "return": 1.8709877952855731
+      },
+      "NY PM": {
+        "return": 0.3051182021688357
+      },
+      "NY Close": {
+        "return": -0.27811662895330796
+      },
+      "Pre-Asia D2": {
+        "return": -0.9960438383794367
+      },
+      "Sydney Open D2": {
+        "return": 0.149966516909746
+      },
+      "Tokyo Open D2": {
+        "return": 0.25804588319499105
+      },
+      "Asia Mid D2": {
+        "return": -1.4760309359050592
+      },
+      "24h_aggregate": {
+        "return": -3.10889583509335
+      }
+    }
+  },
+  {
+    "date": "2022-04-18",
+    "gdp_yoy": 4.8,
+    "consensus_yoy": 4.4,
+    "prev_yoy": 4.0,
+    "retail_yoy": -3.5,
+    "industrial_yoy": 5.0,
+    "quarter": "Q1",
+    "signal": "BEAT",
+    "level": "SLOWING",
+    "wyckoff": "MARKDOWN",
+    "vol": "CRISIS",
+    "returns": {
+      "Release Spike": {
+        "return": 0.053176190444343775
+      },
+      "Tokyo Open": {
+        "return": 0.13604532615779616
+      },
+      "Asia Mid": {
+        "return": -2.6350927322980655
+      },
+      "Asia Afternoon": {
+        "return": -0.011656689911482714
+      },
+      "Tokyo Close": {
+        "return": -0.6895393013399942
+      },
+      "Pre-London": {
+        "return": 0.0693981694074991
+      },
+      "Frankfurt Open": {
+        "return": 0.5510050580677146
+      },
+      "London Open": {
+        "return": 0.1465183868565795
+      },
+      "London Morning": {
+        "return": 0.6187940710893635
+      },
+      "London Midday": {
+        "return": -0.3592541135447221
+      },
+      "NY Pre-Open": {
+        "return": -0.0553639840196421
+      },
+      "NY Open": {
+        "return": 2.049944092433852
+      },
+      "London-NY Overlap": {
+        "return": 0.6054777812774244
+      },
+      "NY AM": {
+        "return": 1.2063320777088435
+      },
+      "NY Lunch": {
+        "return": 0.5196283949439059
+      },
+      "NY PM": {
+        "return": 0.238336880013102
+      },
+      "NY Close": {
+        "return": -0.5215920151023343
+      },
+      "Pre-Asia D2": {
+        "return": -0.1382226731148705
+      },
+      "Sydney Open D2": {
+        "return": 0.060165702261965
+      },
+      "Tokyo Open D2": {
+        "return": -0.05947237163331983
+      },
+      "Asia Mid D2": {
+        "return": -0.2610451009659344
+      },
+      "24h_aggregate": {
+        "return": 1.9748767583259261
+      }
+    }
+  },
+  {
+    "date": "2022-07-15",
+    "gdp_yoy": 0.4,
+    "consensus_yoy": 1.0,
+    "prev_yoy": 4.8,
+    "retail_yoy": 3.1,
+    "industrial_yoy": 3.9,
+    "quarter": "Q2",
+    "signal": "BIG_MISS",
+    "level": "STAGNANT",
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.1953543579683244
+      },
+      "Tokyo Open": {
+        "return": -1.0835721541777728
+      },
+      "Asia Mid": {
+        "return": -0.3573545742220418
+      },
+      "Asia Afternoon": {
+        "return": 0.8530178228772873
+      },
+      "Tokyo Close": {
+        "return": 0.5159564303458849
+      },
+      "Pre-London": {
+        "return": 0.28682426847413023
+      },
+      "Frankfurt Open": {
+        "return": 0.39150395212936945
+      },
+      "London Open": {
+        "return": 0.6477726145711975
+      },
+      "London Morning": {
+        "return": 0.004078602833809539
+      },
+      "London Midday": {
+        "return": 0.3801102809226936
+      },
+      "NY Pre-Open": {
+        "return": -1.7023939152622107
+      },
+      "NY Open": {
+        "return": 1.069713227574448
+      },
+      "London-NY Overlap": {
+        "return": 2.688510645258923
+      },
+      "NY AM": {
+        "return": -0.4141842163953265
+      },
+      "NY Lunch": {
+        "return": -1.1245481012253211
+      },
+      "NY PM": {
+        "return": -1.2934590930416923
+      },
+      "NY Close": {
+        "return": 0.0860493513517906
+      },
+      "Pre-Asia D2": {
+        "return": 0.1211843311935034
+      },
+      "Sydney Open D2": {
+        "return": -1.2095587032614712
+      },
+      "Tokyo Open D2": {
+        "return": -0.4271629262316185
+      },
+      "Asia Mid D2": {
+        "return": -0.6451559265386878
+      },
+      "24h_aggregate": {
+        "return": 0.21596135775399286
+      }
+    }
+  },
+  {
+    "date": "2022-10-24",
+    "gdp_yoy": 3.9,
+    "consensus_yoy": 3.4,
+    "prev_yoy": 0.4,
+    "retail_yoy": 2.5,
+    "industrial_yoy": 6.3,
+    "quarter": "Q3",
+    "signal": "STRONG_BEAT",
+    "level": "WEAK",
+    "wyckoff": "MARKUP",
+    "vol": "CRISIS",
+    "returns": {
+      "Release Spike": {
+        "return": 0.023598820058992356
+      },
+      "Tokyo Open": {
+        "return": -0.8316621446266348
+      },
+      "Asia Mid": {
+        "return": -0.10259917920655756
+      },
+      "Asia Afternoon": {
+        "return": -0.19871098343331442
+      },
+      "Tokyo Close": {
+        "return": -0.2199867262246583
+      },
+      "Pre-London": {
+        "return": -0.08893605572330084
+      },
+      "Frankfurt Open": {
+        "return": 0.7510191868945799
+      },
+      "London Open": {
+        "return": 0.10839786471054125
+      },
+      "London Morning": {
+        "return": -0.26254310824340593
+      },
+      "London Midday": {
+        "return": -0.5896743777931334
+      },
+      "NY Pre-Open": {
+        "return": -0.016456226437677822
+      },
+      "NY Open": {
+        "return": -0.017955201771580588
+      },
+      "London-NY Overlap": {
+        "return": 0.9345864324089739
+      },
+      "NY AM": {
+        "return": -0.3158105433275749
+      },
+      "NY Lunch": {
+        "return": -0.02974751794147852
+      },
+      "NY PM": {
+        "return": -0.3734424400223159
+      },
+      "NY Close": {
+        "return": 0.3419875600158246
+      },
+      "Pre-Asia D2": {
+        "return": 0.0662296009108505
+      },
+      "Sydney Open D2": {
+        "return": 0.2669740462556643
+      },
+      "Tokyo Open D2": {
+        "return": -0.09567674610061365
+      },
+      "Asia Mid D2": {
+        "return": -0.11210096510764596
+      },
+      "24h_aggregate": {
+        "return": -1.358407079646023
+      }
+    }
+  },
+  {
+    "date": "2023-01-17",
+    "gdp_yoy": 3.0,
+    "consensus_yoy": 2.8,
+    "prev_yoy": 3.9,
+    "retail_yoy": -1.8,
+    "industrial_yoy": 1.3,
+    "quarter": "Q4",
+    "signal": "BEAT",
+    "level": "WEAK",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.05014561515168873
+      },
+      "Tokyo Open": {
+        "return": 0.15293172690763754
+      },
+      "Asia Mid": {
+        "return": 0.6415890878527938
+      },
+      "Asia Afternoon": {
+        "return": -0.28049954418824646
+      },
+      "Tokyo Close": {
+        "return": 0.1310548960191247
+      },
+      "Pre-London": {
+        "return": 0.010215287177265997
+      },
+      "Frankfurt Open": {
+        "return": -0.11491024233293036
+      },
+      "London Open": {
+        "return": -0.11632068718683938
+      },
+      "London Morning": {
+        "return": 0.3551272699351144
+      },
+      "London Midday": {
+        "return": 0.5961603448166017
+      },
+      "NY Pre-Open": {
+        "return": -0.09760920822452422
+      },
+      "NY Open": {
+        "return": 0.03299115583245453
+      },
+      "London-NY Overlap": {
+        "return": 0.8092852159573788
+      },
+      "NY AM": {
+        "return": -0.7291784631258507
+      },
+      "NY Lunch": {
+        "return": -0.5507424566028778
+      },
+      "NY PM": {
+        "return": 0.36898252590524755
+      },
+      "NY Close": {
+        "return": 0.9574785551470776
+      },
+      "Pre-Asia D2": {
+        "return": -0.14653627244425818
+      },
+      "Sydney Open D2": {
+        "return": -0.21225404983247162
+      },
+      "Tokyo Open D2": {
+        "return": -0.049231546059896665
+      },
+      "Asia Mid D2": {
+        "return": -0.30311258738167274
+      },
+      "24h_aggregate": {
+        "return": 1.3738612766559233
+      }
+    }
+  },
+  {
+    "date": "2023-04-18",
+    "gdp_yoy": 4.5,
+    "consensus_yoy": 4.0,
+    "prev_yoy": 3.0,
+    "retail_yoy": 10.6,
+    "industrial_yoy": 3.9,
+    "quarter": "Q1",
+    "signal": "STRONG_BEAT",
+    "level": "SLOWING",
+    "wyckoff": "ACCUMULATION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.14222282218289461
+      },
+      "Tokyo Open": {
+        "return": 0.17090642993318675
+      },
+      "Asia Mid": {
+        "return": 0.26289103238797334
+      },
+      "Asia Afternoon": {
+        "return": 0.8594656261684175
+      },
+      "Tokyo Close": {
+        "return": -0.1634895514017829
+      },
+      "Pre-London": {
+        "return": -0.21421736874425779
+      },
+      "Frankfurt Open": {
+        "return": 0.3969143724029877
+      },
+      "London Open": {
+        "return": -0.008553141141076285
+      },
+      "London Morning": {
+        "return": 0.1691765947032493
+      },
+      "London Midday": {
+        "return": -0.6874237974827567
+      },
+      "NY Pre-Open": {
+        "return": 0.18200231205036568
+      },
+      "NY Open": {
+        "return": -1.1062421621312457
+      },
+      "London-NY Overlap": {
+        "return": 0.32497745890772073
+      },
+      "NY AM": {
+        "return": 0.4868483657178062
+      },
+      "NY Lunch": {
+        "return": 0.6882335498311638
+      },
+      "NY PM": {
+        "return": -0.2636266476665565
+      },
+      "NY Close": {
+        "return": -0.32337953040910433
+      },
+      "Pre-Asia D2": {
+        "return": -0.2312569580153801
+      },
+      "Sydney Open D2": {
+        "return": -0.12691145411792185
+      },
+      "Tokyo Open D2": {
+        "return": -0.8952633042744422
+      },
+      "Asia Mid D2": {
+        "return": -3.730978589572996
+      },
+      "24h_aggregate": {
+        "return": 0.8340524826319506
+      }
+    }
+  },
+  {
+    "date": "2023-07-17",
+    "gdp_yoy": 6.3,
+    "consensus_yoy": 7.1,
+    "prev_yoy": 4.5,
+    "retail_yoy": 3.1,
+    "industrial_yoy": 4.4,
+    "quarter": "Q2",
+    "signal": "BIG_MISS",
+    "level": "STRONG",
+    "wyckoff": "MARKDOWN",
+    "vol": "CRISIS",
+    "returns": {
+      "Release Spike": {
+        "return": 0.04934500992094646
+      },
+      "Tokyo Open": {
+        "return": 0.03218822845334996
+      },
+      "Asia Mid": {
+        "return": 0.4536041810472345
+      },
+      "Asia Afternoon": {
+        "return": -0.24386085464963228
+      },
+      "Tokyo Close": {
+        "return": -0.07354426380637377
+      },
+      "Pre-London": {
+        "return": -0.3166804015777073
+      },
+      "Frankfurt Open": {
+        "return": -0.39879788694314255
+      },
+      "London Open": {
+        "return": 0.13990321620789534
+      },
+      "London Morning": {
+        "return": -0.3826324486912781
+      },
+      "London Midday": {
+        "return": -0.0010465998587080672
+      },
+      "NY Pre-Open": {
+        "return": -0.48824394404819405
+      },
+      "NY Open": {
+        "return": -0.4706562894404616
+      },
+      "London-NY Overlap": {
+        "return": -0.368795075687529
+      },
+      "NY AM": {
+        "return": 1.4954896668027713
+      },
+      "NY Lunch": {
+        "return": -0.14159791417388898
+      },
+      "NY PM": {
+        "return": 0.15174030431778937
+      },
+      "NY Close": {
+        "return": -0.1870369789870708
+      },
+      "Pre-Asia D2": {
+        "return": -0.1062560194296707
+      },
+      "Sydney Open D2": {
+        "return": -0.10479708664099137
+      },
+      "Tokyo Open D2": {
+        "return": -0.2171575441265231
+      },
+      "Asia Mid D2": {
+        "return": -0.12353401916616688
+      },
+      "24h_aggregate": {
+        "return": -0.6352520750875233
+      }
+    }
+  },
+  {
+    "date": "2023-10-18",
+    "gdp_yoy": 4.9,
+    "consensus_yoy": 4.5,
+    "prev_yoy": 6.3,
+    "retail_yoy": 5.5,
+    "industrial_yoy": 4.5,
+    "quarter": "Q3",
+    "signal": "BEAT",
+    "level": "SLOWING",
+    "wyckoff": "ACCUMULATION",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": 0.16211489733786683
+      },
+      "Tokyo Open": {
+        "return": -0.30713744081868927
+      },
+      "Asia Mid": {
+        "return": 0.40651705645856534
+      },
+      "Asia Afternoon": {
+        "return": -0.0490174234659763
+      },
+      "Tokyo Close": {
+        "return": 0.1267435195210502
+      },
+      "Pre-London": {
+        "return": 0.3460361684127534
+      },
+      "Frankfurt Open": {
+        "return": 0.0025356094654278285
+      },
+      "London Open": {
+        "return": 0.09001185367369263
+      },
+      "London Morning": {
+        "return": -0.11399692208310086
+      },
+      "London Midday": {
+        "return": -0.2999004558740556
+      },
+      "NY Pre-Open": {
+        "return": -0.07694949315086147
+      },
+      "NY Open": {
+        "return": -0.015274463007160483
+      },
+      "London-NY Overlap": {
+        "return": -0.3583681835252405
+      },
+      "NY AM": {
+        "return": -0.31110656837318207
+      },
+      "NY Lunch": {
+        "return": 0.17942852016327704
+      },
+      "NY PM": {
+        "return": -1.1219783664148484
+      },
+      "NY Close": {
+        "return": 0.27300309877925094
+      },
+      "Pre-Asia D2": {
+        "return": 0.13742024142090475
+      },
+      "Sydney Open D2": {
+        "return": -0.06120660773650351
+      },
+      "Tokyo Open D2": {
+        "return": -0.12313286100170076
+      },
+      "Asia Mid D2": {
+        "return": -0.2549604327227222
+      },
+      "24h_aggregate": {
+        "return": -1.0888504521984406
+      }
+    }
+  },
+  {
+    "date": "2024-01-17",
+    "gdp_yoy": 5.2,
+    "consensus_yoy": 5.3,
+    "prev_yoy": 4.9,
+    "retail_yoy": 7.4,
+    "industrial_yoy": 6.8,
+    "quarter": "Q4",
+    "signal": "INLINE",
+    "level": "MODERATE",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.04189082784808862
+      },
+      "Tokyo Open": {
+        "return": -0.04966919539784638
+      },
+      "Asia Mid": {
+        "return": -0.30864557006253734
+      },
+      "Asia Afternoon": {
+        "return": -0.25702736173097657
+      },
+      "Tokyo Close": {
+        "return": -0.7636985499098066
+      },
+      "Pre-London": {
+        "return": 0.3159352549121519
+      },
+      "Frankfurt Open": {
+        "return": -0.23218508916770558
+      },
+      "London Open": {
+        "return": 0.07587163933845577
+      },
+      "London Morning": {
+        "return": 0.03456809521939385
+      },
+      "London Midday": {
+        "return": 0.5799935599902608
+      },
+      "NY Pre-Open": {
+        "return": -1.2243543443887064
+      },
+      "NY Open": {
+        "return": -0.21699690512609862
+      },
+      "London-NY Overlap": {
+        "return": 0.3545256486432885
+      },
+      "NY AM": {
+        "return": -0.1373620951666707
+      },
+      "NY Lunch": {
+        "return": -0.10158223220037033
+      },
+      "NY PM": {
+        "return": -0.5143625860568173
+      },
+      "NY Close": {
+        "return": 0.5758829144129819
+      },
+      "Pre-Asia D2": {
+        "return": -0.045079244566777685
+      },
+      "Sydney Open D2": {
+        "return": 0.2713886713032245
+      },
+      "Tokyo Open D2": {
+        "return": 0.051684683973800424
+      },
+      "Asia Mid D2": {
+        "return": 0.48463865042528975
+      },
+      "24h_aggregate": {
+        "return": -2.016190029207217
+      }
+    }
+  },
+  {
+    "date": "2024-04-16",
+    "gdp_yoy": 5.3,
+    "consensus_yoy": 5.0,
+    "prev_yoy": 5.2,
+    "retail_yoy": 3.1,
+    "industrial_yoy": 4.5,
+    "quarter": "Q1",
+    "signal": "BEAT",
+    "level": "MODERATE",
+    "wyckoff": "MARKDOWN",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.6316610345723959
+      },
+      "Tokyo Open": {
+        "return": 1.2242655714547328
+      },
+      "Asia Mid": {
+        "return": -1.9427574622044153
+      },
+      "Asia Afternoon": {
+        "return": 1.661692132329204
+      },
+      "Tokyo Close": {
+        "return": 0.24822580122492158
+      },
+      "Pre-London": {
+        "return": -0.2518134447044817
+      },
+      "Frankfurt Open": {
+        "return": -0.29911496968341833
+      },
+      "London Open": {
+        "return": -0.4995871986062229
+      },
+      "London Morning": {
+        "return": 0.5615499955899232
+      },
+      "London Midday": {
+        "return": -1.5823360490650875
+      },
+      "NY Pre-Open": {
+        "return": 0.014853200864780357
+      },
+      "NY Open": {
+        "return": 0.8659780205273832
+      },
+      "London-NY Overlap": {
+        "return": 0.2951242335604017
+      },
+      "NY AM": {
+        "return": 0.87591669493958
+      },
+      "NY Lunch": {
+        "return": -0.0860226181274834
+      },
+      "NY PM": {
+        "return": -0.15665711835057355
+      },
+      "NY Close": {
+        "return": 0.2428105073086216
+      },
+      "Pre-Asia D2": {
+        "return": 0.685596015781653
+      },
+      "Sydney Open D2": {
+        "return": -0.7027686773302534
+      },
+      "Tokyo Open D2": {
+        "return": -0.44411810371597205
+      },
+      "Asia Mid D2": {
+        "return": 0.04613700089999879
+      },
+      "24h_aggregate": {
+        "return": 0.5325578372757952
+      }
+    }
+  },
+  {
+    "date": "2024-07-15",
+    "gdp_yoy": 4.7,
+    "consensus_yoy": 5.1,
+    "prev_yoy": 5.3,
+    "retail_yoy": 2.0,
+    "industrial_yoy": 5.3,
+    "quarter": "Q2",
+    "signal": "MISS",
+    "level": "SLOWING",
+    "wyckoff": "MARKUP",
+    "vol": "CRISIS",
+    "returns": {
+      "Release Spike": {
+        "return": 0.6442980838684667
+      },
+      "Tokyo Open": {
+        "return": 0.5856648386090656
+      },
+      "Asia Mid": {
+        "return": 0.3615760017100276
+      },
+      "Asia Afternoon": {
+        "return": 0.6083549817313578
+      },
+      "Tokyo Close": {
+        "return": 0.16488464038450457
+      },
+      "Pre-London": {
+        "return": -0.45841655776793083
+      },
+      "Frankfurt Open": {
+        "return": 0.030502483560071552
+      },
+      "London Open": {
+        "return": -0.2675627277646486
+      },
+      "London Morning": {
+        "return": 0.41126358638634364
+      },
+      "London Midday": {
+        "return": 0.5254076387105991
+      },
+      "NY Pre-Open": {
+        "return": 0.7266777138309249
+      },
+      "NY Open": {
+        "return": -0.19428925217800583
+      },
+      "London-NY Overlap": {
+        "return": 0.3137129792098654
+      },
+      "NY AM": {
+        "return": 1.6870443007408968
+      },
+      "NY Lunch": {
+        "return": 0.9330557140250785
+      },
+      "NY PM": {
+        "return": -0.24157985189605966
+      },
+      "NY Close": {
+        "return": -0.30946485014250236
+      },
+      "Pre-Asia D2": {
+        "return": -0.14684626724867061
+      },
+      "Sydney Open D2": {
+        "return": -1.132292437130179
+      },
+      "Tokyo Open D2": {
+        "return": -0.3176569947368851
+      },
+      "Asia Mid D2": {
+        "return": -0.8871142694646169
+      },
+      "24h_aggregate": {
+        "return": 5.694753877522405
+      }
+    }
+  },
+  {
+    "date": "2024-10-18",
+    "gdp_yoy": 4.6,
+    "consensus_yoy": 4.5,
+    "prev_yoy": 4.7,
+    "retail_yoy": 3.2,
+    "industrial_yoy": 5.4,
+    "quarter": "Q3",
+    "signal": "INLINE",
+    "level": "SLOWING",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.012537946284413128
+      },
+      "Tokyo Open": {
+        "return": -0.35642631322955887
+      },
+      "Asia Mid": {
+        "return": -0.1262250695954086
+      },
+      "Asia Afternoon": {
+        "return": 0.26880591373011803
+      },
+      "Tokyo Close": {
+        "return": 0.4051743506357457
+      },
+      "Pre-London": {
+        "return": -0.04247782240477158
+      },
+      "Frankfurt Open": {
+        "return": -0.3756331695471568
+      },
+      "London Open": {
+        "return": 0.23803629577437965
+      },
+      "London Morning": {
+        "return": -0.48672062008434763
+      },
+      "London Midday": {
+        "return": 0.9167306201772282
+      },
+      "NY Pre-Open": {
+        "return": 0.17706481026068976
+      },
+      "NY Open": {
+        "return": 0.1491815785299314
+      },
+      "London-NY Overlap": {
+        "return": 0.5392705893888209
+      },
+      "NY AM": {
+        "return": -1.043874224971226
+      },
+      "NY Lunch": {
+        "return": 0.16526419528466862
+      },
+      "NY PM": {
+        "return": -0.006433155727781878
+      },
+      "NY Close": {
+        "return": 0.6376802818660345
+      },
+      "Pre-Asia D2": {
+        "return": -0.4546411756742412
+      },
+      "Sydney Open D2": {
+        "return": -0.05477589105265183
+      },
+      "Tokyo Open D2": {
+        "return": -0.181426465585657
+      },
+      "Asia Mid D2": {
+        "return": 0.26316785944185006
+      },
+      "24h_aggregate": {
+        "return": 0.2659564363357282
+      }
+    }
+  },
+  {
+    "date": "2025-01-17",
+    "gdp_yoy": 5.4,
+    "consensus_yoy": 5.0,
+    "prev_yoy": 4.6,
+    "retail_yoy": 3.7,
+    "industrial_yoy": 6.2,
+    "quarter": "Q4",
+    "signal": "BEAT",
+    "level": "MODERATE",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.1512506240565267
+      },
+      "Tokyo Open": {
+        "return": -0.6023190167038837
+      },
+      "Asia Mid": {
+        "return": 0.08872903813568826
+      },
+      "Asia Afternoon": {
+        "return": -0.04447343453510436
+      },
+      "Tokyo Close": {
+        "return": 0.24085664283807107
+      },
+      "Pre-London": {
+        "return": 0.9649584840002168
+      },
+      "Frankfurt Open": {
+        "return": 0.6802402089078813
+      },
+      "London Open": {
+        "return": -0.4878843981788686
+      },
+      "London Morning": {
+        "return": -0.08307785916548131
+      },
+      "London Midday": {
+        "return": 0.9763909545502427
+      },
+      "NY Pre-Open": {
+        "return": -0.20846682652021606
+      },
+      "NY Open": {
+        "return": -0.7002150037771039
+      },
+      "London-NY Overlap": {
+        "return": 0.3013722678994699
+      },
+      "NY AM": {
+        "return": 1.5000000000000022
+      },
+      "NY Lunch": {
+        "return": -0.0270159969190283
+      },
+      "NY PM": {
+        "return": -0.474632598146323
+      },
+      "NY Close": {
+        "return": -0.4309684948165241
+      },
+      "Pre-Asia D2": {
+        "return": -3.1513903192584993
+      },
+      "Sydney Open D2": {
+        "return": -0.6808610061046848
+      },
+      "Tokyo Open D2": {
+        "return": -0.8827725149214788
+      },
+      "Asia Mid D2": {
+        "return": -0.0991960857102932
+      },
+      "24h_aggregate": {
+        "return": 2.5251764344437855
+      }
+    }
+  },
+  {
+    "date": "2025-04-16",
+    "gdp_yoy": 5.4,
+    "consensus_yoy": 5.2,
+    "prev_yoy": 5.4,
+    "retail_yoy": 5.9,
+    "industrial_yoy": 7.7,
+    "quarter": "Q1",
+    "signal": "BEAT",
+    "level": "MODERATE",
+    "wyckoff": "ACCUMULATION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.16605177569277185
+      },
+      "Tokyo Open": {
+        "return": 0.03251524151946111
+      },
+      "Asia Mid": {
+        "return": -0.573207398563548
+      },
+      "Asia Afternoon": {
+        "return": -1.061234754180805
+      },
+      "Tokyo Close": {
+        "return": -0.9537910174618096
+      },
+      "Pre-London": {
+        "return": 1.1945775673473507
+      },
+      "Frankfurt Open": {
+        "return": -0.25359309719589435
+      },
+      "London Open": {
+        "return": 0.6489420528433346
+      },
+      "London Morning": {
+        "return": -0.39215933920204327
+      },
+      "London Midday": {
+        "return": 0.8634844959520277
+      },
+      "NY Pre-Open": {
+        "return": -0.5455859706464731
+      },
+      "NY Open": {
+        "return": -0.8614206172145008
+      },
+      "London-NY Overlap": {
+        "return": -0.1300489596083353
+      },
+      "NY AM": {
+        "return": 1.2868632707774852
+      },
+      "NY Lunch": {
+        "return": -0.628324384279918
+      },
+      "NY PM": {
+        "return": 0.5479486805471939
+      },
+      "NY Close": {
+        "return": 0.28572690058848216
+      },
+      "Pre-Asia D2": {
+        "return": 0.2641575888701631
+      },
+      "Sydney Open D2": {
+        "return": 0.4673307572640022
+      },
+      "Tokyo Open D2": {
+        "return": -0.07867083746979545
+      },
+      "Asia Mid D2": {
+        "return": -0.3230543318648949
+      },
+      "24h_aggregate": {
+        "return": -1.0456267830277606
+      }
+    }
+  },
+  {
+    "date": "2025-07-15",
+    "gdp_yoy": 5.2,
+    "consensus_yoy": 5.1,
+    "prev_yoy": 5.4,
+    "retail_yoy": 4.8,
+    "industrial_yoy": 6.8,
+    "quarter": "Q2",
+    "signal": "BEAT",
+    "level": "MODERATE",
+    "wyckoff": "MARKDOWN",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.554873013635165
+      },
+      "Tokyo Open": {
+        "return": -0.5394038203832541
+      },
+      "Asia Mid": {
+        "return": 0.7761619521134849
+      },
+      "Asia Afternoon": {
+        "return": 0.5216506927278655
+      },
+      "Tokyo Close": {
+        "return": -0.5326793772676441
+      },
+      "Pre-London": {
+        "return": 0.5863907497785408
+      },
+      "Frankfurt Open": {
+        "return": -0.45572960266808177
+      },
+      "London Open": {
+        "return": 0.03666564630770704
+      },
+      "London Morning": {
+        "return": 1.5841151350079063
+      },
+      "London Midday": {
+        "return": -1.009927143571197
+      },
+      "NY Pre-Open": {
+        "return": 2.3464303628155854
+      },
+      "NY Open": {
+        "return": 0.9491385873027712
+      },
+      "London-NY Overlap": {
+        "return": -0.2825498750695862
+      },
+      "NY AM": {
+        "return": -0.2680956445817664
+      },
+      "NY Lunch": {
+        "return": 2.0223058973616257
+      },
+      "NY PM": {
+        "return": 0.029666301951924354
+      },
+      "NY Close": {
+        "return": -0.9566936666879265
+      },
+      "Pre-Asia D2": {
+        "return": 1.066069933672473
+      },
+      "Sydney Open D2": {
+        "return": -0.20771541713524702
+      },
+      "Tokyo Open D2": {
+        "return": 0.7700190589294548
+      },
+      "Asia Mid D2": {
+        "return": 0.44511184821209904
+      },
+      "24h_aggregate": {
+        "return": 5.1623666525682586
+      }
+    }
+  },
+  {
+    "date": "2025-10-20",
+    "gdp_yoy": 4.8,
+    "consensus_yoy": 4.9,
+    "prev_yoy": 5.2,
+    "retail_yoy": 3.0,
+    "industrial_yoy": 5.2,
+    "quarter": "Q3",
+    "signal": "MISS",
+    "level": "SLOWING",
+    "wyckoff": "MARKDOWN",
+    "vol": "TREND",
+    "returns": {
+      "Release Spike": {
+        "return": 0.4704420831827143
+      },
+      "Tokyo Open": {
+        "return": 0.2564167532368902
+      },
+      "Asia Mid": {
+        "return": 2.4592981232403783
+      },
+      "Asia Afternoon": {
+        "return": 0.4698911973715625
+      },
+      "Tokyo Close": {
+        "return": -0.6245734291143543
+      },
+      "Pre-London": {
+        "return": 0.0032116687336664197
+      },
+      "Frankfurt Open": {
+        "return": -0.052126179941541416
+      },
+      "London Open": {
+        "return": -0.7350905639484357
+      },
+      "London Morning": {
+        "return": 0.34810583612631457
+      },
+      "London Midday": {
+        "return": -0.15334987593051702
+      },
+      "NY Pre-Open": {
+        "return": -2.1631186285668833
+      },
+      "NY Open": {
+        "return": 0.41480600897179737
+      },
+      "London-NY Overlap": {
+        "return": 0.37135318774331694
+      },
+      "NY AM": {
+        "return": 0.44054750881473104
+      },
+      "NY Lunch": {
+        "return": -0.09735852276006668
+      },
+      "NY PM": {
+        "return": -0.5799482090425628
+      },
+      "NY Close": {
+        "return": -0.6229947199555443
+      },
+      "Pre-Asia D2": {
+        "return": -1.9709480277808784
+      },
+      "Sydney Open D2": {
+        "return": 0.20020175772993506
+      },
+      "Tokyo Open D2": {
+        "return": 0.29944381610992626
+      },
+      "Asia Mid D2": {
+        "return": -0.23791092532384409
+      },
+      "24h_aggregate": {
+        "return": 0.24311265662310622
+      }
+    }
+  },
+  {
+    "date": "2026-01-19",
+    "gdp_yoy": 5.0,
+    "consensus_yoy": 4.9,
+    "prev_yoy": 4.8,
+    "retail_yoy": 3.5,
+    "industrial_yoy": 5.8,
+    "quarter": "Q4",
+    "signal": "INLINE",
+    "level": "MODERATE",
+    "wyckoff": "MARKDOWN",
+    "vol": "CRISIS",
+    "returns": {
+      "Release Spike": {
+        "return": 0.32717523092884815
+      },
+      "Tokyo Open": {
+        "return": -0.09873574638929519
+      },
+      "Asia Mid": {
+        "return": -0.0894800182077773
+      },
+      "Asia Afternoon": {
+        "return": -0.1348083194208286
+      },
+      "Tokyo Close": {
+        "return": -0.07311974451836728
+      },
+      "Pre-London": {
+        "return": 0.38306508353945884
+      },
+      "Frankfurt Open": {
+        "return": -0.004984206296294071
+      },
+      "London Open": {
+        "return": 0.24610745238288373
+      },
+      "London Morning": {
+        "return": 0.12865613385209743
+      },
+      "London Midday": {
+        "return": -0.057727760845684616
+      },
+      "NY Pre-Open": {
+        "return": -0.043476100566420185
+      },
+      "NY Open": {
+        "return": -0.1606208602070385
+      },
+      "London-NY Overlap": {
+        "return": 0.21813610323655983
+      },
+      "NY AM": {
+        "return": -0.6815500217350748
+      },
+      "NY Lunch": {
+        "return": -0.24666656245603216
+      },
+      "NY PM": {
+        "return": 0.0006268099136250238
+      },
+      "NY Close": {
+        "return": -0.11721271914704981
+      },
+      "Pre-Asia D2": {
+        "return": -0.9482152718509903
+      },
+      "Sydney Open D2": {
+        "return": 0.2936499388625256
+      },
+      "Tokyo Open D2": {
+        "return": -1.4418415142968168
+      },
+      "Asia Mid D2": {
+        "return": -0.6668931304559595
+      },
+      "24h_aggregate": {
+        "return": -0.4624826569003577
+      }
+    }
+  },
+  {
+    "date": "2026-04-16",
+    "gdp_yoy": 5.4,
+    "consensus_yoy": 5.1,
+    "prev_yoy": 5.0,
+    "retail_yoy": 5.5,
+    "industrial_yoy": 7.2,
+    "quarter": "Q1",
+    "signal": "BEAT",
+    "level": "MODERATE",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.2724645073535794
+      },
+      "Tokyo Open": {
+        "return": -0.042814570518998146
+      },
+      "Asia Mid": {
+        "return": -0.23960983884648396
+      },
+      "Asia Afternoon": {
+        "return": -0.0008502136161702898
+      },
+      "Tokyo Close": {
+        "return": -0.7367163620750459
+      },
+      "Pre-London": {
+        "return": 0.3700214132762258
+      },
+      "Frankfurt Open": {
+        "return": -0.55341264016657
+      },
+      "London Open": {
+        "return": 0.01587526333628917
+      },
+      "London Morning": {
+        "return": 0.5860045301667863
+      },
+      "London Midday": {
+        "return": -0.836780824838994
+      },
+      "NY Pre-Open": {
+        "return": -0.14752180570130216
+      },
+      "NY Open": {
+        "return": 0.25111450907759253
+      },
+      "London-NY Overlap": {
+        "return": 0.41117431728737364
+      },
+      "NY AM": {
+        "return": 0.28454675766456156
+      },
+      "NY Lunch": {
+        "return": 0.3848615437129318
+      },
+      "NY PM": {
+        "return": -0.8513550273725622
+      },
+      "NY Close": {
+        "return": -0.16590288465247807
+      },
+      "Pre-Asia D2": {
+        "return": -0.34180400374438713
+      },
+      "Sydney Open D2": {
+        "return": 0.12236843239142778
+      },
+      "Tokyo Open D2": {
+        "return": 0.6958729612256348
+      },
+      "Asia Mid D2": {
+        "return": 0.7043126327531025
+      },
+      "24h_aggregate": {
+        "return": -0.8390716653914726
+      }
+    }
+  }
+]

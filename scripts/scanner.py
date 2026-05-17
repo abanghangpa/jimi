@@ -76,6 +76,7 @@ from src.modules.m50_cb_consumer_confidence import score_m50_cb_confidence, form
 from src.modules.m51_uk_gdp_monthly import score_m51_uk_gdp, format_m51
 from src.modules.m52_rba_rate import score_m52_rba_rate, format_m52
 from src.modules.m53_au_cpi import score_m53_au_cpi, format_m53
+from src.modules.m54_china_gdp import score_m54_china_gdp, format_m54
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1874,6 +1875,42 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m53'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M54: China Quarterly GDP Session Bias (regime-conditional) ──
+    m54_score_adj = 0.0
+    m54_size_mult = 1.0
+    m54_status = 'SKIP'
+    m54_details = {}
+    try:
+        _wyckoff_for_m54 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m54 = result.get('m9', {}).get('regime', 'CHOP')
+        m54_status, m54_score_adj, m54_size_mult, m54_details = score_m54_china_gdp(
+            wyckoff_phase=_wyckoff_for_m54,
+            vol_regime=_vol_for_m54,
+            direction=direction, date_str=today_str)
+        if m54_details and m54_status in ('ACTIVE', 'NO_EDGE'):
+            result['m54'] = {
+                'status': m54_status,
+                'score_adj': m54_score_adj,
+                'size_mult': m54_size_mult,
+                'signal': m54_details.get('signal'),
+                'level': m54_details.get('level'),
+                'gdp_yoy': m54_details.get('gdp_yoy'),
+                'consensus_yoy': m54_details.get('consensus_yoy'),
+                'surprise': m54_details.get('surprise'),
+                'retail_yoy': m54_details.get('retail_yoy'),
+                'industrial_yoy': m54_details.get('industrial_yoy'),
+                'quarter': m54_details.get('quarter'),
+                'edge_dir': m54_details.get('edge_dir'),
+                'edge_avg': m54_details.get('edge_avg'),
+                'edge_wr': m54_details.get('edge_wr'),
+                'edge_n': m54_details.get('edge_n'),
+                'details': m54_details,
+            }
+            if m54_size_mult < 1.0:
+                result['_m54_size_mult'] = m54_size_mult
+    except Exception as e:
+        result['m54'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2377,6 +2414,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m53_ics_adj'] = m53_score_adj
+
+    # ── M54 China GDP ICS adjustment ──
+    if m54_score_adj != 0.0 and m54_status == 'ACTIVE':
+        ics += m54_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m54_ics_adj'] = m54_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
