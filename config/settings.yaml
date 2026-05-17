@@ -832,6 +832,21 @@ M42_WINDOW_DAYS: 1            # Days after release to consider active
 M43_ENABLED: true
 M43_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M44: US Durable Goods Orders Session Bias (regime-conditional) ───
+# Census Bureau durable goods released ~25th-27th of month, 12:30 UTC. 91 releases backtested.
+# 24h aggregate: -0.597% avg, 47.3% win, n=91 — NOT significant (p=0.18)
+# Negative bias overall. SELL THE STRONG BEAT pattern.
+# Key combos:
+#   ACCUMULATION + NEUTRAL + BIG_MISS:   +5.481% avg, 100% win, n=3  → LONG
+#   DISTRIBUTION + NEUTRAL + STRONG_BEAT: -3.228% avg, 0% win, n=3  → SHORT
+#   RANGE + NEUTRAL + STRONG_BEAT:       -2.448% avg, 40% win, n=10 → SHORT
+#   RANGE + COMPRESSING + BIG_MISS:      +0.671% avg, 75% win, n=4  → LONG
+#   GROWING + STABLE + STRONG_BEAT:      -1.235% avg, 40% win, n=15 → SHORT
+# Transmission chain: Asia 88-100%, breaks at London→NY (48.4%)
+# Loopback: Durable Goods → Factory Orders (1 week) → ISM Manufacturing PMI
+M44_ENABLED: true
+M44_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

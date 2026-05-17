@@ -66,6 +66,7 @@ from src.modules.m40_germany_cpi import score_m40_germany_cpi, format_m40
 from src.modules.m41_ez_cpi import score_m41_ez_cpi, format_m41
 from src.modules.m42_ez_gdp import score_m42_ez_gdp, format_m42
 from src.modules.m43_us_gdp import score_m43_us_gdp, format_m43
+from src.modules.m44_durables import score_m44_durables, format_m44
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1497,6 +1498,44 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m43'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M44: US Durable Goods Orders Session Bias (regime-conditional) ──
+    m44_score_adj = 0.0
+    m44_size_mult = 1.0
+    m44_status = 'SKIP'
+    m44_details = {}
+    try:
+        _wyckoff_for_m44 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m44 = result.get('m9', {}).get('regime', 'CHOP')
+        m44_status, m44_score_adj, m44_size_mult, m44_details = score_m44_durables(
+            wyckoff_phase=_wyckoff_for_m44,
+            vol_regime=_vol_for_m44,
+            direction=direction, today_str=today_str, config=cfg)
+        if m44_details and m44_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m44'] = {
+                'status': m44_status,
+                'score_adj': m44_score_adj,
+                'size_mult': m44_size_mult,
+                'regime': m44_details.get('regime', '?'),
+                'bias': m44_details.get('bias', '?'),
+                'headline_mom': m44_details.get('headline_mom'),
+                'core_mom': m44_details.get('core_mom'),
+                'consensus': m44_details.get('consensus'),
+                'signal': m44_details.get('signal'),
+                'capex_health': m44_details.get('capex_health'),
+                'momentum': m44_details.get('momentum'),
+                'avg_ret_24h': m44_details.get('avg_ret_24h'),
+                'win_rate': m44_details.get('win_rate'),
+                'sample_size': m44_details.get('sample_size'),
+                'confidence': m44_details.get('confidence'),
+                'source': m44_details.get('source'),
+                'release_date': m44_details.get('release_date'),
+                'details': m44_details,
+            }
+            if m44_size_mult < 1.0:
+                result['_m44_size_mult'] = m44_size_mult
+    except Exception as e:
+        result['m44'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1930,6 +1969,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m43_ics_adj'] = m43_score_adj
+
+    # ── M44 US Durable Goods ICS adjustment (regime-conditional bias) ──
+    if m44_score_adj != 0.0 and m44_status in ('PASS', 'WEAK'):
+        ics += m44_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m44_ics_adj'] = m44_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2391,6 +2437,12 @@ def print_signal(result):
         m43_out = format_m43(result['m43'].get('details', {}))
         if m43_out:
             print(m43_out)
+
+    # M44 US Durable Goods Orders Session Bias
+    if 'm44' in result and result['m44'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m44_out = format_m44(result['m44'].get('details', {}))
+        if m44_out:
+            print(m44_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -3362,6 +3414,28 @@ def print_summary(result):
         mom_icon = {'ACCELERATING': '📈', 'DECELERATING': '📉', 'STABLE': '➡️'}.get(m43_mom, '➡️')
         print(f"  {'M43 US GDP Advance':<22} {bias_icon} {m43_bias:>8}  GDP={m43_gdp:+.1f}%(qoq) cons={m43_cons:+.1f}% {health_icon}{m43_health} {mom_icon}{m43_mom}  ⚡CONTRARIAN")
         print(f"  {'  Backtest':<22} {conf_icon} 24h={m43_avg:+.2f}%  win={m43_win*100:.0f}%  n={m43_n}  adj={m43_adj:+.3f}  size={m43_sm:.2f}x  miss→rally, beat→sell")
+
+    # M44 US Durable Goods Orders Session Bias summary
+    m44 = result.get('m44', {})
+    if m44 and m44.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m44_bias = m44.get('bias', '?')
+        m44_headline = m44.get('headline_mom', 0)
+        m44_core = m44.get('core_mom', 0)
+        m44_cons = m44.get('consensus', 0)
+        m44_signal = m44.get('signal', '?')
+        m44_capex = m44.get('capex_health', '?')
+        m44_mom = m44.get('momentum', '?')
+        m44_avg = m44.get('avg_ret_24h', 0)
+        m44_win = m44.get('win_rate', 0)
+        m44_n = m44.get('sample_size', 0)
+        m44_adj = m44.get('score_adj', 0)
+        m44_sm = m44.get('size_mult', 1.0)
+        bias_icon = '🟢' if m44_bias == 'LONG' else '🔴' if m44_bias == 'SHORT' else '⚪'
+        capex_icon = {'BOOMING': '🟢🟢', 'GROWING': '🟢', 'STABLE': '⚪',
+                      'WEAK': '🟠', 'COLLAPSING': '🔴'}.get(m44_capex, '⚪')
+        mom_icon = {'ACCELERATING': '📈', 'DECELERATING': '📉', 'STABLE': '➡️'}.get(m44_mom, '➡️')
+        print(f"  {'M44 Durables':<22} {bias_icon} {m44_bias:>8}  headline={m44_headline:+.1f}% cons={m44_cons:+.1f}% core={m44_core:+.1f}% {capex_icon}{m44_capex} {mom_icon}{m44_mom}")
+        print(f"  {'  Backtest':<22} 24h={m44_avg:+.2f}%  win={m44_win*100:.0f}%  n={m44_n}  adj={m44_adj:+.3f}  size={m44_sm:.2f}x  chain: Asia 88-100%, breaks at Lon→NY")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})

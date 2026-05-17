@@ -1101,6 +1101,35 @@ def fetch_us_gdp(force_refresh=False):
     return None
 
 
+def fetch_us_durables(force_refresh=False):
+    """Fetch latest US Durable Goods Orders data and update M44 cache."""
+    cache = _load_cache()
+    cache_key = 'us_durables'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching US Durable Goods Orders...")
+    result = _fetch_trading_economics('united-states/durable-goods-orders')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ US Durable Goods: actual={result['actual']}")
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -1126,6 +1155,7 @@ def get_latest_macro_indicators():
         'ez_cpi': fetch_ez_cpi(),
         'ez_gdp': fetch_ez_gdp(),
         'us_gdp': fetch_us_gdp(),
+        'us_durables': fetch_us_durables(),
     }
 
 
@@ -1149,6 +1179,7 @@ def get_surprise_for_event(event_id):
         'ez_cpi': 'ez_cpi',
         'ez_gdp': 'ez_gdp',
         'us_gdp': 'us_gdp',
+        'us_durables': 'us_durables',
     }
 
     key = event_map.get(event_id)
