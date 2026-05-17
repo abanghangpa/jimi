@@ -72,6 +72,7 @@ from src.modules.m46_japan_cpi import score_m46_japan_cpi, format_m46
 from src.modules.m47_boj_rate import score_m47_boj_rate, format_m47
 from src.modules.m48_ecb_rate import score_m48_ecb_rate, format_m48
 from src.modules.m49_boe_rate import score_m49_boe_rate, format_m49
+from src.modules.m50_cb_consumer_confidence import score_m50_cb_confidence, format_m50
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1732,6 +1733,40 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m49'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M50: CB Consumer Confidence Session Bias (regime-conditional) ──
+    m50_score_adj = 0.0
+    m50_size_mult = 1.0
+    m50_status = 'SKIP'
+    m50_details = {}
+    try:
+        _wyckoff_for_m50 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m50 = result.get('m9', {}).get('regime', 'CHOP')
+        m50_status, m50_score_adj, m50_size_mult, m50_details = score_m50_cb_confidence(
+            wyckoff_phase=_wyckoff_for_m50,
+            vol_regime=_vol_for_m50,
+            direction=direction, date_str=today_str)
+        if m50_details and m50_status in ('ACTIVE', 'NO_EDGE'):
+            result['m50'] = {
+                'status': m50_status,
+                'score_adj': m50_score_adj,
+                'size_mult': m50_size_mult,
+                'signal': m50_details.get('signal'),
+                'level': m50_details.get('level'),
+                'actual': m50_details.get('actual'),
+                'consensus': m50_details.get('consensus'),
+                'surprise_pct': m50_details.get('surprise_pct'),
+                'edge_key': m50_details.get('edge_key'),
+                'edge_dir': m50_details.get('edge_dir'),
+                'edge_avg': m50_details.get('edge_avg'),
+                'edge_wr': m50_details.get('edge_wr'),
+                'edge_n': m50_details.get('edge_n'),
+                'details': m50_details,
+            }
+            if m50_size_mult < 1.0:
+                result['_m50_size_mult'] = m50_size_mult
+    except Exception as e:
+        result['m50'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2207,6 +2242,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m49_ics_adj'] = m49_score_adj
+
+    # ── M50 CB Consumer Confidence ICS adjustment ──
+    if m50_score_adj != 0.0 and m50_status == 'ACTIVE':
+        ics += m50_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m50_ics_adj'] = m50_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
