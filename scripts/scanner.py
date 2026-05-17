@@ -63,6 +63,7 @@ from src.modules.m37_nfp import score_m37_nfp, format_m37
 from src.modules.m38_ifo import score_m38_ifo, format_m38
 from src.modules.m39_ums import score_m39_ums, format_m39
 from src.modules.m40_germany_cpi import score_m40_germany_cpi, format_m40
+from src.modules.m41_ez_cpi import score_m41_ez_cpi, format_m41
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1379,6 +1380,45 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m40'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M41: Eurozone CPI Flash Session Bias (regime-conditional) ──
+    m41_score_adj = 0.0
+    m41_size_mult = 1.0
+    m41_status = 'SKIP'
+    m41_details = {}
+    try:
+        _wyckoff_for_m41 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m41 = result.get('m9', {}).get('regime', 'CHOP')
+        m41_status, m41_score_adj, m41_size_mult, m41_details = score_m41_ez_cpi(
+            wyckoff_phase=_wyckoff_for_m41,
+            vol_regime=_vol_for_m41,
+            direction=direction, today_str=today_str, config=cfg)
+        if m41_details and m41_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m41'] = {
+                'status': m41_status,
+                'score_adj': m41_score_adj,
+                'size_mult': m41_size_mult,
+                'regime': m41_details.get('regime', '?'),
+                'bias': m41_details.get('bias', '?'),
+                'hicp_yoy': m41_details.get('hicp_yoy'),
+                'core_yoy': m41_details.get('core_yoy'),
+                'consensus': m41_details.get('consensus'),
+                'signal': m41_details.get('signal'),
+                'cpi_level': m41_details.get('cpi_level'),
+                'cpi_direction': m41_details.get('cpi_direction'),
+                'core_spread': m41_details.get('core_spread'),
+                'avg_ret_24h': m41_details.get('avg_ret_24h'),
+                'win_rate': m41_details.get('win_rate'),
+                'sample_size': m41_details.get('sample_size'),
+                'confidence': m41_details.get('confidence'),
+                'source': m41_details.get('source'),
+                'release_date': m41_details.get('release_date'),
+                'details': m41_details,
+            }
+            if m41_size_mult < 1.0:
+                result['_m41_size_mult'] = m41_size_mult
+    except Exception as e:
+        result['m41'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1791,6 +1831,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m40_ics_adj'] = m40_score_adj
+
+    # ── M41 EZ CPI Flash ICS adjustment (regime-conditional bias on release days) ──
+    if m41_score_adj != 0.0 and m41_status in ('PASS', 'WEAK'):
+        ics += m41_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m41_ics_adj'] = m41_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2234,6 +2281,12 @@ def print_signal(result):
         m40_out = format_m40(result['m40'].get('details', {}))
         if m40_out:
             print(m40_out)
+
+    # M41 EZ CPI Flash Session Bias
+    if 'm41' in result and result['m41'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m41_out = format_m41(result['m41'].get('details', {}))
+        if m41_out:
+            print(m41_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -3134,6 +3187,30 @@ def print_summary(result):
         dir_icon = '📈' if m40_dir == 'RISING' else '📉' if m40_dir == 'FALLING' else '➡️'
         print(f"  {'M40 Germany CPI':<22} {bias_icon} {m40_bias:>8}  CPI={m40_cpi:.1f}% cons={m40_cons:.1f}% {dir_icon}{m40_dir} level={m40_level} signal={m40_signal}")
         print(f"  {'  Backtest':<22} {conf_icon} 24h={m40_avg:+.2f}%  win={m40_win*100:.0f}%  n={m40_n}  adj={m40_adj:+.3f}  size={m40_sm:.2f}x  chain: Asia 89-93%, Lon→NY 77-89%")
+
+    # M41 Eurozone CPI Flash Session Bias summary
+    m41 = result.get('m41', {})
+    if m41 and m41.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m41_bias = m41.get('bias', '?')
+        m41_hicp = m41.get('hicp_yoy', 0)
+        m41_core = m41.get('core_yoy', 0)
+        m41_cons = m41.get('consensus', 0)
+        m41_signal = m41.get('signal', '?')
+        m41_level = m41.get('cpi_level', '?')
+        m41_dir = m41.get('cpi_direction', '?')
+        m41_spread = m41.get('core_spread', '?')
+        m41_avg = m41.get('avg_ret_24h', 0)
+        m41_win = m41.get('win_rate', 0)
+        m41_n = m41.get('sample_size', 0)
+        m41_conf = m41.get('confidence', 0)
+        m41_adj = m41.get('score_adj', 0)
+        m41_sm = m41.get('size_mult', 1.0)
+        bias_icon = '🟢' if m41_bias == 'LONG' else '🔴' if m41_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m41_conf >= 0.7 else '🟡' if m41_conf >= 0.4 else '🟠'
+        dir_icon = '📈' if m41_dir == 'RISING' else '📉' if m41_dir == 'FALLING' else '➡️'
+        spread_icon = '🔴' if 'STICKY' in m41_spread else '🟢' if m41_spread == 'CORE_BELOW' else '⚪'
+        print(f"  {'M41 EZ CPI Flash':<22} {bias_icon} {m41_bias:>8}  HICP={m41_hicp:.1f}% cons={m41_cons:.1f}% {dir_icon}{m41_dir} core={m41_core:.1f}%{spread_icon}{m41_spread}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m41_avg:+.2f}%  win={m41_win*100:.0f}%  n={m41_n}  adj={m41_adj:+.3f}  size={m41_sm:.2f}x  chain: Asia 88-99%, Lon→NY 75-100%  p=0.013✅")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})
