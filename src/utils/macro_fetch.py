@@ -1291,6 +1291,40 @@ def fetch_rba_rate(force_refresh=False):
     return None
 
 
+def fetch_au_cpi(force_refresh=False):
+    """Fetch latest Australia Quarterly CPI data and update M53 cache."""
+    cache = _load_cache()
+    cache_key = 'au_cpi'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching Australia Quarterly CPI...")
+    result = _fetch_trading_economics('australia/consumer-price-index')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ Australia CPI: actual={result['actual']}")
+        try:
+            from src.modules.m53_au_cpi import update_fresh_data
+            update_fresh_data(result['actual'], result.get('previous'))
+        except ImportError:
+            pass
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -1322,6 +1356,7 @@ def get_latest_macro_indicators():
         'cb_consumer_confidence': fetch_cb_consumer_confidence(),
         'uk_gdp_monthly': fetch_uk_gdp_monthly(),
         'rba_rate': fetch_rba_rate(),
+        'au_cpi': fetch_au_cpi(),
     }
 
 
@@ -1351,6 +1386,7 @@ def get_surprise_for_event(event_id):
         'us_cb_confidence': 'cb_consumer_confidence',
         'uk_gdp': 'uk_gdp_monthly',
         'au_rba_rate': 'rba_rate',
+        'au_cpi': 'au_cpi',
     }
 
     key = event_map.get(event_id)

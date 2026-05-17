@@ -1,0 +1,4388 @@
+[
+  {
+    "date": "2018-01-31",
+    "headline_yoy": 1.9,
+    "trimmed_mean_yoy": 1.9,
+    "prev_headline_yoy": 1.8,
+    "prev_trimmed_yoy": 1.8,
+    "quarter": "Q4",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKDOWN",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -1.238314234016876,
+        "start_price": 1061.12,
+        "end_price": 1047.98
+      },
+      "Sydney Open": {
+        "return": 1.7643466478367915,
+        "start_price": 1047.98,
+        "end_price": 1066.47
+      },
+      "Tokyo Open": {
+        "return": 2.123829080986794,
+        "start_price": 1066.47,
+        "end_price": 1089.12
+      },
+      "Asia Mid": {
+        "return": -1.2028059350668348,
+        "start_price": 1089.12,
+        "end_price": 1076.02
+      },
+      "Asia Afternoon": {
+        "return": 2.7871229159309316,
+        "start_price": 1076.02,
+        "end_price": 1106.01
+      },
+      "Tokyo Close": {
+        "return": 0.36075623186047223,
+        "start_price": 1106.01,
+        "end_price": 1110.0
+      },
+      "Pre-London": {
+        "return": -1.8018018018018018,
+        "start_price": 1110.0,
+        "end_price": 1090.0
+      },
+      "Frankfurt Open": {
+        "return": 1.2091743119266112,
+        "start_price": 1090.0,
+        "end_price": 1103.18
+      },
+      "London Open": {
+        "return": -0.06163998622165591,
+        "start_price": 1103.18,
+        "end_price": 1102.5
+      },
+      "London Morning": {
+        "return": 2.245804988662131,
+        "start_price": 1102.5,
+        "end_price": 1127.26
+      },
+      "London Midday": {
+        "return": -2.06341039334315,
+        "start_price": 1127.26,
+        "end_price": 1104.0
+      },
+      "NY Pre-Open": {
+        "return": 0.20380434782608695,
+        "start_price": 1104.0,
+        "end_price": 1106.25
+      },
+      "NY Open": {
+        "return": 0.6101694915254238,
+        "start_price": 1106.25,
+        "end_price": 1113.0
+      },
+      "London-NY Overlap": {
+        "return": -0.24258760107817118,
+        "start_price": 1113.0,
+        "end_price": 1110.3
+      },
+      "NY AM": {
+        "return": 0.20534990543096218,
+        "start_price": 1110.3,
+        "end_price": 1112.58
+      },
+      "NY Lunch": {
+        "return": 0.5851264628161563,
+        "start_price": 1112.58,
+        "end_price": 1119.09
+      },
+      "NY PM": {
+        "return": 0.8855409305775302,
+        "start_price": 1119.09,
+        "end_price": 1129.0
+      },
+      "NY Close": {
+        "return": 1.141718334809575,
+        "start_price": 1129.0,
+        "end_price": 1141.89
+      },
+      "Pre-Asia D2": {
+        "return": 0.28286437397645925,
+        "start_price": 1141.89,
+        "end_price": 1145.12
+      },
+      "Sydney Open D2": {
+        "return": 0.6881374877742166,
+        "start_price": 1145.12,
+        "end_price": 1153.0
+      },
+      "Tokyo Open D2": {
+        "return": -0.348655680832609,
+        "start_price": 1153.0,
+        "end_price": 1148.98
+      },
+      "Asia Mid D2": {
+        "return": -2.8251144493376765,
+        "start_price": 1148.98,
+        "end_price": 1116.52
+      },
+      "24h_aggregate": {
+        "return": 6.397014475271422,
+        "start_price": 1061.12,
+        "end_price": 1129.0
+      }
+    }
+  },
+  {
+    "date": "2018-04-24",
+    "headline_yoy": 1.9,
+    "trimmed_mean_yoy": 1.9,
+    "prev_headline_yoy": 1.9,
+    "prev_trimmed_yoy": 1.9,
+    "quarter": "Q1",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.33042318418819927,
+        "start_price": 659.76,
+        "end_price": 661.94
+      },
+      "Sydney Open": {
+        "return": 1.5681179563102388,
+        "start_price": 661.94,
+        "end_price": 672.32
+      },
+      "Tokyo Open": {
+        "return": -0.7704664445502236,
+        "start_price": 672.32,
+        "end_price": 667.14
+      },
+      "Asia Mid": {
+        "return": 2.0490451779236682,
+        "start_price": 667.14,
+        "end_price": 680.81
+      },
+      "Asia Afternoon": {
+        "return": -1.116317327888825,
+        "start_price": 680.81,
+        "end_price": 673.21
+      },
+      "Tokyo Close": {
+        "return": 1.0086005852557096,
+        "start_price": 673.21,
+        "end_price": 680.0
+      },
+      "Pre-London": {
+        "return": 0.48529411764705216,
+        "start_price": 680.0,
+        "end_price": 683.3
+      },
+      "Frankfurt Open": {
+        "return": 0.3058685789550757,
+        "start_price": 683.3,
+        "end_price": 685.39
+      },
+      "London Open": {
+        "return": 0.9279388377420175,
+        "start_price": 685.39,
+        "end_price": 691.75
+      },
+      "London Morning": {
+        "return": 1.658113480303582,
+        "start_price": 691.75,
+        "end_price": 703.22
+      },
+      "London Midday": {
+        "return": 0.05545917351610966,
+        "start_price": 703.22,
+        "end_price": 703.61
+      },
+      "NY Pre-Open": {
+        "return": -0.7973166953283799,
+        "start_price": 703.61,
+        "end_price": 698.0
+      },
+      "NY Open": {
+        "return": 0.6547277936962822,
+        "start_price": 698.0,
+        "end_price": 702.57
+      },
+      "London-NY Overlap": {
+        "return": 0.7415631182657845,
+        "start_price": 702.57,
+        "end_price": 707.78
+      },
+      "NY AM": {
+        "return": -0.6753510977987472,
+        "start_price": 707.78,
+        "end_price": 703.0
+      },
+      "NY Lunch": {
+        "return": 0.3541963015647239,
+        "start_price": 703.0,
+        "end_price": 705.49
+      },
+      "NY PM": {
+        "return": -2.646387617117175,
+        "start_price": 705.49,
+        "end_price": 686.82
+      },
+      "NY Close": {
+        "return": 1.3395067120934059,
+        "start_price": 686.82,
+        "end_price": 696.02
+      },
+      "Pre-Asia D2": {
+        "return": -4.515674836929966,
+        "start_price": 696.02,
+        "end_price": 664.59
+      },
+      "Sydney Open D2": {
+        "return": -1.5934636392362256,
+        "start_price": 664.59,
+        "end_price": 654.0
+      },
+      "Tokyo Open D2": {
+        "return": 1.856269113149845,
+        "start_price": 654.0,
+        "end_price": 666.14
+      },
+      "Asia Mid D2": {
+        "return": -0.9157234215029907,
+        "start_price": 666.14,
+        "end_price": 660.04
+      },
+      "24h_aggregate": {
+        "return": 4.101491451436895,
+        "start_price": 659.76,
+        "end_price": 686.82
+      }
+    }
+  },
+  {
+    "date": "2018-07-25",
+    "headline_yoy": 2.1,
+    "trimmed_mean_yoy": 1.9,
+    "prev_headline_yoy": 1.9,
+    "prev_trimmed_yoy": 1.9,
+    "quarter": "Q2",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.3053910875662257,
+        "start_price": 481.35,
+        "end_price": 479.88
+      },
+      "Sydney Open": {
+        "return": -0.20838542969075602,
+        "start_price": 479.88,
+        "end_price": 478.88
+      },
+      "Tokyo Open": {
+        "return": -0.5679919812896698,
+        "start_price": 478.88,
+        "end_price": 476.16
+      },
+      "Asia Mid": {
+        "return": 1.6822076612903205,
+        "start_price": 476.16,
+        "end_price": 484.17
+      },
+      "Asia Afternoon": {
+        "return": -0.8839870293492017,
+        "start_price": 484.17,
+        "end_price": 479.89
+      },
+      "Tokyo Close": {
+        "return": -1.2065264956552468,
+        "start_price": 479.89,
+        "end_price": 474.1
+      },
+      "Pre-London": {
+        "return": -0.23201856148492359,
+        "start_price": 474.1,
+        "end_price": 473.0
+      },
+      "Frankfurt Open": {
+        "return": -0.6448202959830891,
+        "start_price": 473.0,
+        "end_price": 469.95
+      },
+      "London Open": {
+        "return": 0.20853282264071032,
+        "start_price": 469.95,
+        "end_price": 470.93
+      },
+      "London Morning": {
+        "return": 0.3291359650054172,
+        "start_price": 470.93,
+        "end_price": 472.48
+      },
+      "London Midday": {
+        "return": -0.7174906874365143,
+        "start_price": 472.48,
+        "end_price": 469.09
+      },
+      "NY Pre-Open": {
+        "return": 0.6054275298983206,
+        "start_price": 469.09,
+        "end_price": 471.93
+      },
+      "NY Open": {
+        "return": -0.046617083041982345,
+        "start_price": 471.93,
+        "end_price": 471.71
+      },
+      "London-NY Overlap": {
+        "return": -0.1801954590744241,
+        "start_price": 471.71,
+        "end_price": 470.86
+      },
+      "NY AM": {
+        "return": 1.1277237395404158,
+        "start_price": 470.86,
+        "end_price": 476.17
+      },
+      "NY Lunch": {
+        "return": -0.45571959594262884,
+        "start_price": 476.17,
+        "end_price": 474.0
+      },
+      "NY PM": {
+        "return": 0.4936708860759441,
+        "start_price": 474.0,
+        "end_price": 476.34
+      },
+      "NY Close": {
+        "return": -0.2918083721711354,
+        "start_price": 476.34,
+        "end_price": 474.95
+      },
+      "Pre-Asia D2": {
+        "return": 0.30108432466575574,
+        "start_price": 474.95,
+        "end_price": 476.38
+      },
+      "Sydney Open D2": {
+        "return": 0.12175154288592806,
+        "start_price": 476.38,
+        "end_price": 476.96
+      },
+      "Tokyo Open D2": {
+        "return": -0.0880576987587972,
+        "start_price": 476.96,
+        "end_price": 476.54
+      },
+      "Asia Mid D2": {
+        "return": 1.4794141100432188,
+        "start_price": 476.54,
+        "end_price": 483.59
+      },
+      "24h_aggregate": {
+        "return": -1.0408226861950862,
+        "start_price": 481.35,
+        "end_price": 476.34
+      }
+    }
+  },
+  {
+    "date": "2018-10-31",
+    "headline_yoy": 1.9,
+    "trimmed_mean_yoy": 1.8,
+    "prev_headline_yoy": 2.1,
+    "prev_trimmed_yoy": 1.9,
+    "quarter": "Q3",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "ACCUMULATION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.045618125601907554,
+        "start_price": 197.29,
+        "end_price": 197.38
+      },
+      "Sydney Open": {
+        "return": -0.06586280271557172,
+        "start_price": 197.38,
+        "end_price": 197.25
+      },
+      "Tokyo Open": {
+        "return": 0.015209125475285749,
+        "start_price": 197.25,
+        "end_price": 197.28
+      },
+      "Asia Mid": {
+        "return": 0.015206812652068701,
+        "start_price": 197.28,
+        "end_price": 197.31
+      },
+      "Asia Afternoon": {
+        "return": -0.2736810095788313,
+        "start_price": 197.31,
+        "end_price": 196.77
+      },
+      "Tokyo Close": {
+        "return": -0.030492453117854486,
+        "start_price": 196.77,
+        "end_price": 196.71
+      },
+      "Pre-London": {
+        "return": -0.020334502567241352,
+        "start_price": 196.71,
+        "end_price": 196.67
+      },
+      "Frankfurt Open": {
+        "return": -0.10169319164081388,
+        "start_price": 196.67,
+        "end_price": 196.47
+      },
+      "London Open": {
+        "return": 0.24431210871888315,
+        "start_price": 196.47,
+        "end_price": 196.95
+      },
+      "London Morning": {
+        "return": -0.04061944656003254,
+        "start_price": 196.95,
+        "end_price": 196.87
+      },
+      "London Midday": {
+        "return": -1.1225681922080601,
+        "start_price": 196.87,
+        "end_price": 194.66
+      },
+      "NY Pre-Open": {
+        "return": 2.095962190485982,
+        "start_price": 194.66,
+        "end_price": 198.74
+      },
+      "NY Open": {
+        "return": -0.20629968803461637,
+        "start_price": 198.74,
+        "end_price": 198.33
+      },
+      "London-NY Overlap": {
+        "return": 0.0,
+        "start_price": 198.33,
+        "end_price": 198.33
+      },
+      "NY AM": {
+        "return": 0.09579992941057718,
+        "start_price": 198.33,
+        "end_price": 198.52
+      },
+      "NY Lunch": {
+        "return": 0.17126737860165395,
+        "start_price": 198.52,
+        "end_price": 198.86
+      },
+      "NY PM": {
+        "return": -0.1810318817258441,
+        "start_price": 198.86,
+        "end_price": 198.5
+      },
+      "NY Close": {
+        "return": -0.1410579345088167,
+        "start_price": 198.5,
+        "end_price": 198.22
+      },
+      "Pre-Asia D2": {
+        "return": -0.015134698819494065,
+        "start_price": 198.22,
+        "end_price": 198.19
+      },
+      "Sydney Open D2": {
+        "return": 0.22200918310711829,
+        "start_price": 198.19,
+        "end_price": 198.63
+      },
+      "Tokyo Open D2": {
+        "return": -0.05537934853747431,
+        "start_price": 198.63,
+        "end_price": 198.52
+      },
+      "Asia Mid D2": {
+        "return": 0.1763046544428744,
+        "start_price": 198.52,
+        "end_price": 198.87
+      },
+      "24h_aggregate": {
+        "return": 0.6133103553145157,
+        "start_price": 197.29,
+        "end_price": 198.5
+      }
+    }
+  },
+  {
+    "date": "2019-01-30",
+    "headline_yoy": 1.8,
+    "trimmed_mean_yoy": 1.8,
+    "prev_headline_yoy": 1.9,
+    "prev_trimmed_yoy": 1.8,
+    "quarter": "Q4",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKDOWN",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.019243721735793546,
+        "start_price": 103.93,
+        "end_price": 103.91
+      },
+      "Sydney Open": {
+        "return": 0.22134539505341547,
+        "start_price": 103.91,
+        "end_price": 104.14
+      },
+      "Tokyo Open": {
+        "return": 0.7009794507393932,
+        "start_price": 104.14,
+        "end_price": 104.87
+      },
+      "Asia Mid": {
+        "return": 0.14303423285972294,
+        "start_price": 104.87,
+        "end_price": 105.02
+      },
+      "Asia Afternoon": {
+        "return": -0.3237478575509324,
+        "start_price": 105.02,
+        "end_price": 104.68
+      },
+      "Tokyo Close": {
+        "return": 0.5158578525028583,
+        "start_price": 104.68,
+        "end_price": 105.22
+      },
+      "Pre-London": {
+        "return": -0.2090857251473093,
+        "start_price": 105.22,
+        "end_price": 105.0
+      },
+      "Frankfurt Open": {
+        "return": -0.12380952380951948,
+        "start_price": 105.0,
+        "end_price": 104.87
+      },
+      "London Open": {
+        "return": 0.7151711642986555,
+        "start_price": 104.87,
+        "end_price": 105.62
+      },
+      "London Morning": {
+        "return": 2.224957394432867,
+        "start_price": 105.62,
+        "end_price": 107.97
+      },
+      "London Midday": {
+        "return": 0.24080763174956482,
+        "start_price": 107.97,
+        "end_price": 108.23
+      },
+      "NY Pre-Open": {
+        "return": 0.12935415319227625,
+        "start_price": 108.23,
+        "end_price": 108.37
+      },
+      "NY Open": {
+        "return": 0.4798375934299123,
+        "start_price": 108.37,
+        "end_price": 108.89
+      },
+      "London-NY Overlap": {
+        "return": -0.24795665350353202,
+        "start_price": 108.89,
+        "end_price": 108.62
+      },
+      "NY AM": {
+        "return": -0.46032038298655864,
+        "start_price": 108.62,
+        "end_price": 108.12
+      },
+      "NY Lunch": {
+        "return": 0.38845726970033456,
+        "start_price": 108.12,
+        "end_price": 108.54
+      },
+      "NY PM": {
+        "return": 1.1055831951354234,
+        "start_price": 108.54,
+        "end_price": 109.74
+      },
+      "NY Close": {
+        "return": -0.40094769455075424,
+        "start_price": 109.74,
+        "end_price": 109.3
+      },
+      "Pre-Asia D2": {
+        "return": -0.6953339432753806,
+        "start_price": 109.3,
+        "end_price": 108.54
+      },
+      "Sydney Open D2": {
+        "return": 0.5159388243965248,
+        "start_price": 108.54,
+        "end_price": 109.1
+      },
+      "Tokyo Open D2": {
+        "return": -0.2841429880843154,
+        "start_price": 109.1,
+        "end_price": 108.79
+      },
+      "Asia Mid D2": {
+        "return": -0.3676808530195842,
+        "start_price": 108.79,
+        "end_price": 108.39
+      },
+      "24h_aggregate": {
+        "return": 5.590301164245153,
+        "start_price": 103.93,
+        "end_price": 109.74
+      }
+    }
+  },
+  {
+    "date": "2019-04-24",
+    "headline_yoy": 1.3,
+    "trimmed_mean_yoy": 1.6,
+    "prev_headline_yoy": 1.8,
+    "prev_trimmed_yoy": 1.8,
+    "quarter": "Q1",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKDOWN",
+    "vol": "TREND",
+    "returns": {
+      "Release Spike": {
+        "return": 0.0,
+        "start_price": 169.43,
+        "end_price": 169.43
+      },
+      "Sydney Open": {
+        "return": -0.9207342265242295,
+        "start_price": 169.43,
+        "end_price": 167.87
+      },
+      "Tokyo Open": {
+        "return": 0.2740215643057175,
+        "start_price": 167.87,
+        "end_price": 168.33
+      },
+      "Asia Mid": {
+        "return": 0.1782213509178298,
+        "start_price": 168.33,
+        "end_price": 168.63
+      },
+      "Asia Afternoon": {
+        "return": -0.3498784320702149,
+        "start_price": 168.63,
+        "end_price": 168.04
+      },
+      "Tokyo Close": {
+        "return": -2.910021423470594,
+        "start_price": 168.04,
+        "end_price": 163.15
+      },
+      "Pre-London": {
+        "return": 0.06742261722340497,
+        "start_price": 163.15,
+        "end_price": 163.26
+      },
+      "Frankfurt Open": {
+        "return": 0.1653803748621893,
+        "start_price": 163.26,
+        "end_price": 163.53
+      },
+      "London Open": {
+        "return": -0.660429279031378,
+        "start_price": 163.53,
+        "end_price": 162.45
+      },
+      "London Morning": {
+        "return": 1.009541397353041,
+        "start_price": 162.45,
+        "end_price": 164.09
+      },
+      "London Midday": {
+        "return": -0.07313059906149341,
+        "start_price": 164.09,
+        "end_price": 163.97
+      },
+      "NY Pre-Open": {
+        "return": -1.7015307678233775,
+        "start_price": 163.97,
+        "end_price": 161.18
+      },
+      "NY Open": {
+        "return": -0.9368407991066009,
+        "start_price": 161.18,
+        "end_price": 159.67
+      },
+      "London-NY Overlap": {
+        "return": 1.6972505793198522,
+        "start_price": 159.67,
+        "end_price": 162.38
+      },
+      "NY AM": {
+        "return": 0.43108757236113876,
+        "start_price": 162.38,
+        "end_price": 163.08
+      },
+      "NY Lunch": {
+        "return": 0.8400784890850969,
+        "start_price": 163.08,
+        "end_price": 164.45
+      },
+      "NY PM": {
+        "return": 0.15202189115232595,
+        "start_price": 164.45,
+        "end_price": 164.7
+      },
+      "NY Close": {
+        "return": -0.182149362477221,
+        "start_price": 164.7,
+        "end_price": 164.4
+      },
+      "Pre-Asia D2": {
+        "return": -0.36496350364963154,
+        "start_price": 164.4,
+        "end_price": 163.8
+      },
+      "Sydney Open D2": {
+        "return": -0.4395604395604389,
+        "start_price": 163.8,
+        "end_price": 163.08
+      },
+      "Tokyo Open D2": {
+        "return": -0.03065979887172637,
+        "start_price": 163.08,
+        "end_price": 163.03
+      },
+      "Asia Mid D2": {
+        "return": -0.4293688278230931,
+        "start_price": 163.03,
+        "end_price": 162.33
+      },
+      "24h_aggregate": {
+        "return": -2.7917133919612924,
+        "start_price": 169.43,
+        "end_price": 164.7
+      }
+    }
+  },
+  {
+    "date": "2019-07-31",
+    "headline_yoy": 1.6,
+    "trimmed_mean_yoy": 1.6,
+    "prev_headline_yoy": 1.3,
+    "prev_trimmed_yoy": 1.6,
+    "quarter": "Q2",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": 0.35442559425357967,
+        "start_price": 211.61,
+        "end_price": 212.36
+      },
+      "Sydney Open": {
+        "return": -0.2966660388020455,
+        "start_price": 212.36,
+        "end_price": 211.73
+      },
+      "Tokyo Open": {
+        "return": 0.009445992537670728,
+        "start_price": 211.73,
+        "end_price": 211.75
+      },
+      "Asia Mid": {
+        "return": 0.028335301062574862,
+        "start_price": 211.75,
+        "end_price": 211.81
+      },
+      "Asia Afternoon": {
+        "return": 0.3493697181436236,
+        "start_price": 211.81,
+        "end_price": 212.55
+      },
+      "Tokyo Close": {
+        "return": -0.07527640555164666,
+        "start_price": 212.55,
+        "end_price": 212.39
+      },
+      "Pre-London": {
+        "return": -0.08474975281321079,
+        "start_price": 212.39,
+        "end_price": 212.21
+      },
+      "Frankfurt Open": {
+        "return": 0.4523820743602938,
+        "start_price": 212.21,
+        "end_price": 213.17
+      },
+      "London Open": {
+        "return": -0.16418820659567215,
+        "start_price": 213.17,
+        "end_price": 212.82
+      },
+      "London Morning": {
+        "return": 1.273376562353166,
+        "start_price": 212.82,
+        "end_price": 215.53
+      },
+      "London Midday": {
+        "return": 0.3990163782304019,
+        "start_price": 215.53,
+        "end_price": 216.39
+      },
+      "NY Pre-Open": {
+        "return": -0.1617449974582903,
+        "start_price": 216.39,
+        "end_price": 216.04
+      },
+      "NY Open": {
+        "return": -0.29624143677096204,
+        "start_price": 216.04,
+        "end_price": 215.4
+      },
+      "London-NY Overlap": {
+        "return": -0.12070566388116032,
+        "start_price": 215.4,
+        "end_price": 215.14
+      },
+      "NY AM": {
+        "return": 0.33466579901460786,
+        "start_price": 215.14,
+        "end_price": 215.86
+      },
+      "NY Lunch": {
+        "return": 0.8060780135272773,
+        "start_price": 215.86,
+        "end_price": 217.6
+      },
+      "NY PM": {
+        "return": -0.32169117647058304,
+        "start_price": 217.6,
+        "end_price": 216.9
+      },
+      "NY Close": {
+        "return": -1.7611802674043306,
+        "start_price": 216.9,
+        "end_price": 213.08
+      },
+      "Pre-Asia D2": {
+        "return": 0.0797822414116705,
+        "start_price": 213.08,
+        "end_price": 213.25
+      },
+      "Sydney Open D2": {
+        "return": 0.07033997655334381,
+        "start_price": 213.25,
+        "end_price": 213.4
+      },
+      "Tokyo Open D2": {
+        "return": -0.21087160262418794,
+        "start_price": 213.4,
+        "end_price": 212.95
+      },
+      "Asia Mid D2": {
+        "return": 0.2629725287626214,
+        "start_price": 212.95,
+        "end_price": 213.51
+      },
+      "24h_aggregate": {
+        "return": 2.499881858135245,
+        "start_price": 211.61,
+        "end_price": 216.9
+      }
+    }
+  },
+  {
+    "date": "2019-10-30",
+    "headline_yoy": 1.7,
+    "trimmed_mean_yoy": 1.6,
+    "prev_headline_yoy": 1.6,
+    "prev_trimmed_yoy": 1.6,
+    "quarter": "Q3",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.34210526315789774,
+        "start_price": 190.0,
+        "end_price": 189.35
+      },
+      "Sydney Open": {
+        "return": 0.760496435172959,
+        "start_price": 189.35,
+        "end_price": 190.79
+      },
+      "Tokyo Open": {
+        "return": 0.010482729702819975,
+        "start_price": 190.79,
+        "end_price": 190.81
+      },
+      "Asia Mid": {
+        "return": -2.22734657512709,
+        "start_price": 190.81,
+        "end_price": 186.56
+      },
+      "Asia Afternoon": {
+        "return": 0.05360205831903641,
+        "start_price": 186.56,
+        "end_price": 186.66
+      },
+      "Tokyo Close": {
+        "return": -0.176792028286716,
+        "start_price": 186.66,
+        "end_price": 186.33
+      },
+      "Pre-London": {
+        "return": 0.13953737991734605,
+        "start_price": 186.33,
+        "end_price": 186.59
+      },
+      "Frankfurt Open": {
+        "return": -1.4470228843989585,
+        "start_price": 186.59,
+        "end_price": 183.89
+      },
+      "London Open": {
+        "return": -0.8048289738430529,
+        "start_price": 183.89,
+        "end_price": 182.41
+      },
+      "London Morning": {
+        "return": 0.3289293350145246,
+        "start_price": 182.41,
+        "end_price": 183.01
+      },
+      "London Midday": {
+        "return": -0.9726244467515444,
+        "start_price": 183.01,
+        "end_price": 181.23
+      },
+      "NY Pre-Open": {
+        "return": 0.022071400982188637,
+        "start_price": 181.23,
+        "end_price": 181.27
+      },
+      "NY Open": {
+        "return": 0.7061289788712976,
+        "start_price": 181.27,
+        "end_price": 182.55
+      },
+      "London-NY Overlap": {
+        "return": 0.18077239112571025,
+        "start_price": 182.55,
+        "end_price": 182.88
+      },
+      "NY AM": {
+        "return": -0.3007436570428603,
+        "start_price": 182.88,
+        "end_price": 182.33
+      },
+      "NY Lunch": {
+        "return": 0.24680524324027237,
+        "start_price": 182.33,
+        "end_price": 182.78
+      },
+      "NY PM": {
+        "return": 0.6510559142138077,
+        "start_price": 182.78,
+        "end_price": 183.97
+      },
+      "NY Close": {
+        "return": -1.0599554275153495,
+        "start_price": 183.97,
+        "end_price": 182.02
+      },
+      "Pre-Asia D2": {
+        "return": 0.08240852653553304,
+        "start_price": 182.02,
+        "end_price": 182.17
+      },
+      "Sydney Open D2": {
+        "return": 0.10429818301587866,
+        "start_price": 182.17,
+        "end_price": 182.36
+      },
+      "Tokyo Open D2": {
+        "return": 0.5922351392849221,
+        "start_price": 182.36,
+        "end_price": 183.44
+      },
+      "Asia Mid D2": {
+        "return": -0.8504143044047112,
+        "start_price": 183.44,
+        "end_price": 181.88
+      },
+      "24h_aggregate": {
+        "return": -3.173684210526316,
+        "start_price": 190.0,
+        "end_price": 183.97
+      }
+    }
+  },
+  {
+    "date": "2020-01-29",
+    "headline_yoy": 1.8,
+    "trimmed_mean_yoy": 1.6,
+    "prev_headline_yoy": 1.7,
+    "prev_trimmed_yoy": 1.6,
+    "quarter": "Q4",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.0512207614819893,
+        "start_price": 175.71,
+        "end_price": 175.8
+      },
+      "Sydney Open": {
+        "return": 0.3242320819112589,
+        "start_price": 175.8,
+        "end_price": 176.37
+      },
+      "Tokyo Open": {
+        "return": -0.24947553438793316,
+        "start_price": 176.37,
+        "end_price": 175.93
+      },
+      "Asia Mid": {
+        "return": 0.34672881259591043,
+        "start_price": 175.93,
+        "end_price": 176.54
+      },
+      "Asia Afternoon": {
+        "return": 0.3115441259771221,
+        "start_price": 176.54,
+        "end_price": 177.09
+      },
+      "Tokyo Close": {
+        "return": 0.3952792365463824,
+        "start_price": 177.09,
+        "end_price": 177.79
+      },
+      "Pre-London": {
+        "return": -0.3149783452387661,
+        "start_price": 177.79,
+        "end_price": 177.23
+      },
+      "Frankfurt Open": {
+        "return": -0.8350730688935224,
+        "start_price": 177.23,
+        "end_price": 175.75
+      },
+      "London Open": {
+        "return": 0.22190611664295098,
+        "start_price": 175.75,
+        "end_price": 176.14
+      },
+      "London Morning": {
+        "return": -0.249801294424888,
+        "start_price": 176.14,
+        "end_price": 175.7
+      },
+      "London Midday": {
+        "return": 0.11383039271486459,
+        "start_price": 175.7,
+        "end_price": 175.9
+      },
+      "NY Pre-Open": {
+        "return": 0.25582717453097703,
+        "start_price": 175.9,
+        "end_price": 176.35
+      },
+      "NY Open": {
+        "return": -0.22115111993194578,
+        "start_price": 176.35,
+        "end_price": 175.96
+      },
+      "London-NY Overlap": {
+        "return": 0.07956353716753033,
+        "start_price": 175.96,
+        "end_price": 176.1
+      },
+      "NY AM": {
+        "return": -0.05110732538330688,
+        "start_price": 176.1,
+        "end_price": 176.01
+      },
+      "NY Lunch": {
+        "return": -0.3692971990227699,
+        "start_price": 176.01,
+        "end_price": 175.36
+      },
+      "NY PM": {
+        "return": -1.505474452554753,
+        "start_price": 175.36,
+        "end_price": 172.72
+      },
+      "NY Close": {
+        "return": 0.5384437239462754,
+        "start_price": 172.72,
+        "end_price": 173.65
+      },
+      "Pre-Asia D2": {
+        "return": 0.34552260293693887,
+        "start_price": 173.65,
+        "end_price": 174.25
+      },
+      "Sydney Open D2": {
+        "return": -0.17790530846485067,
+        "start_price": 174.25,
+        "end_price": 173.94
+      },
+      "Tokyo Open D2": {
+        "return": -0.12648039553869087,
+        "start_price": 173.94,
+        "end_price": 173.72
+      },
+      "Asia Mid D2": {
+        "return": 1.5714943587381938,
+        "start_price": 173.72,
+        "end_price": 176.45
+      },
+      "24h_aggregate": {
+        "return": -1.7016675203460299,
+        "start_price": 175.71,
+        "end_price": 172.72
+      }
+    }
+  },
+  {
+    "date": "2020-04-29",
+    "headline_yoy": 2.2,
+    "trimmed_mean_yoy": 1.8,
+    "prev_headline_yoy": 1.8,
+    "prev_trimmed_yoy": 1.6,
+    "quarter": "Q1",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.12192024384047787,
+        "start_price": 196.85,
+        "end_price": 196.61
+      },
+      "Sydney Open": {
+        "return": 0.4526728040282724,
+        "start_price": 196.61,
+        "end_price": 197.5
+      },
+      "Tokyo Open": {
+        "return": 0.44050632911392634,
+        "start_price": 197.5,
+        "end_price": 198.37
+      },
+      "Asia Mid": {
+        "return": 0.16131471492664878,
+        "start_price": 198.37,
+        "end_price": 198.69
+      },
+      "Asia Afternoon": {
+        "return": 3.633801399164527,
+        "start_price": 198.69,
+        "end_price": 205.91
+      },
+      "Tokyo Close": {
+        "return": -0.0874168325967689,
+        "start_price": 205.91,
+        "end_price": 205.73
+      },
+      "Pre-London": {
+        "return": -0.2770621688620975,
+        "start_price": 205.73,
+        "end_price": 205.16
+      },
+      "Frankfurt Open": {
+        "return": 0.7993760967050179,
+        "start_price": 205.16,
+        "end_price": 206.8
+      },
+      "London Open": {
+        "return": 0.7833655705996015,
+        "start_price": 206.8,
+        "end_price": 208.42
+      },
+      "London Morning": {
+        "return": 0.4462143748200782,
+        "start_price": 208.42,
+        "end_price": 209.35
+      },
+      "London Midday": {
+        "return": -0.27227131597802395,
+        "start_price": 209.35,
+        "end_price": 208.78
+      },
+      "NY Pre-Open": {
+        "return": 4.11437877191302,
+        "start_price": 208.78,
+        "end_price": 217.37
+      },
+      "NY Open": {
+        "return": -1.5227492294244847,
+        "start_price": 217.37,
+        "end_price": 214.06
+      },
+      "London-NY Overlap": {
+        "return": 0.27095206951321316,
+        "start_price": 214.06,
+        "end_price": 214.64
+      },
+      "NY AM": {
+        "return": -0.6848676854267606,
+        "start_price": 214.64,
+        "end_price": 213.17
+      },
+      "NY Lunch": {
+        "return": 0.7881033916592425,
+        "start_price": 213.17,
+        "end_price": 214.85
+      },
+      "NY PM": {
+        "return": 0.3490807540144287,
+        "start_price": 214.85,
+        "end_price": 215.6
+      },
+      "NY Close": {
+        "return": 0.6725417439703233,
+        "start_price": 215.6,
+        "end_price": 217.05
+      },
+      "Pre-Asia D2": {
+        "return": 2.414190278737609,
+        "start_price": 217.05,
+        "end_price": 222.29
+      },
+      "Sydney Open D2": {
+        "return": 0.5713257456475821,
+        "start_price": 222.29,
+        "end_price": 223.56
+      },
+      "Tokyo Open D2": {
+        "return": 0.9482912864555397,
+        "start_price": 223.56,
+        "end_price": 225.68
+      },
+      "Asia Mid D2": {
+        "return": -2.472527472527478,
+        "start_price": 225.68,
+        "end_price": 220.1
+      },
+      "24h_aggregate": {
+        "return": 9.5250190500381,
+        "start_price": 196.85,
+        "end_price": 215.6
+      }
+    }
+  },
+  {
+    "date": "2020-07-29",
+    "headline_yoy": -0.3,
+    "trimmed_mean_yoy": 1.2,
+    "prev_headline_yoy": 2.2,
+    "prev_trimmed_yoy": 1.8,
+    "quarter": "Q2",
+    "signal": "COLD",
+    "level": "COLD",
+    "wyckoff": "MARKDOWN",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.12088051915001763,
+        "start_price": 314.36,
+        "end_price": 313.98
+      },
+      "Sydney Open": {
+        "return": 0.44588827313840923,
+        "start_price": 313.98,
+        "end_price": 315.38
+      },
+      "Tokyo Open": {
+        "return": 0.3456148138753351,
+        "start_price": 315.38,
+        "end_price": 316.47
+      },
+      "Asia Mid": {
+        "return": -0.4139412898536993,
+        "start_price": 316.47,
+        "end_price": 315.16
+      },
+      "Asia Afternoon": {
+        "return": 1.7070694250539393,
+        "start_price": 315.16,
+        "end_price": 320.54
+      },
+      "Tokyo Close": {
+        "return": 1.1605415860734916,
+        "start_price": 320.54,
+        "end_price": 324.26
+      },
+      "Pre-London": {
+        "return": 0.04317522975389698,
+        "start_price": 324.26,
+        "end_price": 324.4
+      },
+      "Frankfurt Open": {
+        "return": -1.1683107274969062,
+        "start_price": 324.4,
+        "end_price": 320.61
+      },
+      "London Open": {
+        "return": 0.6955491095099845,
+        "start_price": 320.61,
+        "end_price": 322.84
+      },
+      "London Morning": {
+        "return": -0.26019080659149274,
+        "start_price": 322.84,
+        "end_price": 322.0
+      },
+      "London Midday": {
+        "return": 0.0,
+        "start_price": 322.0,
+        "end_price": 322.0
+      },
+      "NY Pre-Open": {
+        "return": -0.04658385093166996,
+        "start_price": 322.0,
+        "end_price": 321.85
+      },
+      "NY Open": {
+        "return": 0.20817150846666432,
+        "start_price": 321.85,
+        "end_price": 322.52
+      },
+      "London-NY Overlap": {
+        "return": -0.2480466327669461,
+        "start_price": 322.52,
+        "end_price": 321.72
+      },
+      "NY AM": {
+        "return": 0.1336565957975724,
+        "start_price": 321.72,
+        "end_price": 322.15
+      },
+      "NY Lunch": {
+        "return": -1.477572559366752,
+        "start_price": 322.15,
+        "end_price": 317.39
+      },
+      "NY PM": {
+        "return": 0.43479630738208375,
+        "start_price": 317.39,
+        "end_price": 318.77
+      },
+      "NY Close": {
+        "return": -0.25723876148947306,
+        "start_price": 318.77,
+        "end_price": 317.95
+      },
+      "Pre-Asia D2": {
+        "return": -0.135241390155687,
+        "start_price": 317.95,
+        "end_price": 317.52
+      },
+      "Sydney Open D2": {
+        "return": -0.19841269841269696,
+        "start_price": 317.52,
+        "end_price": 316.89
+      },
+      "Tokyo Open D2": {
+        "return": -0.11360408974723521,
+        "start_price": 316.89,
+        "end_price": 316.53
+      },
+      "Asia Mid D2": {
+        "return": 0.8561589738729463,
+        "start_price": 316.53,
+        "end_price": 319.24
+      },
+      "24h_aggregate": {
+        "return": 1.4028502353988954,
+        "start_price": 314.36,
+        "end_price": 318.77
+      }
+    }
+  },
+  {
+    "date": "2020-10-28",
+    "headline_yoy": 0.7,
+    "trimmed_mean_yoy": 1.2,
+    "prev_headline_yoy": -0.3,
+    "prev_trimmed_yoy": 1.2,
+    "quarter": "Q3",
+    "signal": "COLD",
+    "level": "COLD",
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.09119589864931592,
+        "start_price": 405.72,
+        "end_price": 405.35
+      },
+      "Sydney Open": {
+        "return": 0.48599975329961026,
+        "start_price": 405.35,
+        "end_price": 407.32
+      },
+      "Tokyo Open": {
+        "return": -0.42718255916724174,
+        "start_price": 407.32,
+        "end_price": 405.58
+      },
+      "Asia Mid": {
+        "return": -0.263819714976082,
+        "start_price": 405.58,
+        "end_price": 404.51
+      },
+      "Asia Afternoon": {
+        "return": -1.5055252033324207,
+        "start_price": 404.51,
+        "end_price": 398.42
+      },
+      "Tokyo Close": {
+        "return": -1.1871893981225887,
+        "start_price": 398.42,
+        "end_price": 393.69
+      },
+      "Pre-London": {
+        "return": 0.8534633848967497,
+        "start_price": 393.69,
+        "end_price": 397.05
+      },
+      "Frankfurt Open": {
+        "return": -0.7983881123284261,
+        "start_price": 397.05,
+        "end_price": 393.88
+      },
+      "London Open": {
+        "return": -0.42144815679901704,
+        "start_price": 393.88,
+        "end_price": 392.22
+      },
+      "London Morning": {
+        "return": -0.5303146193462956,
+        "start_price": 392.22,
+        "end_price": 390.14
+      },
+      "London Midday": {
+        "return": -0.7202542676987754,
+        "start_price": 390.14,
+        "end_price": 387.33
+      },
+      "NY Pre-Open": {
+        "return": -1.092092014561217,
+        "start_price": 387.33,
+        "end_price": 383.1
+      },
+      "NY Open": {
+        "return": 0.41764552336203753,
+        "start_price": 383.1,
+        "end_price": 384.7
+      },
+      "London-NY Overlap": {
+        "return": 0.2547439563296122,
+        "start_price": 384.7,
+        "end_price": 385.68
+      },
+      "NY AM": {
+        "return": 0.4537440365069488,
+        "start_price": 385.68,
+        "end_price": 387.43
+      },
+      "NY Lunch": {
+        "return": 0.18584002271377292,
+        "start_price": 387.43,
+        "end_price": 388.15
+      },
+      "NY PM": {
+        "return": 0.061831766069820715,
+        "start_price": 388.15,
+        "end_price": 388.39
+      },
+      "NY Close": {
+        "return": 0.4994979273410741,
+        "start_price": 388.39,
+        "end_price": 390.33
+      },
+      "Pre-Asia D2": {
+        "return": 0.33561345528142916,
+        "start_price": 390.33,
+        "end_price": 391.64
+      },
+      "Sydney Open D2": {
+        "return": -0.06383413338780512,
+        "start_price": 391.64,
+        "end_price": 391.39
+      },
+      "Tokyo Open D2": {
+        "return": -0.10475484810546212,
+        "start_price": 391.39,
+        "end_price": 390.98
+      },
+      "Asia Mid D2": {
+        "return": -1.19954984909714,
+        "start_price": 390.98,
+        "end_price": 386.29
+      },
+      "24h_aggregate": {
+        "return": -4.271418712412512,
+        "start_price": 405.72,
+        "end_price": 388.39
+      }
+    }
+  },
+  {
+    "date": "2021-01-27",
+    "headline_yoy": 0.9,
+    "trimmed_mean_yoy": 1.2,
+    "prev_headline_yoy": 0.7,
+    "prev_trimmed_yoy": 1.2,
+    "quarter": "Q4",
+    "signal": "COLD",
+    "level": "COLD",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.23601411617551743,
+        "start_price": 1343.14,
+        "end_price": 1346.31
+      },
+      "Sydney Open": {
+        "return": -1.6682636242767297,
+        "start_price": 1346.31,
+        "end_price": 1323.85
+      },
+      "Tokyo Open": {
+        "return": -1.4699550553310277,
+        "start_price": 1323.85,
+        "end_price": 1304.39
+      },
+      "Asia Mid": {
+        "return": -0.15332837571585184,
+        "start_price": 1304.39,
+        "end_price": 1302.39
+      },
+      "Asia Afternoon": {
+        "return": -0.8960449634902043,
+        "start_price": 1302.39,
+        "end_price": 1290.72
+      },
+      "Tokyo Close": {
+        "return": -0.5361348704599039,
+        "start_price": 1290.72,
+        "end_price": 1283.8
+      },
+      "Pre-London": {
+        "return": -2.415485278080697,
+        "start_price": 1283.8,
+        "end_price": 1252.79
+      },
+      "Frankfurt Open": {
+        "return": 1.5645080181036035,
+        "start_price": 1252.79,
+        "end_price": 1272.39
+      },
+      "London Open": {
+        "return": 1.886214132459387,
+        "start_price": 1272.39,
+        "end_price": 1296.39
+      },
+      "London Morning": {
+        "return": -1.896034372372523,
+        "start_price": 1296.39,
+        "end_price": 1271.81
+      },
+      "London Midday": {
+        "return": -3.070427186450803,
+        "start_price": 1271.81,
+        "end_price": 1232.76
+      },
+      "NY Pre-Open": {
+        "return": 4.279016191310555,
+        "start_price": 1232.76,
+        "end_price": 1285.51
+      },
+      "NY Open": {
+        "return": -3.0439280907966397,
+        "start_price": 1285.51,
+        "end_price": 1246.38
+      },
+      "London-NY Overlap": {
+        "return": 1.172996999309993,
+        "start_price": 1246.38,
+        "end_price": 1261.0
+      },
+      "NY AM": {
+        "return": 1.2593180015860514,
+        "start_price": 1261.0,
+        "end_price": 1276.88
+      },
+      "NY Lunch": {
+        "return": -2.9955829835223358,
+        "start_price": 1276.88,
+        "end_price": 1238.63
+      },
+      "NY PM": {
+        "return": 0.41578195264121354,
+        "start_price": 1238.63,
+        "end_price": 1243.78
+      },
+      "NY Close": {
+        "return": 2.3967261091189718,
+        "start_price": 1243.78,
+        "end_price": 1273.59
+      },
+      "Pre-Asia D2": {
+        "return": 0.42478348605124744,
+        "start_price": 1273.59,
+        "end_price": 1279.0
+      },
+      "Sydney Open D2": {
+        "return": 0.07505863956216077,
+        "start_price": 1279.0,
+        "end_price": 1279.96
+      },
+      "Tokyo Open D2": {
+        "return": 3.2899465608300176,
+        "start_price": 1279.96,
+        "end_price": 1322.07
+      },
+      "Asia Mid D2": {
+        "return": -2.6912342009122003,
+        "start_price": 1322.07,
+        "end_price": 1286.49
+      },
+      "24h_aggregate": {
+        "return": -7.397590720252552,
+        "start_price": 1343.14,
+        "end_price": 1243.78
+      }
+    }
+  },
+  {
+    "date": "2021-04-28",
+    "headline_yoy": 1.1,
+    "trimmed_mean_yoy": 1.1,
+    "prev_headline_yoy": 0.9,
+    "prev_trimmed_yoy": 1.2,
+    "quarter": "Q1",
+    "signal": "COLD",
+    "level": "COLD",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.23261266827200425,
+        "start_price": 2686.87,
+        "end_price": 2693.12
+      },
+      "Sydney Open": {
+        "return": 0.2680905418251045,
+        "start_price": 2693.12,
+        "end_price": 2700.34
+      },
+      "Tokyo Open": {
+        "return": -1.8719864905900805,
+        "start_price": 2700.34,
+        "end_price": 2649.79
+      },
+      "Asia Mid": {
+        "return": -0.4747546031949674,
+        "start_price": 2649.79,
+        "end_price": 2637.21
+      },
+      "Asia Afternoon": {
+        "return": -0.8630332813845016,
+        "start_price": 2637.21,
+        "end_price": 2614.45
+      },
+      "Tokyo Close": {
+        "return": 0.4804069689609823,
+        "start_price": 2614.45,
+        "end_price": 2627.01
+      },
+      "Pre-London": {
+        "return": -0.8157563161160517,
+        "start_price": 2627.01,
+        "end_price": 2605.58
+      },
+      "Frankfurt Open": {
+        "return": 0.7975191703958504,
+        "start_price": 2605.58,
+        "end_price": 2626.36
+      },
+      "London Open": {
+        "return": 1.5150245967803333,
+        "start_price": 2626.36,
+        "end_price": 2666.15
+      },
+      "London Morning": {
+        "return": 0.762522738780636,
+        "start_price": 2666.15,
+        "end_price": 2686.48
+      },
+      "London Midday": {
+        "return": -0.4217414609451746,
+        "start_price": 2686.48,
+        "end_price": 2675.15
+      },
+      "NY Pre-Open": {
+        "return": 1.751677476029386,
+        "start_price": 2675.15,
+        "end_price": 2722.01
+      },
+      "NY Open": {
+        "return": 0.17413602448190055,
+        "start_price": 2722.01,
+        "end_price": 2726.75
+      },
+      "London-NY Overlap": {
+        "return": -0.33593105345190627,
+        "start_price": 2726.75,
+        "end_price": 2717.59
+      },
+      "NY AM": {
+        "return": 0.8985902950776266,
+        "start_price": 2717.59,
+        "end_price": 2742.01
+      },
+      "NY Lunch": {
+        "return": 0.01750540661775717,
+        "start_price": 2742.01,
+        "end_price": 2742.49
+      },
+      "NY PM": {
+        "return": -0.5349153506484844,
+        "start_price": 2742.49,
+        "end_price": 2727.82
+      },
+      "NY Close": {
+        "return": -0.3959205519425835,
+        "start_price": 2727.82,
+        "end_price": 2717.02
+      },
+      "Pre-Asia D2": {
+        "return": -1.0375337686141455,
+        "start_price": 2717.02,
+        "end_price": 2688.83
+      },
+      "Sydney Open D2": {
+        "return": 0.5247635588713354,
+        "start_price": 2688.83,
+        "end_price": 2702.94
+      },
+      "Tokyo Open D2": {
+        "return": 0.8416761008383464,
+        "start_price": 2702.94,
+        "end_price": 2725.69
+      },
+      "Asia Mid D2": {
+        "return": -0.2938705428717212,
+        "start_price": 2725.69,
+        "end_price": 2717.68
+      },
+      "24h_aggregate": {
+        "return": 1.524078202518182,
+        "start_price": 2686.87,
+        "end_price": 2727.82
+      }
+    }
+  },
+  {
+    "date": "2021-07-28",
+    "headline_yoy": 3.8,
+    "trimmed_mean_yoy": 1.6,
+    "prev_headline_yoy": 1.1,
+    "prev_trimmed_yoy": 1.1,
+    "quarter": "Q2",
+    "signal": "COOL",
+    "level": "COOL",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.02193049786616256,
+        "start_price": 2279.93,
+        "end_price": 2279.43
+      },
+      "Sydney Open": {
+        "return": 2.1764212983070386,
+        "start_price": 2279.43,
+        "end_price": 2329.04
+      },
+      "Tokyo Open": {
+        "return": -1.804606189674705,
+        "start_price": 2329.04,
+        "end_price": 2287.01
+      },
+      "Asia Mid": {
+        "return": 0.3148215355420316,
+        "start_price": 2287.01,
+        "end_price": 2294.21
+      },
+      "Asia Afternoon": {
+        "return": -0.8347099873158992,
+        "start_price": 2294.21,
+        "end_price": 2275.06
+      },
+      "Tokyo Close": {
+        "return": 1.7006144892881971,
+        "start_price": 2275.06,
+        "end_price": 2313.75
+      },
+      "Pre-London": {
+        "return": -0.723500810372762,
+        "start_price": 2313.75,
+        "end_price": 2297.01
+      },
+      "Frankfurt Open": {
+        "return": 0.5598582505082552,
+        "start_price": 2297.01,
+        "end_price": 2309.87
+      },
+      "London Open": {
+        "return": 0.08442033534355929,
+        "start_price": 2309.87,
+        "end_price": 2311.82
+      },
+      "London Morning": {
+        "return": -0.9075101002673227,
+        "start_price": 2311.82,
+        "end_price": 2290.84
+      },
+      "London Midday": {
+        "return": 0.08468509367743074,
+        "start_price": 2290.84,
+        "end_price": 2292.78
+      },
+      "NY Pre-Open": {
+        "return": 0.8221460410505983,
+        "start_price": 2292.78,
+        "end_price": 2311.63
+      },
+      "NY Open": {
+        "return": -1.2882684512659983,
+        "start_price": 2311.63,
+        "end_price": 2281.85
+      },
+      "London-NY Overlap": {
+        "return": 1.7928435260863032,
+        "start_price": 2281.85,
+        "end_price": 2322.76
+      },
+      "NY AM": {
+        "return": -0.7904389605469411,
+        "start_price": 2322.76,
+        "end_price": 2304.4
+      },
+      "NY Lunch": {
+        "return": -0.42483943759763765,
+        "start_price": 2304.4,
+        "end_price": 2294.61
+      },
+      "NY PM": {
+        "return": -0.34297767376592736,
+        "start_price": 2294.61,
+        "end_price": 2286.74
+      },
+      "NY Close": {
+        "return": 0.28687126651916706,
+        "start_price": 2286.74,
+        "end_price": 2293.3
+      },
+      "Pre-Asia D2": {
+        "return": -0.4142502071251036,
+        "start_price": 2293.3,
+        "end_price": 2283.8
+      },
+      "Sydney Open D2": {
+        "return": 0.23732375864785082,
+        "start_price": 2283.8,
+        "end_price": 2289.22
+      },
+      "Tokyo Open D2": {
+        "return": 0.4682817728309317,
+        "start_price": 2289.22,
+        "end_price": 2299.94
+      },
+      "Asia Mid D2": {
+        "return": -0.36174856735393807,
+        "start_price": 2299.94,
+        "end_price": 2291.62
+      },
+      "24h_aggregate": {
+        "return": 0.29869338093713166,
+        "start_price": 2279.93,
+        "end_price": 2286.74
+      }
+    }
+  },
+  {
+    "date": "2021-10-27",
+    "headline_yoy": 3.0,
+    "trimmed_mean_yoy": 2.1,
+    "prev_headline_yoy": 3.8,
+    "prev_trimmed_yoy": 1.6,
+    "quarter": "Q3",
+    "signal": "TARGET",
+    "level": "TARGET",
+    "wyckoff": "MARKDOWN",
+    "vol": "CRISIS",
+    "returns": {
+      "Release Spike": {
+        "return": 0.29162324881324886,
+        "start_price": 4145.76,
+        "end_price": 4157.85
+      },
+      "Sydney Open": {
+        "return": 0.11039359284243624,
+        "start_price": 4157.85,
+        "end_price": 4162.44
+      },
+      "Tokyo Open": {
+        "return": 0.8156273724065868,
+        "start_price": 4162.44,
+        "end_price": 4196.39
+      },
+      "Asia Mid": {
+        "return": 2.2373992884359986,
+        "start_price": 4196.39,
+        "end_price": 4290.28
+      },
+      "Asia Afternoon": {
+        "return": -1.436736063846635,
+        "start_price": 4290.28,
+        "end_price": 4228.64
+      },
+      "Tokyo Close": {
+        "return": -4.5811419274282095,
+        "start_price": 4228.64,
+        "end_price": 4034.92
+      },
+      "Pre-London": {
+        "return": -0.5516838004223186,
+        "start_price": 4034.92,
+        "end_price": 4012.66
+      },
+      "Frankfurt Open": {
+        "return": -0.16298415514895268,
+        "start_price": 4012.66,
+        "end_price": 4006.12
+      },
+      "London Open": {
+        "return": 0.9617784789272464,
+        "start_price": 4006.12,
+        "end_price": 4044.65
+      },
+      "London Morning": {
+        "return": -0.46678946262346827,
+        "start_price": 4044.65,
+        "end_price": 4025.77
+      },
+      "London Midday": {
+        "return": 0.22654051274662712,
+        "start_price": 4025.77,
+        "end_price": 4034.89
+      },
+      "NY Pre-Open": {
+        "return": -1.1365861275028482,
+        "start_price": 4034.89,
+        "end_price": 3989.03
+      },
+      "NY Open": {
+        "return": -0.0894954412476257,
+        "start_price": 3989.03,
+        "end_price": 3985.46
+      },
+      "London-NY Overlap": {
+        "return": -0.877690404620797,
+        "start_price": 3985.46,
+        "end_price": 3950.48
+      },
+      "NY AM": {
+        "return": 0.6422004414653382,
+        "start_price": 3950.48,
+        "end_price": 3975.85
+      },
+      "NY Lunch": {
+        "return": -0.8136624872668715,
+        "start_price": 3975.85,
+        "end_price": 3943.5
+      },
+      "NY PM": {
+        "return": -0.11411182959300115,
+        "start_price": 3943.5,
+        "end_price": 3939.0
+      },
+      "NY Close": {
+        "return": 1.0162477786240214,
+        "start_price": 3939.0,
+        "end_price": 3979.03
+      },
+      "Pre-Asia D2": {
+        "return": 0.9273616936791036,
+        "start_price": 3979.03,
+        "end_price": 4015.93
+      },
+      "Sydney Open D2": {
+        "return": -0.12301011222805315,
+        "start_price": 4015.93,
+        "end_price": 4010.99
+      },
+      "Tokyo Open D2": {
+        "return": -0.1630520145899133,
+        "start_price": 4010.99,
+        "end_price": 4004.45
+      },
+      "Asia Mid D2": {
+        "return": 1.0735556693178898,
+        "start_price": 4004.45,
+        "end_price": 4047.44
+      },
+      "24h_aggregate": {
+        "return": -4.987264096329749,
+        "start_price": 4145.76,
+        "end_price": 3939.0
+      }
+    }
+  },
+  {
+    "date": "2022-01-25",
+    "headline_yoy": 3.5,
+    "trimmed_mean_yoy": 2.6,
+    "prev_headline_yoy": 3.0,
+    "prev_trimmed_yoy": 2.1,
+    "quarter": "Q4",
+    "signal": "WARM_RISING",
+    "level": "WARM",
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -1.574871302390954,
+        "start_price": 2426.23,
+        "end_price": 2388.02
+      },
+      "Sydney Open": {
+        "return": 0.24999790621518242,
+        "start_price": 2388.02,
+        "end_price": 2393.99
+      },
+      "Tokyo Open": {
+        "return": 0.42899093145754313,
+        "start_price": 2393.99,
+        "end_price": 2404.26
+      },
+      "Asia Mid": {
+        "return": -0.5660785439178844,
+        "start_price": 2404.26,
+        "end_price": 2390.65
+      },
+      "Asia Afternoon": {
+        "return": -1.598310083031813,
+        "start_price": 2390.65,
+        "end_price": 2352.44
+      },
+      "Tokyo Close": {
+        "return": 2.080393123735358,
+        "start_price": 2352.44,
+        "end_price": 2401.38
+      },
+      "Pre-London": {
+        "return": -0.18197869558336832,
+        "start_price": 2401.38,
+        "end_price": 2397.01
+      },
+      "Frankfurt Open": {
+        "return": 1.7655328930625949,
+        "start_price": 2397.01,
+        "end_price": 2439.33
+      },
+      "London Open": {
+        "return": -0.004099486334358577,
+        "start_price": 2439.33,
+        "end_price": 2439.23
+      },
+      "London Morning": {
+        "return": -0.5624725835611976,
+        "start_price": 2439.23,
+        "end_price": 2425.51
+      },
+      "London Midday": {
+        "return": -0.9140345741720327,
+        "start_price": 2425.51,
+        "end_price": 2403.34
+      },
+      "NY Pre-Open": {
+        "return": 1.7001339802108595,
+        "start_price": 2403.34,
+        "end_price": 2444.2
+      },
+      "NY Open": {
+        "return": 1.2233041485966818,
+        "start_price": 2444.2,
+        "end_price": 2474.1
+      },
+      "London-NY Overlap": {
+        "return": 1.0242108241380765,
+        "start_price": 2474.1,
+        "end_price": 2499.44
+      },
+      "NY AM": {
+        "return": -3.0950933008994066,
+        "start_price": 2499.44,
+        "end_price": 2422.08
+      },
+      "NY Lunch": {
+        "return": 1.4516448672215556,
+        "start_price": 2422.08,
+        "end_price": 2457.24
+      },
+      "NY PM": {
+        "return": -0.5445133564486845,
+        "start_price": 2457.24,
+        "end_price": 2443.86
+      },
+      "NY Close": {
+        "return": 0.7349029813491786,
+        "start_price": 2443.86,
+        "end_price": 2461.82
+      },
+      "Pre-Asia D2": {
+        "return": 0.40660974401051914,
+        "start_price": 2461.82,
+        "end_price": 2471.83
+      },
+      "Sydney Open D2": {
+        "return": 0.39565827747054616,
+        "start_price": 2471.83,
+        "end_price": 2481.61
+      },
+      "Tokyo Open D2": {
+        "return": -0.25749412679672984,
+        "start_price": 2481.61,
+        "end_price": 2475.22
+      },
+      "Asia Mid D2": {
+        "return": -0.1321094690572952,
+        "start_price": 2475.22,
+        "end_price": 2471.95
+      },
+      "24h_aggregate": {
+        "return": 0.7266417445996509,
+        "start_price": 2426.23,
+        "end_price": 2443.86
+      }
+    }
+  },
+  {
+    "date": "2022-04-27",
+    "headline_yoy": 5.1,
+    "trimmed_mean_yoy": 3.7,
+    "prev_headline_yoy": 3.5,
+    "prev_trimmed_yoy": 2.6,
+    "quarter": "Q1",
+    "signal": "HOT_RISING",
+    "level": "HOT",
+    "wyckoff": "MARKDOWN",
+    "vol": "TREND",
+    "returns": {
+      "Release Spike": {
+        "return": 0.4924649297166964,
+        "start_price": 2802.23,
+        "end_price": 2816.03
+      },
+      "Sydney Open": {
+        "return": 0.7361427257522121,
+        "start_price": 2816.03,
+        "end_price": 2836.76
+      },
+      "Tokyo Open": {
+        "return": 0.23019219109123595,
+        "start_price": 2836.76,
+        "end_price": 2843.29
+      },
+      "Asia Mid": {
+        "return": 0.16705999036327634,
+        "start_price": 2843.29,
+        "end_price": 2848.04
+      },
+      "Asia Afternoon": {
+        "return": 0.7622786196823091,
+        "start_price": 2848.04,
+        "end_price": 2869.75
+      },
+      "Tokyo Close": {
+        "return": 0.8453698057322143,
+        "start_price": 2869.75,
+        "end_price": 2894.01
+      },
+      "Pre-London": {
+        "return": -0.6316495105407445,
+        "start_price": 2894.01,
+        "end_price": 2875.73
+      },
+      "Frankfurt Open": {
+        "return": 0.6081933978502774,
+        "start_price": 2875.73,
+        "end_price": 2893.22
+      },
+      "London Open": {
+        "return": -0.4057762631255066,
+        "start_price": 2893.22,
+        "end_price": 2881.48
+      },
+      "London Morning": {
+        "return": -0.8370698391104534,
+        "start_price": 2881.48,
+        "end_price": 2857.36
+      },
+      "London Midday": {
+        "return": -0.6995968306408795,
+        "start_price": 2857.36,
+        "end_price": 2837.37
+      },
+      "NY Pre-Open": {
+        "return": 1.8407891815307844,
+        "start_price": 2837.37,
+        "end_price": 2889.6
+      },
+      "NY Open": {
+        "return": -0.47826688815059903,
+        "start_price": 2889.6,
+        "end_price": 2875.78
+      },
+      "London-NY Overlap": {
+        "return": -0.8668952423342637,
+        "start_price": 2875.78,
+        "end_price": 2850.85
+      },
+      "NY AM": {
+        "return": 1.2908430818878645,
+        "start_price": 2850.85,
+        "end_price": 2887.65
+      },
+      "NY Lunch": {
+        "return": -0.04120998043391874,
+        "start_price": 2887.65,
+        "end_price": 2886.46
+      },
+      "NY PM": {
+        "return": 0.35129535832819,
+        "start_price": 2886.46,
+        "end_price": 2896.6
+      },
+      "NY Close": {
+        "return": -0.5789546364703438,
+        "start_price": 2896.6,
+        "end_price": 2879.83
+      },
+      "Pre-Asia D2": {
+        "return": 0.2836973015768317,
+        "start_price": 2879.83,
+        "end_price": 2888.0
+      },
+      "Sydney Open D2": {
+        "return": -0.2042936288088674,
+        "start_price": 2888.0,
+        "end_price": 2882.1
+      },
+      "Tokyo Open D2": {
+        "return": -0.10894833628256732,
+        "start_price": 2882.1,
+        "end_price": 2878.96
+      },
+      "Asia Mid D2": {
+        "return": 1.2782393642148617,
+        "start_price": 2878.96,
+        "end_price": 2915.76
+      },
+      "24h_aggregate": {
+        "return": 3.3676750302437664,
+        "start_price": 2802.23,
+        "end_price": 2896.6
+      }
+    }
+  },
+  {
+    "date": "2022-07-27",
+    "headline_yoy": 6.1,
+    "trimmed_mean_yoy": 4.9,
+    "prev_headline_yoy": 5.1,
+    "prev_trimmed_yoy": 3.7,
+    "quarter": "Q2",
+    "signal": "HOT_RISING",
+    "level": "HOT",
+    "wyckoff": "MARKUP",
+    "vol": "TREND",
+    "returns": {
+      "Release Spike": {
+        "return": 0.06033872914153373,
+        "start_price": 1441.86,
+        "end_price": 1442.73
+      },
+      "Sydney Open": {
+        "return": -0.8234388970909393,
+        "start_price": 1442.73,
+        "end_price": 1430.85
+      },
+      "Tokyo Open": {
+        "return": 0.2089666981165048,
+        "start_price": 1430.85,
+        "end_price": 1433.84
+      },
+      "Asia Mid": {
+        "return": 0.7476426937454687,
+        "start_price": 1433.84,
+        "end_price": 1444.56
+      },
+      "Asia Afternoon": {
+        "return": 1.251592180317893,
+        "start_price": 1444.56,
+        "end_price": 1462.64
+      },
+      "Tokyo Close": {
+        "return": 0.38423672263850916,
+        "start_price": 1462.64,
+        "end_price": 1468.26
+      },
+      "Pre-London": {
+        "return": -0.8002669826869901,
+        "start_price": 1468.26,
+        "end_price": 1456.51
+      },
+      "Frankfurt Open": {
+        "return": 0.04874666154025969,
+        "start_price": 1456.51,
+        "end_price": 1457.22
+      },
+      "London Open": {
+        "return": 0.08303481972523273,
+        "start_price": 1457.22,
+        "end_price": 1458.43
+      },
+      "London Morning": {
+        "return": 1.1903210987157353,
+        "start_price": 1458.43,
+        "end_price": 1475.79
+      },
+      "London Midday": {
+        "return": 1.0475745194099457,
+        "start_price": 1475.79,
+        "end_price": 1491.25
+      },
+      "NY Pre-Open": {
+        "return": 1.0340318524727627,
+        "start_price": 1491.25,
+        "end_price": 1506.67
+      },
+      "NY Open": {
+        "return": 2.0097300669688765,
+        "start_price": 1506.67,
+        "end_price": 1536.95
+      },
+      "London-NY Overlap": {
+        "return": 3.448388041250529,
+        "start_price": 1536.95,
+        "end_price": 1589.95
+      },
+      "NY AM": {
+        "return": 2.262335293562692,
+        "start_price": 1589.95,
+        "end_price": 1625.92
+      },
+      "NY Lunch": {
+        "return": 0.19250639637865835,
+        "start_price": 1625.92,
+        "end_price": 1629.05
+      },
+      "NY PM": {
+        "return": -0.9969000337620092,
+        "start_price": 1629.05,
+        "end_price": 1612.81
+      },
+      "NY Close": {
+        "return": -0.031621827741642905,
+        "start_price": 1612.81,
+        "end_price": 1612.3
+      },
+      "Pre-Asia D2": {
+        "return": 1.9314023444768407,
+        "start_price": 1612.3,
+        "end_price": 1643.44
+      },
+      "Sydney Open D2": {
+        "return": -0.9364503723896278,
+        "start_price": 1643.44,
+        "end_price": 1628.05
+      },
+      "Tokyo Open D2": {
+        "return": 0.8058720555265575,
+        "start_price": 1628.05,
+        "end_price": 1641.17
+      },
+      "Asia Mid D2": {
+        "return": -1.4702925352035503,
+        "start_price": 1641.17,
+        "end_price": 1617.04
+      },
+      "24h_aggregate": {
+        "return": 11.856213502004358,
+        "start_price": 1441.86,
+        "end_price": 1612.81
+      }
+    }
+  },
+  {
+    "date": "2022-10-26",
+    "headline_yoy": 7.3,
+    "trimmed_mean_yoy": 6.1,
+    "prev_headline_yoy": 6.1,
+    "prev_trimmed_yoy": 4.9,
+    "quarter": "Q3",
+    "signal": "HOT",
+    "level": "RUNAWAY",
+    "wyckoff": "MARKUP",
+    "vol": "TREND",
+    "returns": {
+      "Release Spike": {
+        "return": 0.155146368350139,
+        "start_price": 1469.58,
+        "end_price": 1471.86
+      },
+      "Sydney Open": {
+        "return": 0.8112184582772856,
+        "start_price": 1471.86,
+        "end_price": 1483.8
+      },
+      "Tokyo Open": {
+        "return": -0.06739452756436178,
+        "start_price": 1483.8,
+        "end_price": 1482.8
+      },
+      "Asia Mid": {
+        "return": -0.33719989209603457,
+        "start_price": 1482.8,
+        "end_price": 1477.8
+      },
+      "Asia Afternoon": {
+        "return": 1.0610366761402128,
+        "start_price": 1477.8,
+        "end_price": 1493.48
+      },
+      "Tokyo Close": {
+        "return": 1.1764469561025215,
+        "start_price": 1493.48,
+        "end_price": 1511.05
+      },
+      "Pre-London": {
+        "return": 1.5181496310512594,
+        "start_price": 1511.05,
+        "end_price": 1533.99
+      },
+      "Frankfurt Open": {
+        "return": -0.44589599671444524,
+        "start_price": 1533.99,
+        "end_price": 1527.15
+      },
+      "London Open": {
+        "return": 0.5362930949808353,
+        "start_price": 1527.15,
+        "end_price": 1535.34
+      },
+      "London Morning": {
+        "return": -0.7835398022587814,
+        "start_price": 1535.34,
+        "end_price": 1523.31
+      },
+      "London Midday": {
+        "return": 3.5337521581293467,
+        "start_price": 1523.31,
+        "end_price": 1577.14
+      },
+      "NY Pre-Open": {
+        "return": -1.4900389312299478,
+        "start_price": 1577.14,
+        "end_price": 1553.64
+      },
+      "NY Open": {
+        "return": 0.7138075744702709,
+        "start_price": 1553.64,
+        "end_price": 1564.73
+      },
+      "London-NY Overlap": {
+        "return": -0.5847654227886019,
+        "start_price": 1564.73,
+        "end_price": 1555.58
+      },
+      "NY AM": {
+        "return": 0.337494696511912,
+        "start_price": 1555.58,
+        "end_price": 1560.83
+      },
+      "NY Lunch": {
+        "return": 0.5548330055163011,
+        "start_price": 1560.83,
+        "end_price": 1569.49
+      },
+      "NY PM": {
+        "return": -0.6549898374631232,
+        "start_price": 1569.49,
+        "end_price": 1559.21
+      },
+      "NY Close": {
+        "return": 0.4822955214499639,
+        "start_price": 1559.21,
+        "end_price": 1566.73
+      },
+      "Pre-Asia D2": {
+        "return": -0.9861303479221082,
+        "start_price": 1566.73,
+        "end_price": 1551.28
+      },
+      "Sydney Open D2": {
+        "return": 0.8219019132587282,
+        "start_price": 1551.28,
+        "end_price": 1564.03
+      },
+      "Tokyo Open D2": {
+        "return": -0.12275979361010166,
+        "start_price": 1564.03,
+        "end_price": 1562.11
+      },
+      "Asia Mid D2": {
+        "return": -0.21765432651989067,
+        "start_price": 1562.11,
+        "end_price": 1558.71
+      },
+      "24h_aggregate": {
+        "return": 6.099021489132958,
+        "start_price": 1469.58,
+        "end_price": 1559.21
+      }
+    }
+  },
+  {
+    "date": "2023-01-25",
+    "headline_yoy": 7.8,
+    "trimmed_mean_yoy": 6.9,
+    "prev_headline_yoy": 7.3,
+    "prev_trimmed_yoy": 6.1,
+    "quarter": "Q4",
+    "signal": "HOT",
+    "level": "RUNAWAY",
+    "wyckoff": "MARKDOWN",
+    "vol": "CRISIS",
+    "returns": {
+      "Release Spike": {
+        "return": -0.2884070659731029,
+        "start_price": 1553.36,
+        "end_price": 1548.88
+      },
+      "Sydney Open": {
+        "return": -0.6546665977997068,
+        "start_price": 1548.88,
+        "end_price": 1538.74
+      },
+      "Tokyo Open": {
+        "return": 0.2742503606847178,
+        "start_price": 1538.74,
+        "end_price": 1542.96
+      },
+      "Asia Mid": {
+        "return": 0.2015606366982877,
+        "start_price": 1542.96,
+        "end_price": 1546.07
+      },
+      "Asia Afternoon": {
+        "return": 0.7198897850679535,
+        "start_price": 1546.07,
+        "end_price": 1557.2
+      },
+      "Tokyo Close": {
+        "return": -0.28512715129720356,
+        "start_price": 1557.2,
+        "end_price": 1552.76
+      },
+      "Pre-London": {
+        "return": -0.3703083541564698,
+        "start_price": 1552.76,
+        "end_price": 1547.01
+      },
+      "Frankfurt Open": {
+        "return": -0.2773091318091004,
+        "start_price": 1547.01,
+        "end_price": 1542.72
+      },
+      "London Open": {
+        "return": 0.3649398465048668,
+        "start_price": 1542.72,
+        "end_price": 1548.35
+      },
+      "London Morning": {
+        "return": 0.7653308360512893,
+        "start_price": 1548.35,
+        "end_price": 1560.2
+      },
+      "London Midday": {
+        "return": -1.6549160364055848,
+        "start_price": 1560.2,
+        "end_price": 1534.38
+      },
+      "NY Pre-Open": {
+        "return": 0.8426856450162173,
+        "start_price": 1534.38,
+        "end_price": 1547.31
+      },
+      "NY Open": {
+        "return": 0.352870465517578,
+        "start_price": 1547.31,
+        "end_price": 1552.77
+      },
+      "London-NY Overlap": {
+        "return": 0.1912710832898644,
+        "start_price": 1552.77,
+        "end_price": 1555.74
+      },
+      "NY AM": {
+        "return": 4.032164757607314,
+        "start_price": 1555.74,
+        "end_price": 1618.47
+      },
+      "NY Lunch": {
+        "return": -0.16558848789289043,
+        "start_price": 1618.47,
+        "end_price": 1615.79
+      },
+      "NY PM": {
+        "return": 0.3670031377839982,
+        "start_price": 1615.79,
+        "end_price": 1621.72
+      },
+      "NY Close": {
+        "return": -0.10606023234590602,
+        "start_price": 1621.72,
+        "end_price": 1620.0
+      },
+      "Pre-Asia D2": {
+        "return": -0.16666666666666946,
+        "start_price": 1620.0,
+        "end_price": 1617.3
+      },
+      "Sydney Open D2": {
+        "return": 0.03153403821183398,
+        "start_price": 1617.3,
+        "end_price": 1617.81
+      },
+      "Tokyo Open D2": {
+        "return": 0.1347500633572585,
+        "start_price": 1617.81,
+        "end_price": 1619.99
+      },
+      "Asia Mid D2": {
+        "return": -0.8018568015851956,
+        "start_price": 1619.99,
+        "end_price": 1607.0
+      },
+      "24h_aggregate": {
+        "return": 4.400782819179079,
+        "start_price": 1553.36,
+        "end_price": 1621.72
+      }
+    }
+  },
+  {
+    "date": "2023-04-26",
+    "headline_yoy": 7.0,
+    "trimmed_mean_yoy": 6.6,
+    "prev_headline_yoy": 7.8,
+    "prev_trimmed_yoy": 6.9,
+    "quarter": "Q1",
+    "signal": "HOT",
+    "level": "RUNAWAY",
+    "wyckoff": "MARKUP",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.1588167351129378,
+        "start_price": 1870.08,
+        "end_price": 1867.11
+      },
+      "Sydney Open": {
+        "return": 0.18424195682097225,
+        "start_price": 1867.11,
+        "end_price": 1870.55
+      },
+      "Tokyo Open": {
+        "return": -0.1806955173611976,
+        "start_price": 1870.55,
+        "end_price": 1867.17
+      },
+      "Asia Mid": {
+        "return": 0.013924816701210437,
+        "start_price": 1867.17,
+        "end_price": 1867.43
+      },
+      "Asia Afternoon": {
+        "return": -0.09853113637459747,
+        "start_price": 1867.43,
+        "end_price": 1865.59
+      },
+      "Tokyo Close": {
+        "return": -0.08790784684737123,
+        "start_price": 1865.59,
+        "end_price": 1863.95
+      },
+      "Pre-London": {
+        "return": 0.6357466670243251,
+        "start_price": 1863.95,
+        "end_price": 1875.8
+      },
+      "Frankfurt Open": {
+        "return": 1.018765326793908,
+        "start_price": 1875.8,
+        "end_price": 1894.91
+      },
+      "London Open": {
+        "return": 0.9129721200479155,
+        "start_price": 1894.91,
+        "end_price": 1912.21
+      },
+      "London Morning": {
+        "return": 2.3742162210217423,
+        "start_price": 1912.21,
+        "end_price": 1957.61
+      },
+      "London Midday": {
+        "return": -0.41070489014665656,
+        "start_price": 1957.61,
+        "end_price": 1949.57
+      },
+      "NY Pre-Open": {
+        "return": -0.018465610365357488,
+        "start_price": 1949.57,
+        "end_price": 1949.21
+      },
+      "NY Open": {
+        "return": -0.006156340260932287,
+        "start_price": 1949.21,
+        "end_price": 1949.09
+      },
+      "London-NY Overlap": {
+        "return": -0.42789199062126015,
+        "start_price": 1949.09,
+        "end_price": 1940.75
+      },
+      "NY AM": {
+        "return": -3.4718536648203067,
+        "start_price": 1940.75,
+        "end_price": 1873.37
+      },
+      "NY Lunch": {
+        "return": -0.54340573405146,
+        "start_price": 1873.37,
+        "end_price": 1863.19
+      },
+      "NY PM": {
+        "return": 3.0131119209527677,
+        "start_price": 1863.19,
+        "end_price": 1919.33
+      },
+      "NY Close": {
+        "return": -0.4647455101519721,
+        "start_price": 1919.33,
+        "end_price": 1910.41
+      },
+      "Pre-Asia D2": {
+        "return": -0.3784527928559847,
+        "start_price": 1910.41,
+        "end_price": 1903.18
+      },
+      "Sydney Open D2": {
+        "return": 0.3373301526918024,
+        "start_price": 1903.18,
+        "end_price": 1909.6
+      },
+      "Tokyo Open D2": {
+        "return": -0.4021784666945871,
+        "start_price": 1909.6,
+        "end_price": 1901.92
+      },
+      "Asia Mid D2": {
+        "return": -1.249789686211827,
+        "start_price": 1901.92,
+        "end_price": 1878.15
+      },
+      "24h_aggregate": {
+        "return": 2.633577173169062,
+        "start_price": 1870.08,
+        "end_price": 1919.33
+      }
+    }
+  },
+  {
+    "date": "2023-07-26",
+    "headline_yoy": 6.0,
+    "trimmed_mean_yoy": 5.9,
+    "prev_headline_yoy": 7.0,
+    "prev_trimmed_yoy": 6.6,
+    "quarter": "Q2",
+    "signal": "HOT",
+    "level": "RUNAWAY",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.03716691175282682,
+        "start_price": 1856.49,
+        "end_price": 1855.8
+      },
+      "Sydney Open": {
+        "return": -0.06735639616337967,
+        "start_price": 1855.8,
+        "end_price": 1854.55
+      },
+      "Tokyo Open": {
+        "return": 0.47235178345151063,
+        "start_price": 1854.55,
+        "end_price": 1863.31
+      },
+      "Asia Mid": {
+        "return": -0.3917759256377068,
+        "start_price": 1863.31,
+        "end_price": 1856.01
+      },
+      "Asia Afternoon": {
+        "return": -0.01508612561354587,
+        "start_price": 1856.01,
+        "end_price": 1855.73
+      },
+      "Tokyo Close": {
+        "return": -0.0506539205595671,
+        "start_price": 1855.73,
+        "end_price": 1854.79
+      },
+      "Pre-London": {
+        "return": -0.009165458084207526,
+        "start_price": 1854.79,
+        "end_price": 1854.62
+      },
+      "Frankfurt Open": {
+        "return": -0.2232263212949215,
+        "start_price": 1854.62,
+        "end_price": 1850.48
+      },
+      "London Open": {
+        "return": 0.11510526998399777,
+        "start_price": 1850.48,
+        "end_price": 1852.61
+      },
+      "London Morning": {
+        "return": 0.21969005888989931,
+        "start_price": 1852.61,
+        "end_price": 1856.68
+      },
+      "London Midday": {
+        "return": 0.21597690501324895,
+        "start_price": 1856.68,
+        "end_price": 1860.69
+      },
+      "NY Pre-Open": {
+        "return": -0.009673830675720495,
+        "start_price": 1860.69,
+        "end_price": 1860.51
+      },
+      "NY Open": {
+        "return": 0.3617287732933453,
+        "start_price": 1860.51,
+        "end_price": 1867.24
+      },
+      "London-NY Overlap": {
+        "return": -0.2393907585527317,
+        "start_price": 1867.24,
+        "end_price": 1862.77
+      },
+      "NY AM": {
+        "return": 0.42785743811635507,
+        "start_price": 1862.77,
+        "end_price": 1870.74
+      },
+      "NY Lunch": {
+        "return": -0.16570982605813256,
+        "start_price": 1870.74,
+        "end_price": 1867.64
+      },
+      "NY PM": {
+        "return": 0.03908676190271095,
+        "start_price": 1867.64,
+        "end_price": 1868.37
+      },
+      "NY Close": {
+        "return": 0.2611902353388306,
+        "start_price": 1868.37,
+        "end_price": 1873.25
+      },
+      "Pre-Asia D2": {
+        "return": 0.21406646203122867,
+        "start_price": 1873.25,
+        "end_price": 1877.26
+      },
+      "Sydney Open D2": {
+        "return": 0.18963808955605221,
+        "start_price": 1877.26,
+        "end_price": 1880.82
+      },
+      "Tokyo Open D2": {
+        "return": -0.12919896640826004,
+        "start_price": 1880.82,
+        "end_price": 1878.39
+      },
+      "Asia Mid D2": {
+        "return": -0.3077103263965523,
+        "start_price": 1878.39,
+        "end_price": 1872.61
+      },
+      "24h_aggregate": {
+        "return": 0.6399172632225265,
+        "start_price": 1856.49,
+        "end_price": 1868.37
+      }
+    }
+  },
+  {
+    "date": "2023-10-25",
+    "headline_yoy": 5.4,
+    "trimmed_mean_yoy": 5.2,
+    "prev_headline_yoy": 6.0,
+    "prev_trimmed_yoy": 5.9,
+    "quarter": "Q3",
+    "signal": "HOT",
+    "level": "RUNAWAY",
+    "wyckoff": "MARKDOWN",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": 0.4928373188304204,
+        "start_price": 1783.55,
+        "end_price": 1792.34
+      },
+      "Sydney Open": {
+        "return": 0.1283238671234354,
+        "start_price": 1792.34,
+        "end_price": 1794.64
+      },
+      "Tokyo Open": {
+        "return": -0.1036419560469023,
+        "start_price": 1794.64,
+        "end_price": 1792.78
+      },
+      "Asia Mid": {
+        "return": -0.03458316134717539,
+        "start_price": 1792.78,
+        "end_price": 1792.16
+      },
+      "Asia Afternoon": {
+        "return": -0.28847870725828456,
+        "start_price": 1792.16,
+        "end_price": 1786.99
+      },
+      "Tokyo Close": {
+        "return": -1.387248949350582,
+        "start_price": 1786.99,
+        "end_price": 1762.2
+      },
+      "Pre-London": {
+        "return": 0.8693678356599668,
+        "start_price": 1762.2,
+        "end_price": 1777.52
+      },
+      "Frankfurt Open": {
+        "return": -0.05738332058148329,
+        "start_price": 1777.52,
+        "end_price": 1776.5
+      },
+      "London Open": {
+        "return": 0.6062482409231625,
+        "start_price": 1776.5,
+        "end_price": 1787.27
+      },
+      "London Morning": {
+        "return": 0.21037671980170827,
+        "start_price": 1787.27,
+        "end_price": 1791.03
+      },
+      "London Midday": {
+        "return": 0.4583954484291182,
+        "start_price": 1791.03,
+        "end_price": 1799.24
+      },
+      "NY Pre-Open": {
+        "return": -0.4023921211178058,
+        "start_price": 1799.24,
+        "end_price": 1792.0
+      },
+      "NY Open": {
+        "return": -0.1244419642857153,
+        "start_price": 1792.0,
+        "end_price": 1789.77
+      },
+      "London-NY Overlap": {
+        "return": -0.018438123334279112,
+        "start_price": 1789.77,
+        "end_price": 1789.44
+      },
+      "NY AM": {
+        "return": 0.1989449213161629,
+        "start_price": 1789.44,
+        "end_price": 1793.0
+      },
+      "NY Lunch": {
+        "return": -0.32626882320133344,
+        "start_price": 1793.0,
+        "end_price": 1787.15
+      },
+      "NY PM": {
+        "return": 0.170103236997452,
+        "start_price": 1787.15,
+        "end_price": 1790.19
+      },
+      "NY Close": {
+        "return": 0.02178539708074968,
+        "start_price": 1790.19,
+        "end_price": 1790.58
+      },
+      "Pre-Asia D2": {
+        "return": 1.0471467345776229,
+        "start_price": 1790.58,
+        "end_price": 1809.33
+      },
+      "Sydney Open D2": {
+        "return": -0.11495968120795695,
+        "start_price": 1809.33,
+        "end_price": 1807.25
+      },
+      "Tokyo Open D2": {
+        "return": -0.6235993913404334,
+        "start_price": 1807.25,
+        "end_price": 1795.98
+      },
+      "Asia Mid D2": {
+        "return": 2.766734596153635,
+        "start_price": 1795.98,
+        "end_price": 1845.67
+      },
+      "24h_aggregate": {
+        "return": 0.37229121695495504,
+        "start_price": 1783.55,
+        "end_price": 1790.19
+      }
+    }
+  },
+  {
+    "date": "2024-01-31",
+    "headline_yoy": 4.1,
+    "trimmed_mean_yoy": 4.2,
+    "prev_headline_yoy": 5.4,
+    "prev_trimmed_yoy": 5.2,
+    "quarter": "Q4",
+    "signal": "HOT_FALLING",
+    "level": "HOT",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "TREND",
+    "returns": {
+      "Release Spike": {
+        "return": 0.06327625643985628,
+        "start_price": 2338.95,
+        "end_price": 2340.43
+      },
+      "Sydney Open": {
+        "return": -0.3806992732104722,
+        "start_price": 2340.43,
+        "end_price": 2331.52
+      },
+      "Tokyo Open": {
+        "return": 0.46150150974472526,
+        "start_price": 2331.52,
+        "end_price": 2342.28
+      },
+      "Asia Mid": {
+        "return": -0.05080519835374312,
+        "start_price": 2342.28,
+        "end_price": 2341.09
+      },
+      "Asia Afternoon": {
+        "return": -0.2763669914441672,
+        "start_price": 2341.09,
+        "end_price": 2334.62
+      },
+      "Tokyo Close": {
+        "return": 0.059538597287795335,
+        "start_price": 2334.62,
+        "end_price": 2336.01
+      },
+      "Pre-London": {
+        "return": -0.434073484274482,
+        "start_price": 2336.01,
+        "end_price": 2325.87
+      },
+      "Frankfurt Open": {
+        "return": -0.8422654748545573,
+        "start_price": 2325.87,
+        "end_price": 2306.28
+      },
+      "London Open": {
+        "return": -0.6712107809979715,
+        "start_price": 2306.28,
+        "end_price": 2290.8
+      },
+      "London Morning": {
+        "return": 0.4718875502008008,
+        "start_price": 2290.8,
+        "end_price": 2301.61
+      },
+      "London Midday": {
+        "return": 0.1073161830197036,
+        "start_price": 2301.61,
+        "end_price": 2304.08
+      },
+      "NY Pre-Open": {
+        "return": 1.1297350786431115,
+        "start_price": 2304.08,
+        "end_price": 2330.11
+      },
+      "NY Open": {
+        "return": 0.4059894168086501,
+        "start_price": 2330.11,
+        "end_price": 2339.57
+      },
+      "London-NY Overlap": {
+        "return": -0.2752642579619355,
+        "start_price": 2339.57,
+        "end_price": 2333.13
+      },
+      "NY AM": {
+        "return": -2.353490804198665,
+        "start_price": 2333.13,
+        "end_price": 2278.22
+      },
+      "NY Lunch": {
+        "return": 0.3467619457295648,
+        "start_price": 2278.22,
+        "end_price": 2286.12
+      },
+      "NY PM": {
+        "return": -0.20340139625216924,
+        "start_price": 2286.12,
+        "end_price": 2281.47
+      },
+      "NY Close": {
+        "return": -1.2535777371606862,
+        "start_price": 2281.47,
+        "end_price": 2252.87
+      },
+      "Pre-Asia D2": {
+        "return": 0.25034733473304394,
+        "start_price": 2252.87,
+        "end_price": 2258.51
+      },
+      "Sydney Open D2": {
+        "return": 0.405577128283685,
+        "start_price": 2258.51,
+        "end_price": 2267.67
+      },
+      "Tokyo Open D2": {
+        "return": 0.2337200739084491,
+        "start_price": 2267.67,
+        "end_price": 2272.97
+      },
+      "Asia Mid D2": {
+        "return": -0.18302045341556883,
+        "start_price": 2272.97,
+        "end_price": 2268.81
+      },
+      "24h_aggregate": {
+        "return": -2.457512986596551,
+        "start_price": 2338.95,
+        "end_price": 2281.47
+      }
+    }
+  },
+  {
+    "date": "2024-04-24",
+    "headline_yoy": 3.6,
+    "trimmed_mean_yoy": 4.0,
+    "prev_headline_yoy": 4.1,
+    "prev_trimmed_yoy": 4.2,
+    "quarter": "Q1",
+    "signal": "HOT_STABLE",
+    "level": "HOT",
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.057570880277334625,
+        "start_price": 3230.8,
+        "end_price": 3228.94
+      },
+      "Sydney Open": {
+        "return": 0.18148370672728906,
+        "start_price": 3228.94,
+        "end_price": 3234.8
+      },
+      "Tokyo Open": {
+        "return": 0.16817113886483243,
+        "start_price": 3234.8,
+        "end_price": 3240.24
+      },
+      "Asia Mid": {
+        "return": 0.8073476038812036,
+        "start_price": 3240.24,
+        "end_price": 3266.4
+      },
+      "Asia Afternoon": {
+        "return": -0.27553269654665685,
+        "start_price": 3266.4,
+        "end_price": 3257.4
+      },
+      "Tokyo Close": {
+        "return": -0.12955117578437572,
+        "start_price": 3257.4,
+        "end_price": 3253.18
+      },
+      "Pre-London": {
+        "return": -0.11096834481952038,
+        "start_price": 3253.18,
+        "end_price": 3249.57
+      },
+      "Frankfurt Open": {
+        "return": 0.12986333576441805,
+        "start_price": 3249.57,
+        "end_price": 3253.79
+      },
+      "London Open": {
+        "return": 0.5184723046047806,
+        "start_price": 3253.79,
+        "end_price": 3270.66
+      },
+      "London Morning": {
+        "return": -0.3809628637645013,
+        "start_price": 3270.66,
+        "end_price": 3258.2
+      },
+      "London Midday": {
+        "return": -1.5840034374808076,
+        "start_price": 3258.2,
+        "end_price": 3206.59
+      },
+      "NY Pre-Open": {
+        "return": -0.9458646100686375,
+        "start_price": 3206.59,
+        "end_price": 3176.26
+      },
+      "NY Open": {
+        "return": -0.21818113126760058,
+        "start_price": 3176.26,
+        "end_price": 3169.33
+      },
+      "London-NY Overlap": {
+        "return": -1.014094461605446,
+        "start_price": 3169.33,
+        "end_price": 3137.19
+      },
+      "NY AM": {
+        "return": 0.32098789043698867,
+        "start_price": 3137.19,
+        "end_price": 3147.26
+      },
+      "NY Lunch": {
+        "return": -0.27801961070899767,
+        "start_price": 3147.26,
+        "end_price": 3138.51
+      },
+      "NY PM": {
+        "return": 0.6652838448817959,
+        "start_price": 3138.51,
+        "end_price": 3159.39
+      },
+      "NY Close": {
+        "return": -0.18168064088320154,
+        "start_price": 3159.39,
+        "end_price": 3153.65
+      },
+      "Pre-Asia D2": {
+        "return": -0.7185324940941547,
+        "start_price": 3153.65,
+        "end_price": 3130.99
+      },
+      "Sydney Open D2": {
+        "return": 0.6068368151926389,
+        "start_price": 3130.99,
+        "end_price": 3149.99
+      },
+      "Tokyo Open D2": {
+        "return": 0.43396963164962665,
+        "start_price": 3149.99,
+        "end_price": 3163.66
+      },
+      "Asia Mid D2": {
+        "return": -0.6935005658003722,
+        "start_price": 3163.66,
+        "end_price": 3141.72
+      },
+      "24h_aggregate": {
+        "return": -2.2102884734431196,
+        "start_price": 3230.8,
+        "end_price": 3159.39
+      }
+    }
+  },
+  {
+    "date": "2024-07-31",
+    "headline_yoy": 3.8,
+    "trimmed_mean_yoy": 3.9,
+    "prev_headline_yoy": 3.6,
+    "prev_trimmed_yoy": 4.0,
+    "quarter": "Q2",
+    "signal": "HOT_STABLE",
+    "level": "HOT",
+    "wyckoff": "ACCUMULATION",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": 0.04387889425185266,
+        "start_price": 3281.76,
+        "end_price": 3283.2
+      },
+      "Sydney Open": {
+        "return": -0.07066276803118023,
+        "start_price": 3283.2,
+        "end_price": 3280.88
+      },
+      "Tokyo Open": {
+        "return": 0.5836848650362125,
+        "start_price": 3280.88,
+        "end_price": 3300.03
+      },
+      "Asia Mid": {
+        "return": -0.806962360948237,
+        "start_price": 3300.03,
+        "end_price": 3273.4
+      },
+      "Asia Afternoon": {
+        "return": 1.674100323822317,
+        "start_price": 3273.4,
+        "end_price": 3328.2
+      },
+      "Tokyo Close": {
+        "return": -0.4876509825130707,
+        "start_price": 3328.2,
+        "end_price": 3311.97
+      },
+      "Pre-London": {
+        "return": 0.04921542163727658,
+        "start_price": 3311.97,
+        "end_price": 3313.6
+      },
+      "Frankfurt Open": {
+        "return": 0.09023418638339681,
+        "start_price": 3313.6,
+        "end_price": 3316.59
+      },
+      "London Open": {
+        "return": -0.03799082792869237,
+        "start_price": 3316.59,
+        "end_price": 3315.33
+      },
+      "London Morning": {
+        "return": 0.2796101745527589,
+        "start_price": 3315.33,
+        "end_price": 3324.6
+      },
+      "London Midday": {
+        "return": -0.24905251759609415,
+        "start_price": 3324.6,
+        "end_price": 3316.32
+      },
+      "NY Pre-Open": {
+        "return": -0.5343272060597365,
+        "start_price": 3316.32,
+        "end_price": 3298.6
+      },
+      "NY Open": {
+        "return": 0.07882131813496358,
+        "start_price": 3298.6,
+        "end_price": 3301.2
+      },
+      "London-NY Overlap": {
+        "return": 0.13358778625955137,
+        "start_price": 3301.2,
+        "end_price": 3305.61
+      },
+      "NY AM": {
+        "return": -2.2537443921091715,
+        "start_price": 3305.61,
+        "end_price": 3231.11
+      },
+      "NY Lunch": {
+        "return": 0.022592855086952107,
+        "start_price": 3231.11,
+        "end_price": 3231.84
+      },
+      "NY PM": {
+        "return": -0.08075894846279912,
+        "start_price": 3231.84,
+        "end_price": 3229.23
+      },
+      "NY Close": {
+        "return": -0.6822059747989521,
+        "start_price": 3229.23,
+        "end_price": 3207.2
+      },
+      "Pre-Asia D2": {
+        "return": -0.6111249688201519,
+        "start_price": 3207.2,
+        "end_price": 3187.6
+      },
+      "Sydney Open D2": {
+        "return": -0.8012297653406941,
+        "start_price": 3187.6,
+        "end_price": 3162.06
+      },
+      "Tokyo Open D2": {
+        "return": 0.5199142331265079,
+        "start_price": 3162.06,
+        "end_price": 3178.5
+      },
+      "Asia Mid D2": {
+        "return": -0.2573540978448902,
+        "start_price": 3178.5,
+        "end_price": 3170.32
+      },
+      "24h_aggregate": {
+        "return": -1.600665496562826,
+        "start_price": 3281.76,
+        "end_price": 3229.23
+      }
+    }
+  },
+  {
+    "date": "2024-10-30",
+    "headline_yoy": 2.8,
+    "trimmed_mean_yoy": 3.5,
+    "prev_headline_yoy": 3.8,
+    "prev_trimmed_yoy": 3.9,
+    "quarter": "Q3",
+    "signal": "HOT_FALLING",
+    "level": "HOT",
+    "wyckoff": "DISTRIBUTION",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.22502969935119516,
+        "start_price": 2626.32,
+        "end_price": 2620.41
+      },
+      "Sydney Open": {
+        "return": 0.5487690857537603,
+        "start_price": 2620.41,
+        "end_price": 2634.79
+      },
+      "Tokyo Open": {
+        "return": 0.10209542316465656,
+        "start_price": 2634.79,
+        "end_price": 2637.48
+      },
+      "Asia Mid": {
+        "return": 0.30521558457316006,
+        "start_price": 2637.48,
+        "end_price": 2645.53
+      },
+      "Asia Afternoon": {
+        "return": 0.836883346626191,
+        "start_price": 2645.53,
+        "end_price": 2667.67
+      },
+      "Tokyo Close": {
+        "return": 0.39472648416032513,
+        "start_price": 2667.67,
+        "end_price": 2678.2
+      },
+      "Pre-London": {
+        "return": -0.15234112463594682,
+        "start_price": 2678.2,
+        "end_price": 2674.12
+      },
+      "Frankfurt Open": {
+        "return": 0.7437960899286616,
+        "start_price": 2674.12,
+        "end_price": 2694.01
+      },
+      "London Open": {
+        "return": -0.9651040642016918,
+        "start_price": 2694.01,
+        "end_price": 2668.01
+      },
+      "London Morning": {
+        "return": 0.7867286854247091,
+        "start_price": 2668.01,
+        "end_price": 2689.0
+      },
+      "London Midday": {
+        "return": -0.028635180364447076,
+        "start_price": 2689.0,
+        "end_price": 2688.23
+      },
+      "NY Pre-Open": {
+        "return": 0.005207887717936064,
+        "start_price": 2688.23,
+        "end_price": 2688.37
+      },
+      "NY Open": {
+        "return": -0.3113410728433918,
+        "start_price": 2688.37,
+        "end_price": 2680.0
+      },
+      "London-NY Overlap": {
+        "return": -0.43843283582089554,
+        "start_price": 2680.0,
+        "end_price": 2668.25
+      },
+      "NY AM": {
+        "return": -0.1930104000749589,
+        "start_price": 2668.25,
+        "end_price": 2663.1
+      },
+      "NY Lunch": {
+        "return": -0.03792572565805879,
+        "start_price": 2663.1,
+        "end_price": 2662.09
+      },
+      "NY PM": {
+        "return": -0.22538682013004818,
+        "start_price": 2662.09,
+        "end_price": 2656.09
+      },
+      "NY Close": {
+        "return": -0.11633641932314587,
+        "start_price": 2656.09,
+        "end_price": 2653.0
+      },
+      "Pre-Asia D2": {
+        "return": 0.09046362608368229,
+        "start_price": 2653.0,
+        "end_price": 2655.4
+      },
+      "Sydney Open D2": {
+        "return": -0.28658582511109915,
+        "start_price": 2655.4,
+        "end_price": 2647.79
+      },
+      "Tokyo Open D2": {
+        "return": -0.040788733245458564,
+        "start_price": 2647.79,
+        "end_price": 2646.71
+      },
+      "Asia Mid D2": {
+        "return": -0.2198956440259856,
+        "start_price": 2646.71,
+        "end_price": 2640.89
+      },
+      "24h_aggregate": {
+        "return": 1.1335252368332869,
+        "start_price": 2626.32,
+        "end_price": 2656.09
+      }
+    }
+  },
+  {
+    "date": "2025-01-29",
+    "headline_yoy": 2.4,
+    "trimmed_mean_yoy": 3.2,
+    "prev_headline_yoy": 2.8,
+    "prev_trimmed_yoy": 3.5,
+    "quarter": "Q4",
+    "signal": "WARM_STABLE",
+    "level": "WARM",
+    "wyckoff": "ACCUMULATION",
+    "vol": "TREND",
+    "returns": {
+      "Release Spike": {
+        "return": 0.10331742266481822,
+        "start_price": 3106.93,
+        "end_price": 3110.14
+      },
+      "Sydney Open": {
+        "return": 0.3996604654452948,
+        "start_price": 3110.14,
+        "end_price": 3122.57
+      },
+      "Tokyo Open": {
+        "return": -0.3051973214371559,
+        "start_price": 3122.57,
+        "end_price": 3113.04
+      },
+      "Asia Mid": {
+        "return": 0.42948372009353847,
+        "start_price": 3113.04,
+        "end_price": 3126.41
+      },
+      "Asia Afternoon": {
+        "return": 0.4541950671856945,
+        "start_price": 3126.41,
+        "end_price": 3140.61
+      },
+      "Tokyo Close": {
+        "return": 0.49831083770350637,
+        "start_price": 3140.61,
+        "end_price": 3156.26
+      },
+      "Pre-London": {
+        "return": -0.5002756426910462,
+        "start_price": 3156.26,
+        "end_price": 3140.47
+      },
+      "Frankfurt Open": {
+        "return": -0.3496291956299541,
+        "start_price": 3140.47,
+        "end_price": 3129.49
+      },
+      "London Open": {
+        "return": 0.30643970742837157,
+        "start_price": 3129.49,
+        "end_price": 3139.08
+      },
+      "London Morning": {
+        "return": -0.9050422416759005,
+        "start_price": 3139.08,
+        "end_price": 3110.67
+      },
+      "London Midday": {
+        "return": 0.03311183764268615,
+        "start_price": 3110.67,
+        "end_price": 3111.7
+      },
+      "NY Pre-Open": {
+        "return": -0.7886364366744855,
+        "start_price": 3111.7,
+        "end_price": 3087.16
+      },
+      "NY Open": {
+        "return": 0.6403944078052315,
+        "start_price": 3087.16,
+        "end_price": 3106.93
+      },
+      "London-NY Overlap": {
+        "return": -0.5510262542123541,
+        "start_price": 3106.93,
+        "end_price": 3089.81
+      },
+      "NY AM": {
+        "return": 1.4097954243141146,
+        "start_price": 3089.81,
+        "end_price": 3133.37
+      },
+      "NY Lunch": {
+        "return": -0.38265509658928826,
+        "start_price": 3133.37,
+        "end_price": 3121.38
+      },
+      "NY PM": {
+        "return": -0.2915377172917078,
+        "start_price": 3121.38,
+        "end_price": 3112.28
+      },
+      "NY Close": {
+        "return": 1.0313982032464915,
+        "start_price": 3112.28,
+        "end_price": 3144.38
+      },
+      "Pre-Asia D2": {
+        "return": 1.67727819156717,
+        "start_price": 3144.38,
+        "end_price": 3197.12
+      },
+      "Sydney Open D2": {
+        "return": -0.2474101691522325,
+        "start_price": 3197.12,
+        "end_price": 3189.21
+      },
+      "Tokyo Open D2": {
+        "return": 0.2803202046901915,
+        "start_price": 3189.21,
+        "end_price": 3198.15
+      },
+      "Asia Mid D2": {
+        "return": -0.48965808357957913,
+        "start_price": 3198.15,
+        "end_price": 3182.49
+      },
+      "24h_aggregate": {
+        "return": 0.17219570444137344,
+        "start_price": 3106.93,
+        "end_price": 3112.28
+      }
+    }
+  },
+  {
+    "date": "2025-04-30",
+    "headline_yoy": 2.4,
+    "trimmed_mean_yoy": 2.9,
+    "prev_headline_yoy": 2.4,
+    "prev_trimmed_yoy": 3.2,
+    "quarter": "Q1",
+    "signal": "WARM_FALLING",
+    "level": "WARM",
+    "wyckoff": "ACCUMULATION",
+    "vol": "NEUTRAL",
+    "returns": {
+      "Release Spike": {
+        "return": -0.04262668984378753,
+        "start_price": 1806.38,
+        "end_price": 1805.61
+      },
+      "Sydney Open": {
+        "return": -0.48792374876080363,
+        "start_price": 1805.61,
+        "end_price": 1796.8
+      },
+      "Tokyo Open": {
+        "return": 0.19479073909171862,
+        "start_price": 1796.8,
+        "end_price": 1800.3
+      },
+      "Asia Mid": {
+        "return": 0.3571626951063747,
+        "start_price": 1800.3,
+        "end_price": 1806.73
+      },
+      "Asia Afternoon": {
+        "return": -0.002767430662022246,
+        "start_price": 1806.73,
+        "end_price": 1806.68
+      },
+      "Tokyo Close": {
+        "return": -0.37693448756836695,
+        "start_price": 1806.68,
+        "end_price": 1799.87
+      },
+      "Pre-London": {
+        "return": -0.19834765844199503,
+        "start_price": 1799.87,
+        "end_price": 1796.3
+      },
+      "Frankfurt Open": {
+        "return": 0.5990090742080939,
+        "start_price": 1796.3,
+        "end_price": 1807.06
+      },
+      "London Open": {
+        "return": 0.12893871813886396,
+        "start_price": 1807.06,
+        "end_price": 1809.39
+      },
+      "London Morning": {
+        "return": -2.6262994710924787,
+        "start_price": 1809.39,
+        "end_price": 1761.87
+      },
+      "London Midday": {
+        "return": 0.0703797669521593,
+        "start_price": 1761.87,
+        "end_price": 1763.11
+      },
+      "NY Pre-Open": {
+        "return": 0.27791799717545085,
+        "start_price": 1763.11,
+        "end_price": 1768.01
+      },
+      "NY Open": {
+        "return": 0.9892477983721816,
+        "start_price": 1768.01,
+        "end_price": 1785.5
+      },
+      "London-NY Overlap": {
+        "return": 0.032483898067764055,
+        "start_price": 1785.5,
+        "end_price": 1786.08
+      },
+      "NY AM": {
+        "return": 0.5744423542058581,
+        "start_price": 1786.08,
+        "end_price": 1796.34
+      },
+      "NY Lunch": {
+        "return": -0.12302793457807593,
+        "start_price": 1796.34,
+        "end_price": 1794.13
+      },
+      "NY PM": {
+        "return": 0.1042287905558622,
+        "start_price": 1794.13,
+        "end_price": 1796.0
+      },
+      "NY Close": {
+        "return": 0.7912026726057927,
+        "start_price": 1796.0,
+        "end_price": 1810.21
+      },
+      "Pre-Asia D2": {
+        "return": -0.12429497130167218,
+        "start_price": 1810.21,
+        "end_price": 1807.96
+      },
+      "Sydney Open D2": {
+        "return": 0.09513484811611027,
+        "start_price": 1807.96,
+        "end_price": 1809.68
+      },
+      "Tokyo Open D2": {
+        "return": 0.02707661022943333,
+        "start_price": 1809.68,
+        "end_price": 1810.17
+      },
+      "Asia Mid D2": {
+        "return": 0.20826773175999944,
+        "start_price": 1810.17,
+        "end_price": 1813.94
+      },
+      "24h_aggregate": {
+        "return": -0.5746299228290895,
+        "start_price": 1806.38,
+        "end_price": 1796.0
+      }
+    }
+  },
+  {
+    "date": "2025-07-30",
+    "headline_yoy": 2.1,
+    "trimmed_mean_yoy": 2.7,
+    "prev_headline_yoy": 2.4,
+    "prev_trimmed_yoy": 2.9,
+    "quarter": "Q2",
+    "signal": "WARM_STABLE",
+    "level": "WARM",
+    "wyckoff": "MARKDOWN",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": 0.21263661437912548,
+        "start_price": 3766.99,
+        "end_price": 3775.0
+      },
+      "Sydney Open": {
+        "return": 1.0598675496688799,
+        "start_price": 3775.0,
+        "end_price": 3815.01
+      },
+      "Tokyo Open": {
+        "return": 0.03591078398221475,
+        "start_price": 3815.01,
+        "end_price": 3816.38
+      },
+      "Asia Mid": {
+        "return": -0.6238896545941427,
+        "start_price": 3816.38,
+        "end_price": 3792.57
+      },
+      "Asia Afternoon": {
+        "return": 0.7340668728592931,
+        "start_price": 3792.57,
+        "end_price": 3820.41
+      },
+      "Tokyo Close": {
+        "return": -0.4680125955067559,
+        "start_price": 3820.41,
+        "end_price": 3802.53
+      },
+      "Pre-London": {
+        "return": 0.07889484106634267,
+        "start_price": 3802.53,
+        "end_price": 3805.53
+      },
+      "Frankfurt Open": {
+        "return": -0.1865705959485371,
+        "start_price": 3805.53,
+        "end_price": 3798.43
+      },
+      "London Open": {
+        "return": -0.43360019797652716,
+        "start_price": 3798.43,
+        "end_price": 3781.96
+      },
+      "London Morning": {
+        "return": -0.2813356037610094,
+        "start_price": 3781.96,
+        "end_price": 3771.32
+      },
+      "London Midday": {
+        "return": 0.5258105915170266,
+        "start_price": 3771.32,
+        "end_price": 3791.15
+      },
+      "NY Pre-Open": {
+        "return": -0.08176938396000974,
+        "start_price": 3791.15,
+        "end_price": 3788.05
+      },
+      "NY Open": {
+        "return": 0.31124193186467874,
+        "start_price": 3788.05,
+        "end_price": 3799.84
+      },
+      "London-NY Overlap": {
+        "return": -2.1940397490420738,
+        "start_price": 3799.84,
+        "end_price": 3716.47
+      },
+      "NY AM": {
+        "return": 1.3098450949422515,
+        "start_price": 3716.47,
+        "end_price": 3765.15
+      },
+      "NY Lunch": {
+        "return": 1.0724672323811828,
+        "start_price": 3765.15,
+        "end_price": 3805.53
+      },
+      "NY PM": {
+        "return": 0.9817292203713981,
+        "start_price": 3805.53,
+        "end_price": 3842.89
+      },
+      "NY Close": {
+        "return": -0.004163533174247883,
+        "start_price": 3842.89,
+        "end_price": 3842.73
+      },
+      "Pre-Asia D2": {
+        "return": 0.4652942049012059,
+        "start_price": 3842.73,
+        "end_price": 3860.61
+      },
+      "Sydney Open D2": {
+        "return": -0.020204061016269453,
+        "start_price": 3860.61,
+        "end_price": 3859.83
+      },
+      "Tokyo Open D2": {
+        "return": -0.0720238974255277,
+        "start_price": 3859.83,
+        "end_price": 3857.05
+      },
+      "Asia Mid D2": {
+        "return": 0.15400370749665157,
+        "start_price": 3857.05,
+        "end_price": 3862.99
+      },
+      "24h_aggregate": {
+        "return": 2.0148712898096384,
+        "start_price": 3766.99,
+        "end_price": 3842.89
+      }
+    }
+  },
+  {
+    "date": "2025-10-29",
+    "headline_yoy": 2.3,
+    "trimmed_mean_yoy": 2.5,
+    "prev_headline_yoy": 2.1,
+    "prev_trimmed_yoy": 2.7,
+    "quarter": "Q3",
+    "signal": "WARM_STABLE",
+    "level": "WARM",
+    "wyckoff": "MARKDOWN",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": -0.24180062371002278,
+        "start_price": 3982.62,
+        "end_price": 3972.99
+      },
+      "Sydney Open": {
+        "return": 0.3065701146995158,
+        "start_price": 3972.99,
+        "end_price": 3985.17
+      },
+      "Tokyo Open": {
+        "return": 0.25896009455053887,
+        "start_price": 3985.17,
+        "end_price": 3995.49
+      },
+      "Asia Mid": {
+        "return": 0.5120773672315545,
+        "start_price": 3995.49,
+        "end_price": 4015.95
+      },
+      "Asia Afternoon": {
+        "return": 0.1252505633785331,
+        "start_price": 4015.95,
+        "end_price": 4020.98
+      },
+      "Tokyo Close": {
+        "return": -0.19845908211431088,
+        "start_price": 4020.98,
+        "end_price": 4013.0
+      },
+      "Pre-London": {
+        "return": -0.45701470221779583,
+        "start_price": 4013.0,
+        "end_price": 3994.66
+      },
+      "Frankfurt Open": {
+        "return": -0.013518046592199677,
+        "start_price": 3994.66,
+        "end_price": 3994.12
+      },
+      "London Open": {
+        "return": 0.20304848126746636,
+        "start_price": 3994.12,
+        "end_price": 4002.23
+      },
+      "London Morning": {
+        "return": 0.5954180544346509,
+        "start_price": 4002.23,
+        "end_price": 4026.06
+      },
+      "London Midday": {
+        "return": -1.2185610745989863,
+        "start_price": 4026.06,
+        "end_price": 3977.0
+      },
+      "NY Pre-Open": {
+        "return": -0.15313050037717238,
+        "start_price": 3977.0,
+        "end_price": 3970.91
+      },
+      "NY Open": {
+        "return": 0.30773802478525714,
+        "start_price": 3970.91,
+        "end_price": 3983.13
+      },
+      "London-NY Overlap": {
+        "return": -0.871927353613867,
+        "start_price": 3983.13,
+        "end_price": 3948.4
+      },
+      "NY AM": {
+        "return": -0.06559619086212505,
+        "start_price": 3948.4,
+        "end_price": 3945.81
+      },
+      "NY Lunch": {
+        "return": -1.3551083301020526,
+        "start_price": 3945.81,
+        "end_price": 3892.34
+      },
+      "NY PM": {
+        "return": 0.49584568665634876,
+        "start_price": 3892.34,
+        "end_price": 3911.64
+      },
+      "NY Close": {
+        "return": 0.5519424077880415,
+        "start_price": 3911.64,
+        "end_price": 3933.23
+      },
+      "Pre-Asia D2": {
+        "return": -1.1519794164083959,
+        "start_price": 3933.23,
+        "end_price": 3887.92
+      },
+      "Sydney Open D2": {
+        "return": -0.3894113047593539,
+        "start_price": 3887.92,
+        "end_price": 3872.78
+      },
+      "Tokyo Open D2": {
+        "return": 0.8639788472363413,
+        "start_price": 3872.78,
+        "end_price": 3906.24
+      },
+      "Asia Mid D2": {
+        "return": 0.5719054640779918,
+        "start_price": 3906.24,
+        "end_price": 3928.58
+      },
+      "24h_aggregate": {
+        "return": -1.7822438495261919,
+        "start_price": 3982.62,
+        "end_price": 3911.64
+      }
+    }
+  },
+  {
+    "date": "2026-01-28",
+    "headline_yoy": 2.5,
+    "trimmed_mean_yoy": 2.5,
+    "prev_headline_yoy": 2.3,
+    "prev_trimmed_yoy": 2.5,
+    "quarter": "Q4",
+    "signal": "WARM_STABLE",
+    "level": "WARM",
+    "wyckoff": "MARKUP",
+    "vol": "COMPRESSING",
+    "returns": {
+      "Release Spike": {
+        "return": 0.2622374724418688,
+        "start_price": 3016.35,
+        "end_price": 3024.26
+      },
+      "Sydney Open": {
+        "return": -0.3974525999748843,
+        "start_price": 3024.26,
+        "end_price": 3012.24
+      },
+      "Tokyo Open": {
+        "return": -0.2755424534565548,
+        "start_price": 3012.24,
+        "end_price": 3003.94
+      },
+      "Asia Mid": {
+        "return": -0.19008369008702025,
+        "start_price": 3003.94,
+        "end_price": 2998.23
+      },
+      "Asia Afternoon": {
+        "return": 0.3308618751730212,
+        "start_price": 2998.23,
+        "end_price": 3008.15
+      },
+      "Tokyo Close": {
+        "return": -0.31115469640809557,
+        "start_price": 3008.15,
+        "end_price": 2998.79
+      },
+      "Pre-London": {
+        "return": -0.2851149963818801,
+        "start_price": 2998.79,
+        "end_price": 2990.24
+      },
+      "Frankfurt Open": {
+        "return": 1.3530686500080273,
+        "start_price": 2990.24,
+        "end_price": 3030.7
+      },
+      "London Open": {
+        "return": -0.41937506186689666,
+        "start_price": 3030.7,
+        "end_price": 3017.99
+      },
+      "London Morning": {
+        "return": 0.6153101898946042,
+        "start_price": 3017.99,
+        "end_price": 3036.56
+      },
+      "London Midday": {
+        "return": -1.53331401322549,
+        "start_price": 3036.56,
+        "end_price": 2990.0
+      },
+      "NY Pre-Open": {
+        "return": 0.38494983277592704,
+        "start_price": 2990.0,
+        "end_price": 3001.51
+      },
+      "NY Open": {
+        "return": 0.5533881279755747,
+        "start_price": 3001.51,
+        "end_price": 3018.12
+      },
+      "London-NY Overlap": {
+        "return": -0.26837899089499123,
+        "start_price": 3018.12,
+        "end_price": 3010.02
+      },
+      "NY AM": {
+        "return": 0.12790612686958588,
+        "start_price": 3010.02,
+        "end_price": 3013.87
+      },
+      "NY Lunch": {
+        "return": -0.009290380806064806,
+        "start_price": 3013.87,
+        "end_price": 3013.59
+      },
+      "NY PM": {
+        "return": -0.4635667094727635,
+        "start_price": 3013.59,
+        "end_price": 2999.62
+      },
+      "NY Close": {
+        "return": -0.15802001586866943,
+        "start_price": 2999.62,
+        "end_price": 2994.88
+      },
+      "Pre-Asia D2": {
+        "return": -1.529276632118822,
+        "start_price": 2994.88,
+        "end_price": 2949.08
+      },
+      "Sydney Open D2": {
+        "return": 0.39673389667286996,
+        "start_price": 2949.08,
+        "end_price": 2960.78
+      },
+      "Tokyo Open D2": {
+        "return": -0.20231155303670778,
+        "start_price": 2960.78,
+        "end_price": 2954.79
+      },
+      "Asia Mid D2": {
+        "return": -0.24197997150390013,
+        "start_price": 2954.79,
+        "end_price": 2947.64
+      },
+      "24h_aggregate": {
+        "return": -0.5546438576425156,
+        "start_price": 3016.35,
+        "end_price": 2999.62
+      }
+    }
+  },
+  {
+    "date": "2026-04-29",
+    "headline_yoy": 2.3,
+    "trimmed_mean_yoy": 2.4,
+    "prev_headline_yoy": 2.5,
+    "prev_trimmed_yoy": 2.5,
+    "quarter": "Q1",
+    "signal": "TARGET",
+    "level": "TARGET",
+    "wyckoff": "MARKUP",
+    "vol": "LOW_VOL",
+    "returns": {
+      "Release Spike": {
+        "return": 0.13978682509174703,
+        "start_price": 2289.2,
+        "end_price": 2292.4
+      },
+      "Sydney Open": {
+        "return": 0.012214273250730472,
+        "start_price": 2292.4,
+        "end_price": 2292.68
+      },
+      "Tokyo Open": {
+        "return": -0.04274473541881197,
+        "start_price": 2292.68,
+        "end_price": 2291.7
+      },
+      "Asia Mid": {
+        "return": 1.4779421390234475,
+        "start_price": 2291.7,
+        "end_price": 2325.57
+      },
+      "Asia Afternoon": {
+        "return": 0.0464402275571119,
+        "start_price": 2325.57,
+        "end_price": 2326.65
+      },
+      "Tokyo Close": {
+        "return": -0.10143339135667707,
+        "start_price": 2326.65,
+        "end_price": 2324.29
+      },
+      "Pre-London": {
+        "return": 0.12907167350029472,
+        "start_price": 2324.29,
+        "end_price": 2327.29
+      },
+      "Frankfurt Open": {
+        "return": 0.7175727992643727,
+        "start_price": 2327.29,
+        "end_price": 2343.99
+      },
+      "London Open": {
+        "return": -0.44795412949713953,
+        "start_price": 2343.99,
+        "end_price": 2333.49
+      },
+      "London Morning": {
+        "return": -0.7996605942172392,
+        "start_price": 2333.49,
+        "end_price": 2314.83
+      },
+      "London Midday": {
+        "return": -1.2627277165061805,
+        "start_price": 2314.83,
+        "end_price": 2285.6
+      },
+      "NY Pre-Open": {
+        "return": -0.7862268113405584,
+        "start_price": 2285.6,
+        "end_price": 2267.63
+      },
+      "NY Open": {
+        "return": -1.1540683444830095,
+        "start_price": 2267.63,
+        "end_price": 2241.46
+      },
+      "London-NY Overlap": {
+        "return": -0.1383027134100055,
+        "start_price": 2241.46,
+        "end_price": 2238.36
+      },
+      "NY AM": {
+        "return": 0.7800353830483048,
+        "start_price": 2238.36,
+        "end_price": 2255.82
+      },
+      "NY Lunch": {
+        "return": 0.030144249097881756,
+        "start_price": 2255.82,
+        "end_price": 2256.5
+      },
+      "NY PM": {
+        "return": 0.3589629957899361,
+        "start_price": 2256.5,
+        "end_price": 2264.6
+      },
+      "NY Close": {
+        "return": 0.2596485030469005,
+        "start_price": 2264.6,
+        "end_price": 2270.48
+      },
+      "Pre-Asia D2": {
+        "return": -0.8707409886896155,
+        "start_price": 2270.48,
+        "end_price": 2250.71
+      },
+      "Sydney Open D2": {
+        "return": -0.3021268844053735,
+        "start_price": 2250.71,
+        "end_price": 2243.91
+      },
+      "Tokyo Open D2": {
+        "return": 0.004010856050382837,
+        "start_price": 2243.91,
+        "end_price": 2244.0
+      },
+      "Asia Mid D2": {
+        "return": 0.7112299465240658,
+        "start_price": 2244.0,
+        "end_price": 2259.96
+      },
+      "24h_aggregate": {
+        "return": -1.0746112178927096,
+        "start_price": 2289.2,
+        "end_price": 2264.6
+      }
+    }
+  }
+]

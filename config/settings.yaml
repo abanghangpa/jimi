@@ -960,6 +960,19 @@ M51_WINDOW_DAYS: 1            # Days after release to consider active
 M52_ENABLED: true
 M52_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M53: Australia Quarterly CPI Session Bias (regime-conditional) ───
+# ABS Quarterly CPI released ~4x/year, 00:30 UTC (08:30 MYT).
+# Backtested: 34 releases, 2018-2026, ETH/USDT 15m.
+# 24h aggregate: +0.875% avg, 58.8% win — NOT significant (p=0.21)
+# Small sample (quarterly). Signal-level edges:
+#   HOT (≥5%):     +2.829% avg, 100% win, n=5  → LONG
+#   COOL (1.5-2%): +1.847% avg, 63.6% win, n=11 → LONG
+#   COLD (<1.5%):  -2.186% avg, 50% win, n=4   → SHORT
+# Mechanism: hot CPI → AUD strength → crypto risk positive.
+# Loopback: CPI = primary input for RBA rate decision (M52).
+M53_ENABLED: true
+M53_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
