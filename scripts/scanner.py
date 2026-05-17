@@ -68,6 +68,7 @@ from src.modules.m42_ez_gdp import score_m42_ez_gdp, format_m42
 from src.modules.m43_us_gdp import score_m43_us_gdp, format_m43
 from src.modules.m44_durables import score_m44_durables, format_m44
 from src.modules.m45_pce import score_m45_pce, format_m45
+from src.modules.m46_japan_cpi import score_m46_japan_cpi, format_m46
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1577,6 +1578,45 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m45'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M46: Japan CPI (Tokyo Flash) Session Bias (regime-conditional) ──
+    m46_score_adj = 0.0
+    m46_size_mult = 1.0
+    m46_status = 'SKIP'
+    m46_details = {}
+    try:
+        _wyckoff_for_m46 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m46 = result.get('m9', {}).get('regime', 'CHOP')
+        m46_status, m46_score_adj, m46_size_mult, m46_details = score_m46_japan_cpi(
+            wyckoff_phase=_wyckoff_for_m46,
+            vol_regime=_vol_for_m46,
+            direction=direction, today_str=today_str, config=cfg)
+        if m46_details and m46_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m46'] = {
+                'status': m46_status,
+                'score_adj': m46_score_adj,
+                'size_mult': m46_size_mult,
+                'regime': m46_details.get('regime', '?'),
+                'bias': m46_details.get('bias', '?'),
+                'cpi_yoy': m46_details.get('cpi_yoy'),
+                'core_yoy': m46_details.get('core_yoy'),
+                'consensus': m46_details.get('consensus'),
+                'signal': m46_details.get('signal'),
+                'inflation': m46_details.get('inflation'),
+                'core_pressure': m46_details.get('core_pressure'),
+                'avg_ret_24h': m46_details.get('avg_ret_24h'),
+                'win_rate': m46_details.get('win_rate'),
+                'sample_size': m46_details.get('sample_size'),
+                'confidence': m46_details.get('confidence'),
+                'source': m46_details.get('source'),
+                'release_date': m46_details.get('release_date'),
+                'boj_metric': m46_details.get('boj_metric', False),
+                'details': m46_details,
+            }
+            if m46_size_mult < 1.0:
+                result['_m46_size_mult'] = m46_size_mult
+    except Exception as e:
+        result['m46'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2024,6 +2064,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m45_ics_adj'] = m45_score_adj
+
+    # ── M46 Japan CPI ICS adjustment (BoJ metric, carry-trade de-risking) ──
+    if m46_score_adj != 0.0 and m46_status in ('PASS', 'WEAK'):
+        ics += m46_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m46_ics_adj'] = m46_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2497,6 +2544,12 @@ def print_signal(result):
         m45_out = format_m45(result['m45'].get('details', {}))
         if m45_out:
             print(m45_out)
+
+    # M46 Japan CPI (Tokyo Flash) Session Bias
+    if 'm46' in result and result['m46'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m46_out = format_m46(result['m46'].get('details', {}))
+        if m46_out:
+            print(m46_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -3513,6 +3566,27 @@ def print_summary(result):
         spend_icon = {'SURGING': '📈', 'STRONG': '🟢', 'MODERATE': '⚪', 'WEAK': '🔴'}.get(m45_spend_sig, '⚪')
         print(f"  {'M45 Core PCE':<22} {bias_icon} {m45_bias:>8}  PCE={m45_core:.1f}%(yoy) cons={m45_cons:.1f}% {infl_icon}{m45_infl} spend={m45_spend:+.1f}%{spend_icon}{m45_spend_sig}")
         print(f"  {'  Backtest':<22} 24h={m45_avg:+.2f}%  win={m45_win*100:.0f}%  n={m45_n}  adj={m45_adj:+.3f}  size={m45_sm:.2f}x  🏛️FOMC metric  weekend lock")
+
+    # M46 Japan CPI (Tokyo Flash) Session Bias summary
+    m46 = result.get('m46', {})
+    if m46 and m46.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m46_bias = m46.get('bias', '?')
+        m46_cpi = m46.get('cpi_yoy', 0)
+        m46_core = m46.get('core_yoy', 0)
+        m46_cons = m46.get('consensus', 0)
+        m46_signal = m46.get('signal', '?')
+        m46_infl = m46.get('inflation', '?')
+        m46_core_p = m46.get('core_pressure', '?')
+        m46_avg = m46.get('avg_ret_24h', 0)
+        m46_win = m46.get('win_rate', 0)
+        m46_n = m46.get('sample_size', 0)
+        m46_adj = m46.get('score_adj', 0)
+        m46_sm = m46.get('size_mult', 1.0)
+        bias_icon = '🟢' if m46_bias == 'LONG' else '🔴' if m46_bias == 'SHORT' else '⚪'
+        core_icon = {'EXTREME': '🔴🔴', 'HAWKISH': '🔴', 'MODERATE': '🟡',
+                     'DOVISH': '🟢'}.get(m46_core_p, '⚪')
+        print(f"  {'M46 Japan CPI':<22} {bias_icon} {m46_bias:>8}  CPI={m46_cpi:.1f}% cons={m46_cons:.1f}% core={m46_core:.1f}% {core_icon}BoJ:{m46_core_p}")
+        print(f"  {'  Backtest':<22} 24h={m46_avg:+.2f}%  win={m46_win*100:.0f}%  n={m46_n}  adj={m46_adj:+.3f}  size={m46_sm:.2f}x  chain: Tokyo→NY 67-100%  🏛️BoJ metric")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})

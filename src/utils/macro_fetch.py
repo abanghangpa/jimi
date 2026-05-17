@@ -1159,6 +1159,35 @@ def fetch_us_pce(force_refresh=False):
     return None
 
 
+def fetch_jp_cpi(force_refresh=False):
+    """Fetch latest Japan CPI (Tokyo Flash) data and update M46 cache."""
+    cache = _load_cache()
+    cache_key = 'jp_cpi'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching Japan CPI (Tokyo Flash)...")
+    result = _fetch_trading_economics('japan/inflation-rate')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ Japan CPI: actual={result['actual']}")
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -1186,6 +1215,7 @@ def get_latest_macro_indicators():
         'us_gdp': fetch_us_gdp(),
         'us_durables': fetch_us_durables(),
         'us_pce': fetch_us_pce(),
+        'jp_cpi': fetch_jp_cpi(),
     }
 
 
@@ -1211,6 +1241,7 @@ def get_surprise_for_event(event_id):
         'us_gdp': 'us_gdp',
         'us_durables': 'us_durables',
         'us_pce': 'us_pce',
+        'jp_cpi': 'jp_cpi',
     }
 
     key = event_map.get(event_id)

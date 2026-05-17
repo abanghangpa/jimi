@@ -864,6 +864,23 @@ M44_WINDOW_DAYS: 1            # Days after release to consider active
 M45_ENABLED: true
 M45_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M46: Japan CPI (Tokyo Flash) Session Bias (regime-conditional) ───
+# Statistics Bureau Japan CPI released ~final Friday, 23:30 UTC (07:30 MYT). 91 releases backtested.
+# 24h aggregate: +0.204% avg, 48.4% win, n=91 — NOT significant (p=0.66)
+# Hot CPI ≥3%: -1.216% avg vs Cool CPI <2%: +0.800% avg (marginal, p=0.11)
+# Hawkish core ≥2%: -0.465% avg vs Dovish <2%: +0.622% avg
+# Key combos:
+#   RANGE + COMPRESSING + COOL_MISS: +2.836% avg, 57% win, n=7  → LONG
+#   RANGE + NEUTRAL + WARM_BEAT:     +1.859% avg, 50% win, n=8  → LONG
+#   RANGE + NEUTRAL + COOL_MISS:     -3.031% avg, 40% win, n=5  → SHORT
+#   DOVISH + WARM_BEAT:              +3.534% avg, 75% win, n=4  → LONG
+#   HAWKISH + INLINE:                -0.843% avg, 46% win, n=11 → SHORT
+# Transmission chain: Tokyo→London 67-100%, London→NY 89-100% (STRONG)
+# Loopback: Japan CPI → BoJ Rate Decision (primary metric)
+# Carry-trade mechanism: hot CPI → JPY strength → USD/JPY drop → ETH pressure
+M46_ENABLED: true
+M46_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168
