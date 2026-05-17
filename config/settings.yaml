@@ -986,6 +986,19 @@ M53_WINDOW_DAYS: 1            # Days after release to consider active
 M54_ENABLED: true
 M54_WINDOW_DAYS: 1            # Days after release to consider active
 
+# ─── M55: US Treasury Auction Session Bias (regime-conditional) ───
+# US 10Y/30Y Treasury auctions ~2x/week, 17:00 UTC (01:00 MYT).
+# Backtested: 200 auctions, 2018-2026, ETH/USDT 15m.
+# 24h aggregate: +0.063% avg, 47.5% win — NOISE (p=0.87)
+# Key edges:
+#   WEAK_DEMAND:               -3.479% avg, 42.9% win, n=14 → SHORT
+#   MARKUP × CRISIS × GOOD:    +2.241% avg, 82% win, n=11  → LONG
+#   MARKUP × NEUTRAL × NORMAL: +1.905% avg, 67% win, n=9   → LONG
+#   MARKUP × TREND × NORMAL:   +3.025% avg, 67% win, n=6   → LONG
+# No session chain. Mechanism: weak auction → yield spike → ETH sell-off.
+M55_ENABLED: true
+M55_WINDOW_DAYS: 0            # Same-day only (weekly frequency)
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

@@ -1359,6 +1359,35 @@ def fetch_china_gdp(force_refresh=False):
     return None
 
 
+def fetch_treasury_auction(force_refresh=False):
+    """Fetch latest US Treasury auction data and update M55 cache."""
+    cache = _load_cache()
+    cache_key = 'treasury_auction'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching US Treasury 10Y auction results...")
+    result = _fetch_trading_economics('united-states/10-year-note-yield')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ Treasury 10Y yield: {result['actual']}")
+        # Note: auction-specific data (bid-to-cover, tail) requires manual or
+        # Treasury.gov API. Yield data serves as proxy.
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -1392,6 +1421,7 @@ def get_latest_macro_indicators():
         'rba_rate': fetch_rba_rate(),
         'au_cpi': fetch_au_cpi(),
         'china_gdp': fetch_china_gdp(),
+        'treasury_auction': fetch_treasury_auction(),
     }
 
 
@@ -1423,6 +1453,7 @@ def get_surprise_for_event(event_id):
         'au_rba_rate': 'rba_rate',
         'au_cpi': 'au_cpi',
         'cn_gdp': 'china_gdp',
+        'us_treasury_10y': 'treasury_auction',
     }
 
     key = event_map.get(event_id)
