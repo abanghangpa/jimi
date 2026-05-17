@@ -62,6 +62,7 @@ from src.modules.m36_adp_employment import score_m36_adp, format_m36
 from src.modules.m37_nfp import score_m37_nfp, format_m37
 from src.modules.m38_ifo import score_m38_ifo, format_m38
 from src.modules.m39_ums import score_m39_ums, format_m39
+from src.modules.m40_germany_cpi import score_m40_germany_cpi, format_m40
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1340,6 +1341,44 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m39'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M40: Germany CPI Session Bias (regime-conditional) ──
+    m40_score_adj = 0.0
+    m40_size_mult = 1.0
+    m40_status = 'SKIP'
+    m40_details = {}
+    try:
+        _wyckoff_for_m40 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m40 = result.get('m9', {}).get('regime', 'CHOP')
+        m40_status, m40_score_adj, m40_size_mult, m40_details = score_m40_germany_cpi(
+            wyckoff_phase=_wyckoff_for_m40,
+            vol_regime=_vol_for_m40,
+            direction=direction, today_str=today_str, config=cfg)
+        if m40_details and m40_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m40'] = {
+                'status': m40_status,
+                'score_adj': m40_score_adj,
+                'size_mult': m40_size_mult,
+                'regime': m40_details.get('regime', '?'),
+                'bias': m40_details.get('bias', '?'),
+                'cpi_yoy': m40_details.get('cpi_yoy'),
+                'consensus': m40_details.get('consensus'),
+                'surprise': m40_details.get('surprise'),
+                'signal': m40_details.get('signal'),
+                'cpi_level': m40_details.get('cpi_level'),
+                'cpi_direction': m40_details.get('cpi_direction'),
+                'avg_ret_24h': m40_details.get('avg_ret_24h'),
+                'win_rate': m40_details.get('win_rate'),
+                'sample_size': m40_details.get('sample_size'),
+                'confidence': m40_details.get('confidence'),
+                'source': m40_details.get('source'),
+                'release_date': m40_details.get('release_date'),
+                'details': m40_details,
+            }
+            if m40_size_mult < 1.0:
+                result['_m40_size_mult'] = m40_size_mult
+    except Exception as e:
+        result['m40'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -1745,6 +1784,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m39_ics_adj'] = m39_score_adj
+
+    # ── M40 Germany CPI ICS adjustment (regime-conditional bias on release days) ──
+    if m40_score_adj != 0.0 and m40_status in ('PASS', 'WEAK'):
+        ics += m40_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m40_ics_adj'] = m40_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2182,6 +2228,12 @@ def print_signal(result):
         m39_out = format_m39(result['m39'].get('details', {}))
         if m39_out:
             print(m39_out)
+
+    # M40 Germany CPI Session Bias
+    if 'm40' in result and result['m40'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m40_out = format_m40(result['m40'].get('details', {}))
+        if m40_out:
+            print(m40_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
@@ -3061,6 +3113,27 @@ def print_summary(result):
         infl_icon = '🔴' if m39_infl_sig == 'INFL_UP' else '🟢' if m39_infl_sig == 'INFL_DOWN' else '⚪'
         print(f"  {'M39 Michigan Sent':<22} {bias_icon} {m39_bias:>8}  {m39_type} headline={m39_headline} cons={m39_cons} 5yr={m39_infl}%{infl_icon}")
         print(f"  {'  Backtest':<22} {conf_icon} 24h={m39_avg:+.2f}%  win={m39_win*100:.0f}%  n={m39_n}  adj={m39_adj:+.3f}  size={m39_sm:.2f}x  weekend: 68.2% continuity")
+
+    # M40 Germany CPI Session Bias summary
+    m40 = result.get('m40', {})
+    if m40 and m40.get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m40_bias = m40.get('bias', '?')
+        m40_cpi = m40.get('cpi_yoy', 0)
+        m40_cons = m40.get('consensus', 0)
+        m40_signal = m40.get('signal', '?')
+        m40_level = m40.get('cpi_level', '?')
+        m40_dir = m40.get('cpi_direction', '?')
+        m40_avg = m40.get('avg_ret_24h', 0)
+        m40_win = m40.get('win_rate', 0)
+        m40_n = m40.get('sample_size', 0)
+        m40_conf = m40.get('confidence', 0)
+        m40_adj = m40.get('score_adj', 0)
+        m40_sm = m40.get('size_mult', 1.0)
+        bias_icon = '🟢' if m40_bias == 'LONG' else '🔴' if m40_bias == 'SHORT' else '⚪'
+        conf_icon = '🟢' if m40_conf >= 0.7 else '🟡' if m40_conf >= 0.4 else '🟠'
+        dir_icon = '📈' if m40_dir == 'RISING' else '📉' if m40_dir == 'FALLING' else '➡️'
+        print(f"  {'M40 Germany CPI':<22} {bias_icon} {m40_bias:>8}  CPI={m40_cpi:.1f}% cons={m40_cons:.1f}% {dir_icon}{m40_dir} level={m40_level} signal={m40_signal}")
+        print(f"  {'  Backtest':<22} {conf_icon} 24h={m40_avg:+.2f}%  win={m40_win*100:.0f}%  n={m40_n}  adj={m40_adj:+.3f}  size={m40_sm:.2f}x  chain: Asia 89-93%, Lon→NY 77-89%")
 
     # M26 Eurozone Flash PMI Session Bias summary
     m26 = result.get('m26', {})

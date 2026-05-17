@@ -985,6 +985,35 @@ def fetch_ums(force_refresh=False):
     return None
 
 
+def fetch_germany_cpi(force_refresh=False):
+    """Fetch latest Germany CPI data and update M40 cache."""
+    cache = _load_cache()
+    cache_key = 'germany_cpi'
+
+    if not force_refresh and cache_key in cache:
+        cached = cache[cache_key]
+        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
+        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+            return cached
+
+    print("  📡 Fetching Germany CPI...")
+    result = _fetch_trading_economics('germany/consumer-price-index')
+    if result is None:
+        result = _fetch_manual_input()
+
+    if result and result.get('actual') is not None:
+        result['surprise'] = _classify_surprise(
+            result['actual'], result.get('previous', result['actual']))
+        cache[cache_key] = result
+        _save_cache(cache)
+        print(f"  ✅ Germany CPI: actual={result['actual']}")
+        return result
+
+    if cache_key in cache:
+        return cache[cache_key]
+    return None
+
+
 def get_latest_macro_indicators():
     """Fetch all relevant macro indicators for the scanner.
 
@@ -1006,6 +1035,7 @@ def get_latest_macro_indicators():
         'nfp': fetch_nfp(),
         'ifo': fetch_ifo(),
         'ums': fetch_ums(),
+        'germany_cpi': fetch_germany_cpi(),
     }
 
 
@@ -1025,6 +1055,7 @@ def get_surprise_for_event(event_id):
         'cn_cpi_ppi': 'china_cpi_ppi',
         'uk_cpi': 'uk_cpi',
         'uk_wages': 'uk_wages',
+        'de_cpi': 'germany_cpi',
     }
 
     key = event_map.get(event_id)
