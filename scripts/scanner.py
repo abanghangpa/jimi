@@ -69,6 +69,7 @@ from src.modules.m43_us_gdp import score_m43_us_gdp, format_m43
 from src.modules.m44_durables import score_m44_durables, format_m44
 from src.modules.m45_pce import score_m45_pce, format_m45
 from src.modules.m46_japan_cpi import score_m46_japan_cpi, format_m46
+from src.modules.m47_boj_rate import score_m47_boj_rate, format_m47
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1617,6 +1618,43 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m46'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M47: BoJ Rate Decision Session Bias (regime-conditional) ──
+    m47_score_adj = 0.0
+    m47_size_mult = 1.0
+    m47_status = 'SKIP'
+    m47_details = {}
+    try:
+        _wyckoff_for_m47 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m47 = result.get('m9', {}).get('regime', 'CHOP')
+        m47_status, m47_score_adj, m47_size_mult, m47_details = score_m47_boj_rate(
+            wyckoff_phase=_wyckoff_for_m47,
+            vol_regime=_vol_for_m47,
+            direction=direction, today_str=today_str, config=cfg)
+        if m47_details and m47_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m47'] = {
+                'status': m47_status,
+                'score_adj': m47_score_adj,
+                'size_mult': m47_size_mult,
+                'regime': m47_details.get('regime', '?'),
+                'bias': m47_details.get('bias', '?'),
+                'rate': m47_details.get('rate'),
+                'prev_rate': m47_details.get('prev_rate'),
+                'rate_change': m47_details.get('rate_change'),
+                'signal': m47_details.get('signal'),
+                'signal_hint': m47_details.get('signal_hint'),
+                'avg_ret_24h': m47_details.get('avg_ret_24h'),
+                'win_rate': m47_details.get('win_rate'),
+                'sample_size': m47_details.get('sample_size'),
+                'confidence': m47_details.get('confidence'),
+                'source': m47_details.get('source'),
+                'release_date': m47_details.get('release_date'),
+                'details': m47_details,
+            }
+            if m47_size_mult < 1.0:
+                result['_m47_size_mult'] = m47_size_mult
+    except Exception as e:
+        result['m47'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2071,6 +2109,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m46_ics_adj'] = m46_score_adj
+
+    # ── M47 BoJ Rate ICS adjustment (carry-trade regime, YCC impact) ──
+    if m47_score_adj != 0.0 and m47_status in ('PASS', 'WEAK'):
+        ics += m47_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m47_ics_adj'] = m47_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
@@ -2550,6 +2595,12 @@ def print_signal(result):
         m46_out = format_m46(result['m46'].get('details', {}))
         if m46_out:
             print(m46_out)
+
+    # M47 BoJ Rate Decision Session Bias
+    if 'm47' in result and result['m47'].get('status') not in ('SKIP', 'NO_EDGE'):
+        m47_out = format_m47(result['m47'].get('details', {}))
+        if m47_out:
+            print(m47_out)
 
     # Module Scores
     print(f"\n  Module Scores:")
