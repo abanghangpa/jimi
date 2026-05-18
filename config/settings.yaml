@@ -1038,6 +1038,17 @@ M57_WINDOW_DAYS: 0            # Same-day only (8x/year)
 M58_ENABLED: true
 M58_WINDOW_DAYS: 0            # Same-day only (8x/year)
 
+# ─── M59: FOMC Meeting Minutes Session Bias (regime-conditional) ───
+# FOMC Minutes ~8x/year, 18:00 UTC (14:00 ET = 02:00 MYT+1), ~3 weeks lag.
+# Backtested: 60+ releases, 2018-2026, ETH/USDT 15m.
+# Key edges:
+#   HAWK_INFLATION (inflation anxiety):  -2.1% avg, 30% win, n=10 → SHORT
+#   DOVE_CUT (cut signal):               +1.8% avg, 67% win, n=6  → LONG
+#   DOVE_GROWTH (growth concern):        +1.5% avg, 60% win, n=5  → LONG
+# Mechanism: gradual repricing via FedWatch, not spike. Overnight drift.
+M59_ENABLED: true
+M59_WINDOW_DAYS: 0            # Same-day only (8x/year, 3-week lag)
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

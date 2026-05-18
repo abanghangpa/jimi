@@ -81,6 +81,7 @@ from src.modules.m55_treasury_auction import score_m55_treasury, format_m55
 from src.modules.m56_us_cpi import score_m56_us_cpi, format_m56
 from src.modules.m57_fomc import score_m57_fomc, format_m57
 from src.modules.m58_powell_presser import score_m58_presser, format_m58
+from src.modules.m59_fomc_minutes import score_m59_minutes, format_m59
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -2050,6 +2051,40 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m58'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M59: FOMC Meeting Minutes Session Bias (regime-conditional) ──
+    m59_score_adj = 0.0
+    m59_size_mult = 1.0
+    m59_status = 'SKIP'
+    m59_details = {}
+    try:
+        _wyckoff_for_m59 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m59 = result.get('m9', {}).get('regime', 'CHOP')
+        m59_status, m59_score_adj, m59_size_mult, m59_details = score_m59_minutes(
+            wyckoff_phase=_wyckoff_for_m59,
+            vol_regime=_vol_for_m59,
+            direction=direction, date_str=today_str)
+        if m59_details and m59_status in ('ACTIVE', 'WEAK', 'NO_EDGE'):
+            result['m59'] = {
+                'status': m59_status,
+                'score_adj': m59_score_adj,
+                'size_mult': m59_size_mult,
+                'meeting_date': m59_details.get('meeting_date'),
+                'meeting_stance': m59_details.get('meeting_stance'),
+                'minutes_surprise': m59_details.get('minutes_surprise'),
+                'key_revelation': m59_details.get('key_revelation'),
+                'signal': m59_details.get('signal'),
+                'bias': m59_details.get('bias'),
+                'avg_ret_24h': m59_details.get('avg_ret_24h'),
+                'win_rate': m59_details.get('win_rate'),
+                'sample_size': m59_details.get('sample_size'),
+                'edge_key': m59_details.get('source'),
+                'details': m59_details,
+            }
+            if m59_size_mult < 1.0:
+                result['_m59_size_mult'] = m59_size_mult
+    except Exception as e:
+        result['m59'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2588,6 +2623,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m58_ics_adj'] = m58_score_adj
+
+    # ── M59 FOMC Minutes ICS adjustment ──
+    if m59_score_adj != 0.0 and m59_status in ('ACTIVE', 'WEAK'):
+        ics += m59_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m59_ics_adj'] = m59_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
