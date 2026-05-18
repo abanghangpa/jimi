@@ -21,7 +21,97 @@ Usage:
 """
 
 from datetime import datetime
+import os
+import json
 from src.modules.cascade_engine import format_cascade
+
+
+def _load_fred_for_cascades():
+    """Load FRED cache for cascade floor biasing."""
+    cache_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        'data', 'fred', 'macro_cache.json')
+    if not os.path.exists(cache_path):
+        return {}
+    try:
+        with open(cache_path) as f:
+            raw = json.load(f)
+        fred = {}
+        cpi_yoy = raw.get('cpi', {}).get('yoy', {})
+        if cpi_yoy:
+            fred['cpi_yoy'] = cpi_yoy[max(cpi_yoy.keys())]
+        ppi_yoy = raw.get('ppi', {}).get('yoy', {})
+        if ppi_yoy:
+            fred['ppi_yoy'] = ppi_yoy[max(ppi_yoy.keys())]
+        stance_info = raw.get('fed_funds', {}).get('stance_info', {})
+        if stance_info:
+            fred['fed_rate'] = stance_info.get('current_rate')
+            fred['fed_stance'] = stance_info.get('stance')
+        return fred
+    except Exception:
+        return {}
+
+
+def _load_claims_for_cascades():
+    """Load FRED claims cache for cascade floor biasing."""
+    cache_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        'data', 'fred', 'claims_cache.json')
+    if not os.path.exists(cache_path):
+        return {}
+    try:
+        with open(cache_path) as f:
+            raw = json.load(f)
+        result = {}
+        monthly_avg = raw.get('icsa', {}).get('monthly_avg', {})
+        if monthly_avg:
+            result['claims_k'] = monthly_avg[max(monthly_avg.keys())]
+        unemp = raw.get('unrate', {}).get('monthly', {})
+        if unemp:
+            result['unemp'] = unemp[max(unemp.keys())]
+        return result
+    except Exception:
+        return {}
+
+
+def _apply_fred_floors(all_results, fred, claims):
+    """Apply FRED-based floors to cascade scores.
+
+    When a cascade has decayed to HOLD (0.50) but FRED data shows clear
+    macro state (e.g., CPI HOT), bias the score away from neutral.
+    """
+    # US_INFLATION: if CPI or PPI is HOT, floor above 0.5
+    infl = all_results.get('US_INFLATION', {})
+    if infl.get('status') in ('PASS', 'SKIP') and infl.get('score', 0.5) == 0.5:
+        cpi = fred.get('cpi_yoy')
+        ppi = fred.get('ppi_yoy')
+        if cpi is not None and cpi >= 3.5:
+            all_results['US_INFLATION'] = {**infl, 'score': 0.62, 'fred_floor': True,
+                'signal': 'BUY', 'confidence': 'MEDIUM'}
+        elif cpi is not None and cpi >= 2.5:
+            all_results['US_INFLATION'] = {**infl, 'score': 0.56, 'fred_floor': True,
+                'signal': 'HOLD', 'confidence': 'LOW'}
+        elif ppi is not None and ppi >= 4.0:
+            all_results['US_INFLATION'] = {**infl, 'score': 0.60, 'fred_floor': True,
+                'signal': 'BUY', 'confidence': 'MEDIUM'}
+
+    # US_LABOR: if unemployment high or claims spiking, floor below 0.5
+    labor = all_results.get('US_LABOR', {})
+    if labor.get('status') in ('PASS', 'SKIP') and labor.get('score', 0.5) == 0.5:
+        unemp = fred.get('unemp') or claims.get('unemp')
+        claims_k = claims.get('claims_k')
+        if unemp is not None and unemp >= 5.0:
+            all_results['US_LABOR'] = {**labor, 'score': 0.35, 'fred_floor': True,
+                'signal': 'SELL', 'confidence': 'MEDIUM'}
+        elif unemp is not None and unemp >= 4.5:
+            all_results['US_LABOR'] = {**labor, 'score': 0.42, 'fred_floor': True,
+                'signal': 'HOLD', 'confidence': 'LOW'}
+        elif claims_k is not None and claims_k >= 280:
+            all_results['US_LABOR'] = {**labor, 'score': 0.38, 'fred_floor': True,
+                'signal': 'SELL', 'confidence': 'MEDIUM'}
+        elif claims_k is not None and claims_k < 210:
+            all_results['US_LABOR'] = {**labor, 'score': 0.55, 'fred_floor': True,
+                'signal': 'HOLD', 'confidence': 'LOW'}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -190,6 +280,31 @@ def score_all_cascades(df_15m, current_time=None, config=None, regime='UNKNOWN',
 
         except Exception as e:
             all_results[name] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # Apply FRED-based floors — prevents decay from washing out clear macro state
+    fred = _load_fred_for_cascades()
+    claims = _load_claims_for_cascades()
+    _apply_fred_floors(all_results, fred, claims)
+
+    # Recompute combined score from all_results (includes FRED-floored scores)
+    weighted_score = 0.0
+    total_weight = 0.0
+    active_results = []
+    for name, result in all_results.items():
+        if result.get('status') in ('PASS', 'DISABLED'):
+            if result.get('status') == 'PASS':
+                weighted_score += result['score'] * result['weight']
+                total_weight += result['weight']
+                active_results.append({
+                    'name': name,
+                    'score': result['score'],
+                    'weight': result['weight'],
+                    'decay': result.get('decay', 1.0),
+                    'signal': result.get('signal', result.get('details', {}).get('result', {}).get('combined_signal', '?')),
+                    'expected_move': result.get('details', {}).get('result', {}).get('expected_move', 0),
+                    'confidence': result.get('confidence', result.get('details', {}).get('result', {}).get('confidence', 'LOW')),
+                    'details': result.get('details', {}),
+                })
 
     # Compute combined score
     if total_weight > 0:
