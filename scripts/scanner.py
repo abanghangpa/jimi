@@ -52,6 +52,7 @@ from src.modules.taker_tracker import get_taker_summary, format_taker_summary
 from src.modules.cross_asset import score_cross_asset
 from src.modules.m21_wyckoff import score_m21, format_m21, detect_trading_range, get_range_targets, get_range_sl
 from src.modules.m22_inflation_regime_v2 import score_m22, format_m22
+from src.modules.m22_aggregator import aggregate_macro_regime, format_m22_aggregated
 from src.modules.m24_nbs_pmi import score_m24_nbs_pmi, format_m24
 from src.modules.m25_caixin_pmi import score_m25_caixin_pmi, format_m25
 from src.modules.m26_ez_pmi import score_m26_ez_pmi, format_m26
@@ -903,39 +904,12 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         except Exception as e:
             result['m21'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
-    # ── M22: Inflation Regime ──
+    # ── M22: Macro Regime (placeholder — aggregated after M23-M65) ──
+    # M22 now runs AFTER all macro modules to aggregate their outputs.
+    # Placeholder values set here; real scoring happens after M62.
     m22_score = 0.5
     m22_status = 'SKIP'
     m22_details = {}
-    _ls_for_m22 = result.get('derivatives', {}).get('ls_ratio', None)
-    try:
-        m22_status, m22_score, m22_details, m22_size_mult = score_m22(
-            direction=direction, ls_ratio=_ls_for_m22, config=cfg)
-        if m22_details and m22_details.get('regime') not in ('DISABLED', 'NO_DATA'):
-            result['m22'] = {
-                'status': m22_status,
-                'score': round(float(m22_score), 3),
-                'regime': m22_details.get('regime', '?'),
-                'severity': m22_details.get('severity', '?'),
-                'ppi_yoy': m22_details.get('ppi_yoy'),
-                'ppi_direction': m22_details.get('ppi_direction'),
-                'ppi_acceleration': m22_details.get('ppi_acceleration'),
-                'cpi_confirmation': m22_details.get('cpi_confirmation'),
-                'cpi_yoy': m22_details.get('cpi_yoy'),
-                'fed_stance': m22_details.get('fed_stance'),
-                'labor_context': m22_details.get('labor_context'),
-                'real_rate': m22_details.get('real_rate'),
-                'real_rate_label': m22_details.get('real_rate_label'),
-                'positioning': m22_details.get('positioning'),
-                'size_mult': m22_details.get('size_mult', 1.0),
-                'factors': m22_details.get('factors', []),
-                'details': m22_details,
-            }
-            # Apply size multiplier from inflation regime
-            if m22_size_mult < 1.0:
-                result['_m22_size_mult'] = m22_size_mult
-    except Exception as e:
-        result['m22'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
     # ── M23: NFP + PPI + CPI Session Analysis ──
     m23_score = 0.5
@@ -2195,6 +2169,31 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m62'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M22: Macro Regime Aggregator (reads M23-M65 outputs) ──
+    # M22 is now a pure downstream aggregator — it does NOT fetch its own data.
+    # It reads the scores/classifications from M23-M65 and produces a regime label.
+    try:
+        m22_status, m22_score, m22_details = aggregate_macro_regime(result, config=cfg)
+        if m22_details and m22_details.get('regime') not in ('DISABLED', 'NO_DATA'):
+            result['m22'] = {
+                'status': m22_status,
+                'score': round(float(m22_score), 3),
+                'regime': m22_details.get('regime', '?'),
+                'severity': m22_details.get('severity', '?'),
+                'inflation_label': m22_details.get('inflation_label', '?'),
+                'labor_label': m22_details.get('labor_label', '?'),
+                'policy_label': m22_details.get('policy_label', '?'),
+                'global_label': m22_details.get('global_label', '?'),
+                'size_mult': m22_details.get('size_mult', 1.0),
+                'factors': m22_details.get('factors', []),
+                'details': m22_details,
+            }
+            _m22_size_mult = m22_details.get('size_mult', 1.0)
+            if _m22_size_mult < 1.0:
+                result['_m22_size_mult'] = _m22_size_mult
+    except Exception as e:
+        result['m22'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -3125,9 +3124,9 @@ def print_signal(result):
                   f"KillZone: {m21.get('kill_zone', '?')}  "
                   f"score={m21.get('score', 0):.3f}")
 
-    # M22 Inflation Regime
+    # M22 Macro Regime (aggregated from M23-M65)
     if 'm22' in result and result['m22'].get('status') != 'SKIP':
-        m22_out = format_m22(result['m22'].get('details', {}))
+        m22_out = format_m22_aggregated(result['m22'].get('details', {}))
         if m22_out:
             print(m22_out)
 
@@ -3846,40 +3845,23 @@ def print_summary(result):
         if result.get('range_tp_override') or result.get('range_sl_override'):
             print(f"  {'  Range Override':<22} {'✅':>12}  TP/SL adjusted to range structure")
 
-    # M22 Inflation Regime summary
+    # M22 Macro Regime summary (aggregated from M23-M65)
     m22 = result.get('m22', {})
     if m22 and m22.get('status') != 'SKIP':
         m22_regime = m22.get('regime', '?')
         m22_sev = m22.get('severity', '?')
         m22_sc = m22.get('score', 0.5)
-        m22_ppi = m22.get('ppi_yoy', 0)
-        m22_dir = m22.get('ppi_direction', '?')
-        m22_accel = m22.get('ppi_acceleration', '?')
-        m22_cpi = m22.get('cpi_confirmation', '?')
-        m22_cpi_yoy = m22.get('cpi_yoy')
-        m22_fed = m22.get('fed_stance', '?')
-        m22_labor = m22.get('labor_context', '?')
-        m22_real = m22.get('real_rate')
-        m22_real_label = m22.get('real_rate_label', '?')
-        m22_pos = m22.get('positioning', '?')
         m22_sm = m22.get('size_mult', 1.0)
+        infl = m22.get('inflation_label', '?')
+        labor = m22.get('labor_label', '?')
+        policy = m22.get('policy_label', '?')
+        glob = m22.get('global_label', '?')
         sev_icons = {'LOW': '🟢', 'MEDIUM': '🟡', 'HIGH': '🟠', 'CRITICAL': '🔴'}
         sev_icon = sev_icons.get(m22_sev, '⚪')
-        print(f"  {'M22 Inflation v2':<22} {sev_icon} {m22_regime:>16}  score={m22_sc:.3f}")
-        # PPI + acceleration + CPI
-        accel_icons = {'ACCELERATING': '📈', 'DECELERATING': '📉', 'STABLE': '➡️'}
-        a_icon = accel_icons.get(m22_accel, '—')
-        cpi_icons = {'COOL': '🟢', 'WARM': '⚪', 'HOT': '🔴'}
-        c_icon = cpi_icons.get(m22_cpi, '⚪')
-        cpi_str = f"CPI={m22_cpi_yoy:.1f}%{c_icon}" if m22_cpi_yoy else ""
-        print(f"  {'  PPI/CPI':<22} {m22_ppi:.1f}% {m22_dir} {a_icon}  {cpi_str}")
-        # Fed + Labor + Real rate
-        labor_icons = {'GOLDILOCKS': '🟢', 'NORMAL': '⚪', 'SOFTENING': '🟡', 'CRISIS': '🔴'}
-        l_icon = labor_icons.get(m22_labor, '⚪')
-        rr_str = f"rr={m22_real:+.1f}%" if m22_real is not None else ""
-        _ls_m22 = result.get('derivatives', {}).get('ls_ratio', 0)
-        pos_str = f"L/S={_ls_m22:.2f}" if _ls_m22 else ""
-        print(f"  {'  Fed/Labor/Pos':<22} {m22_fed} / {l_icon}{m22_labor} / {m22_pos} {pos_str}  {rr_str}")
+        print(f"  {'M22 Macro Regime':<22} {sev_icon} {m22_regime:>16}  score={m22_sc:.3f}")
+        print(f"  {'  Signals':<22} infl={infl}  labor={labor}  policy={policy}")
+        if glob != 'NO_DATA':
+            print(f"  {'  Global CBs':<22} {glob}")
         if m22_sm < 1.0:
             print(f"  {'  ⚠️ Size Reduce':<22} {m22_sm:.2f}x")
 
