@@ -114,6 +114,60 @@ from src.modules.m19_breakout_confirm import check_breakout_filters, format_brea
 from src.modules.m20_failed_breakout import score_m20, format_failed_breakout
 from src.dual_strategy import DualStrategy
 
+# ── M66-M73: Traditional Finance Macro Filters ──
+from src.modules.m66_usdjpy import score_m66_usdjpy
+from src.modules.m67_dxy import score_m67_dxy
+from src.modules.m68_yield import score_m68_yield
+from src.modules.m69_vix import score_m69_vix
+from src.modules.m70_wti import score_m70_wti
+from src.modules.m71_gold import score_m71_gold
+from src.modules.m72_btcdom import score_m72_btcdom, fetch_btcdom
+from src.modules.m73_stablecoin import score_m73_stablecoin, fetch_stablecoin_mints
+
+
+def fetch_all_tradfi_data(config=None):
+    """Fetch all traditional-finance data (FX, commodities, VIX) in one batched call.
+
+    Uses yfinance for all tickers. Returns dict of DataFrames keyed by signal name.
+    Failed fetches return None for that key (non-fatal).
+    """
+    cfg = config or {}
+    data = {}
+
+    try:
+        import yfinance as yf
+    except ImportError:
+        print("  ⚠️  yfinance not installed — M66-M71 skipped")
+        return data
+
+    # Build ticker list from enabled modules
+    tickers = {}
+    if cfg.get('M66_ENABLED', True):
+        tickers['usdjpy'] = ('JPY=X', '5d', '1m')
+    if cfg.get('M67_ENABLED', True) or cfg.get('M70_ENABLED', True) or cfg.get('M71_ENABLED', True):
+        # DXY needed by M67, M70, M71 — fetch once
+        tickers['dxy'] = ('DX-Y.NYB', '5d', '15m')
+    if cfg.get('M68_ENABLED', True):
+        tickers['tnx'] = ('^TNX', '5d', '1h')
+    if cfg.get('M69_ENABLED', True):
+        tickers['vix'] = ('^VIX', '30d', '1d')
+    if cfg.get('M70_ENABLED', True):
+        tickers['wti'] = ('CL=F', '5d', '4h')
+    if cfg.get('M71_ENABLED', True):
+        tickers['gold'] = ('GC=F', '5d', '4h')
+
+    for key, (ticker, period, interval) in tickers.items():
+        try:
+            df = yf.download(ticker, period=period, interval=interval, progress=False)
+            if df is not None and len(df) > 0:
+                data[key] = df
+            else:
+                data[key] = None
+        except Exception:
+            data[key] = None
+
+    return data
+
 
 def compute_indicators(df_15m, config=None, df_1d_hist=None):
     """Compute all indicators on fresh data.
@@ -2421,6 +2475,129 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m62'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── Fetch Traditional Finance Data (M66-M73) ──
+    _tradfi_data = fetch_all_tradfi_data(config=cfg)
+    _dxy_df = _tradfi_data.get('dxy')
+
+    # ── M66: USD/JPY Carry Trade Proxy ──
+    m66_score = 0.5
+    m66_status = 'SKIP'
+    if cfg.get('M66_ENABLED', True):
+        try:
+            _usdjpy_df = _tradfi_data.get('usdjpy')
+            m66_status, m66_score, m66_details = score_m66_usdjpy(
+                _usdjpy_df, _dxy_df, direction, config=cfg)
+            if m66_status == 'PASS':
+                result['m66'] = {'status': m66_status, 'score': round(float(m66_score), 3),
+                                 'details': m66_details}
+        except Exception as e:
+            result['m66'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # ── M67: DXY Divergence ──
+    m67_score = 0.5
+    m67_status = 'SKIP'
+    if cfg.get('M67_ENABLED', True):
+        try:
+            eth_now = float(row['Close'])
+            eth_prev = float(df_15m['Close'].iloc[max(0, idx - 1)])
+            m67_status, m67_score, m67_details = score_m67_dxy(
+                _dxy_df, eth_now, eth_prev, direction, config=cfg)
+            if m67_status == 'PASS':
+                result['m67'] = {'status': m67_status, 'score': round(float(m67_score), 3),
+                                 'details': m67_details}
+        except Exception as e:
+            result['m67'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # ── M68: 10Y Yield + TIPS ──
+    m68_score = 0.5
+    m68_status = 'SKIP'
+    if cfg.get('M68_ENABLED', True):
+        try:
+            _tnx_df = _tradfi_data.get('tnx')
+            _tips_df = None
+            try:
+                from src.modules.m68_yield import fetch_tips_yield
+                _tips_df = fetch_tips_yield()
+            except Exception:
+                pass
+            m68_status, m68_score, m68_details = score_m68_yield(
+                _tnx_df, _tips_df, direction, config=cfg)
+            if m68_status == 'PASS':
+                result['m68'] = {'status': m68_status, 'score': round(float(m68_score), 3),
+                                 'details': m68_details}
+        except Exception as e:
+            result['m68'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # ── M69: VIX Regime ──
+    m69_score = 0.5
+    m69_status = 'SKIP'
+    if cfg.get('M69_ENABLED', True):
+        try:
+            _vix_df = _tradfi_data.get('vix')
+            m69_status, m69_score, m69_details = score_m69_vix(
+                _vix_df, direction, config=cfg)
+            if m69_status == 'PASS':
+                result['m69'] = {'status': m69_status, 'score': round(float(m69_score), 3),
+                                 'details': m69_details}
+        except Exception as e:
+            result['m69'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # ── M70: WTI Crude Oil ──
+    m70_score = 0.5
+    m70_status = 'SKIP'
+    if cfg.get('M70_ENABLED', True):
+        try:
+            _wti_df = _tradfi_data.get('wti')
+            m70_status, m70_score, m70_details = score_m70_wti(
+                _wti_df, _dxy_df, direction, config=cfg)
+            if m70_status == 'PASS':
+                result['m70'] = {'status': m70_status, 'score': round(float(m70_score), 3),
+                                 'details': m70_details}
+        except Exception as e:
+            result['m70'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # ── M71: Gold + DXY Geopolitical ──
+    m71_score = 0.5
+    m71_status = 'SKIP'
+    if cfg.get('M71_ENABLED', True):
+        try:
+            _gold_df = _tradfi_data.get('gold')
+            m71_status, m71_score, m71_details = score_m71_gold(
+                _gold_df, _dxy_df, direction, config=cfg)
+            if m71_status == 'PASS':
+                result['m71'] = {'status': m71_status, 'score': round(float(m71_score), 3),
+                                 'details': m71_details}
+        except Exception as e:
+            result['m71'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # ── M72: BTC Dominance ──
+    m72_score = 0.5
+    m72_status = 'SKIP'
+    if cfg.get('M72_ENABLED', True):
+        try:
+            _btcdom = fetch_btcdom()
+            m72_status, m72_score, m72_details = score_m72_btcdom(
+                _btcdom, direction, config=cfg)
+            if m72_status == 'PASS':
+                result['m72'] = {'status': m72_status, 'score': round(float(m72_score), 3),
+                                 'details': m72_details}
+        except Exception as e:
+            result['m72'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
+    # ── M73: Stablecoin Mints ──
+    m73_score = 0.5
+    m73_status = 'SKIP'
+    if cfg.get('M73_ENABLED', True):
+        try:
+            _mint_data = fetch_stablecoin_mints()
+            m73_status, m73_score, m73_details = score_m73_stablecoin(
+                _mint_data, direction, config=cfg)
+            if m73_status == 'PASS':
+                result['m73'] = {'status': m73_status, 'score': round(float(m73_score), 3),
+                                 'details': m73_details}
+        except Exception as e:
+            result['m73'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
+
     # ── M22: Macro Regime Aggregator (reads M23-M65 outputs) ──
     # M22 is now a pure downstream aggregator — it does NOT fetch its own data.
     # It reads the scores/classifications from M23-M65 and produces a regime label.
@@ -2811,6 +2988,14 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         m20_score=m20_score, use_m20=m20_status == 'PASS',
         m22_score=m22_score, use_m22=m22_status != 'SKIP',
         taker_score=taker_score, use_taker=use_taker,
+        m66_score=m66_score, use_m66=m66_status == 'PASS',
+        m67_score=m67_score, use_m67=m67_status == 'PASS',
+        m68_score=m68_score, use_m68=m68_status == 'PASS',
+        m69_score=m69_score, use_m69=m69_status == 'PASS',
+        m70_score=m70_score, use_m70=m70_status == 'PASS',
+        m71_score=m71_score, use_m71=m71_status == 'PASS',
+        m72_score=m72_score, use_m72=m72_status == 'PASS',
+        m73_score=m73_score, use_m73=m73_status == 'PASS',
         config=cfg,
     )
 
@@ -3469,6 +3654,30 @@ def print_signal(result):
         if m65_out:
             print(m65_out)
 
+    # M66–M73: Traditional Finance Macro Filters
+    for _m_num, _m_name in [(66, 'USD/JPY'), (67, 'DXY'), (68, '10Y Yield'),
+                             (69, 'VIX'), (70, 'WTI Oil'), (71, 'Gold'),
+                             (72, 'BTC.D'), (73, 'Stablecoins')]:
+        _m_key = f'm{_m_num}'
+        if _m_key in result and result[_m_key].get('status') not in ('SKIP', 'ERROR', None):
+            _m = result[_m_key]
+            _det = _m.get('details', {})
+            _cls = _det.get('classification', '?')
+            _sc = _m.get('score', 0.5)
+            _icon = '🟢' if _sc > 0.55 else '🔴' if _sc < 0.45 else '⚪'
+            # Build detail string from details dict
+            _parts = []
+            for k, v in _det.items():
+                if k != 'classification' and v is not None:
+                    if isinstance(v, float):
+                        _parts.append(f'{k}={v:+.2f}')
+                    elif isinstance(v, bool) and v:
+                        _parts.append(k)
+                    elif not isinstance(v, bool):
+                        _parts.append(f'{k}={v}')
+            _detail_str = '  '.join(_parts[:4])
+            print(f"    {_icon} M{_m_num} ({_m_name:>10}): {_cls:>24}  score={_sc:.3f}  {_detail_str}")
+
     # M26 Eurozone Flash PMI Session Bias
     if 'm26' in result and result['m26'].get('status') not in ('SKIP', 'NO_EDGE'):
         m26_out = format_m26(result['m26'].get('details', {}))
@@ -4084,6 +4293,18 @@ def print_summary(result):
     m16_sp_sc = m16_exch.get('spot_score', 0) if m16_exch else 0
     m16_sp_st = m16_exch.get('spot_status', '—') if m16_exch else '—'
     print(f"  {'M16 Exch Spot':<22} {m16_sp_st:>10}  {m16_sp_sc:>6.2f}")
+
+    # M66–M73: Traditional Finance Macro Filters
+    for _m_num, _m_name in [(66, 'USD/JPY'), (67, 'DXY'), (68, '10Y Yield'),
+                             (69, 'VIX'), (70, 'WTI Oil'), (71, 'Gold'),
+                             (72, 'BTC.D'), (73, 'Stablecoins')]:
+        _m_key = f'm{_m_num}'
+        _m = result.get(_m_key, {})
+        _m_st = _m.get('status', '—') if _m else '—'
+        _m_sc = _m.get('score', 0) if _m else 0
+        _m_cls = _m.get('details', {}).get('classification', '') if _m else ''
+        if _m_st not in ('SKIP', '—', None):
+            print(f"  {f'M{_m_num} {_m_name}':<22} {_m_st:>10}  {_m_sc:>6.3f}  {_m_cls}")
 
     # Squeeze in summary
     sq = result.get('squeeze', {})

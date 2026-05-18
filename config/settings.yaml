@@ -1136,3 +1136,60 @@ ADAPTIVE_MOMENTUM_ENABLED: true
 ADAPTIVE_MOM_BARS: 12              # bars to check momentum (3h)
 ADAPTIVE_MOM_MIN_MOVE: 0.001       # min 0.1% progress required
 ADAPTIVE_MOM_EXIT_AFTER: 24        # exit after 24 bars (6h) no progress
+
+# ═══════════════════════════════════════════════════════════════
+# TRADITIONAL FINANCE MACRO FILTERS (M66–M73)
+# Added 2026-05-18 based on realtime_signal_filters_analysis.txt
+# ═══════════════════════════════════════════════════════════════
+
+# ─── M66: USD/JPY CARRY TRADE ───────────────────────────────
+M66_ENABLED: true
+M66_WEIGHT: 0.08
+M66_ALERT_THRESH: -0.3       # % drop in 5m to trigger alert
+M66_CONFIRMED_THRESH: -0.8   # % drop in 15m = confirmed carry unwind
+M66_CARRY_ALERT_SCORE: 0.65
+M66_CARRY_CONFIRMED_SCORE: 0.80
+
+# ─── M67: DXY DIVERGENCE ────────────────────────────────────
+M67_ENABLED: true
+M67_WEIGHT: 0.06
+M67_DXY_THRESH: 0.2          # % DXY move in 15m to be significant
+M67_DIVERGENCE_ETH_THRESH: 0.05  # % ETH move to count as "moving"
+
+# ─── M68: 10Y YIELD + TIPS ──────────────────────────────────
+M68_ENABLED: true
+M68_WEIGHT: 0.10
+M68_ALERT_BPS: 5.0           # 5bps in 1h = significant
+M68_EXTREME_BPS: 10.0        # 10bps in 1h = extreme, suppress longs
+
+# ─── M69: VIX REGIME ────────────────────────────────────────
+M69_ENABLED: true
+M69_WEIGHT: 0.08
+M69_COMPLACENT_THRESH: 15.0
+M69_ELEVATED_THRESH: 20.0
+M69_FEAR_THRESH: 30.0
+M69_CRISIS_THRESH: 40.0
+M69_SPIKE_DELTA: 3.0         # 3-point single-session spike = risk-off
+
+# ─── M70: WTI CRUDE OIL ─────────────────────────────────────
+M70_ENABLED: true
+M70_WEIGHT: 0.05
+M70_ALERT_THRESH: 3.0        # % move in 4h to trigger
+
+# ─── M71: GOLD + DXY GEOPOLITICAL ───────────────────────────
+M71_ENABLED: true
+M71_WEIGHT: 0.06
+M71_ALERT_THRESH: 1.0        # % move in 4h to trigger
+
+# ─── M72: BTC DOMINANCE ─────────────────────────────────────
+M72_ENABLED: true
+M72_WEIGHT: 0.10
+M72_HIGH_THRESH: 55.0        # BTC.D > 55% = altcoin suppression
+M72_LOW_THRESH: 48.0         # BTC.D < 48% = altcoin season
+
+# ─── M73: STABLECOIN MINTS ──────────────────────────────────
+M73_ENABLED: true
+M73_WEIGHT: 0.05
+M73_LARGE_MINT_THRESH: 500000000    # $500M single-day mint
+M73_MEGA_MINT_THRESH: 1000000000    # $1B single-day mint
+M73_LARGE_BURN_THRESH: 500000000    # $500M burn

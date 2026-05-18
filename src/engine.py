@@ -185,6 +185,14 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
              m20_score=0.5, use_m20=False,
              m22_score=0.5, use_m22=False,
              taker_score=0.5, use_taker=False,
+             m66_score=0.5, use_m66=False,
+             m67_score=0.5, use_m67=False,
+             m68_score=0.5, use_m68=False,
+             m69_score=0.5, use_m69=False,
+             m70_score=0.5, use_m70=False,
+             m71_score=0.5, use_m71=False,
+             m72_score=0.5, use_m72=False,
+             m73_score=0.5, use_m73=False,
              config=None):
     cfg = config or CONFIG
     m4_contrib = m4_score if m4_status == 'PASS' else 0.5
@@ -216,6 +224,22 @@ def calc_ics(m1_score, m2_score, m3_score, m4_score, m4_status, m5_score=0.5,
         extra_modules.append(('M22', m22_score, cfg.get('M22_WEIGHT', 0.12)))
     if use_taker and cfg.get('TAKER_ENABLED', False):
         extra_modules.append(('TAKER', taker_score, cfg.get('TAKER_WEIGHT', 0.08)))
+    if use_m66 and cfg.get('M66_ENABLED', False):
+        extra_modules.append(('M66', m66_score, cfg.get('M66_WEIGHT', 0.08)))
+    if use_m67 and cfg.get('M67_ENABLED', False):
+        extra_modules.append(('M67', m67_score, cfg.get('M67_WEIGHT', 0.06)))
+    if use_m68 and cfg.get('M68_ENABLED', False):
+        extra_modules.append(('M68', m68_score, cfg.get('M68_WEIGHT', 0.10)))
+    if use_m69 and cfg.get('M69_ENABLED', False):
+        extra_modules.append(('M69', m69_score, cfg.get('M69_WEIGHT', 0.08)))
+    if use_m70 and cfg.get('M70_ENABLED', False):
+        extra_modules.append(('M70', m70_score, cfg.get('M70_WEIGHT', 0.05)))
+    if use_m71 and cfg.get('M71_ENABLED', False):
+        extra_modules.append(('M71', m71_score, cfg.get('M71_WEIGHT', 0.06)))
+    if use_m72 and cfg.get('M72_ENABLED', False):
+        extra_modules.append(('M72', m72_score, cfg.get('M72_WEIGHT', 0.10)))
+    if use_m73 and cfg.get('M73_ENABLED', False):
+        extra_modules.append(('M73', m73_score, cfg.get('M73_WEIGHT', 0.05)))
 
     base_sum = (cfg['M1_WEIGHT'] + cfg['M2_WEIGHT'] +
                 cfg['M3_WEIGHT'] + cfg['M4_WEIGHT'] + cfg['M5_WEIGHT'])
