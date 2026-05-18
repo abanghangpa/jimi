@@ -12,6 +12,7 @@ import argparse
 import sys
 import os
 import json
+import time
 import numpy as np
 import pandas as pd
 
@@ -4960,6 +4961,10 @@ def main():
     parser.add_argument('--dashboard', type=int, help='Run dashboard on port')
     parser.add_argument('--tf', default='15m', choices=['1m', '5m', '15m', '1h'],
                         help='Base timeframe (default: 15m)')
+    parser.add_argument('--cached', action='store_true',
+                        help='Skip all macro fetching — use whatever is in cache')
+    parser.add_argument('--refresh', action='store_true',
+                        help='Force-refresh all macro data (ignore cache TTL)')
     args = parser.parse_args()
 
     if args.dashboard:
@@ -4990,28 +4995,53 @@ def main():
     csv_path = ensure_csv_fresh()
 
     # Step 1b: Fetch live FRED claims/unemployment data (no API key needed)
-    try:
-        import subprocess as _sp
-        _fred_script = os.path.join(os.path.dirname(__file__), 'fetch_fred_claims.py')
-        _r = _sp.run([sys.executable, _fred_script], capture_output=True, text=True, timeout=30)
-        if _r.returncode == 0:
-            for line in _r.stdout.strip().split('\n'):
-                print(f"  {line.strip()}")
-        else:
-            print(f"  ⚠️  FRED claims fetch failed (using cached/hardcoded data)")
-    except Exception as e:
-        print(f"  ⚠️  FRED claims fetch failed: {e} (using cached/hardcoded data)")
+    # Skip if --cached flag is set; check cache age before subprocess call.
+    _fred_cache_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), 'data', 'fred', 'macro_cache.json')
+    _fred_cache_fresh = False
+    if os.path.exists(_fred_cache_path):
+        try:
+            _fred_mtime = os.path.getmtime(_fred_cache_path)
+            _fred_age_hours = (time.time() - _fred_mtime) / 3600
+            _fred_ttl_days = scaled_config.get('MACRO_CACHE_TTL_DAYS', 7)
+            _fred_cache_fresh = _fred_age_hours < (_fred_ttl_days * 24)
+        except Exception:
+            pass
+
+    if args.cached:
+        print(f"  📦 FRED: --cached mode, using existing cache")
+    elif _fred_cache_fresh and not args.refresh:
+        print(f"  📦 FRED: cache fresh ({_fred_age_hours:.1f}h old), skipping fetch")
+    else:
+        try:
+            import subprocess as _sp
+            _fred_script = os.path.join(os.path.dirname(__file__), 'fetch_fred_claims.py')
+            _r = _sp.run([sys.executable, _fred_script], capture_output=True, text=True, timeout=30)
+            if _r.returncode == 0:
+                for line in _r.stdout.strip().split('\n'):
+                    print(f"  {line.strip()}")
+            else:
+                print(f"  ⚠️  FRED claims fetch failed (using cached/hardcoded data)")
+        except Exception as e:
+            print(f"  ⚠️  FRED claims fetch failed: {e} (using cached/hardcoded data)")
 
     # Step 1c: Fetch live macro indicators (Caixin PMI, NBS PMI, etc.)
-    try:
-        from src.utils.macro_fetch import get_latest_macro_indicators
-        _macro_indicators = get_latest_macro_indicators()
-        for _name, _data in _macro_indicators.items():
-            if _data and _data.get('actual') is not None:
-                _surprise = _data.get('surprise', '?')
-                print(f"  📊 {_name}: actual={_data['actual']} prev={_data.get('previous', '?')} surprise={_surprise}")
-    except Exception as e:
-        print(f"  ⚠️  Macro indicator fetch failed: {e}")
+    # Skip if --cached; force-refresh if --refresh.
+    if args.cached:
+        print(f"  📦 Macro indicators: --cached mode, using existing cache")
+    else:
+        _force_refresh = args.refresh
+        if _force_refresh:
+            print(f"  🔄 Macro indicators: --refresh mode, forcing fresh fetch")
+        try:
+            from src.utils.macro_fetch import get_latest_macro_indicators
+            _macro_indicators = get_latest_macro_indicators(force_refresh=_force_refresh)
+            for _name, _data in _macro_indicators.items():
+                if _data and _data.get('actual') is not None:
+                    _surprise = _data.get('surprise', '?')
+                    print(f"  📊 {_name}: actual={_data['actual']} prev={_data.get('previous', '?')} surprise={_surprise}")
+        except Exception as e:
+            print(f"  ⚠️  Macro indicator fetch failed: {e}")
 
     # Step 2: Load daily data from CSV for reliable EMA55 bias
     df_1d_hist = load_daily_from_csv(csv_path)

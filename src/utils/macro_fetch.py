@@ -19,6 +19,48 @@ from datetime import datetime, timedelta, timezone
 
 UTC = timezone.utc
 
+# ── Configurable Cache TTL ──
+# Default: 7 days (macro data releases monthly/quarterly).
+# Override via settings.yaml MACRO_CACHE_TTL_DAYS or env var MACRO_CACHE_TTL_DAYS.
+_DEFAULT_TTL_DAYS = 7
+
+
+def _get_cache_ttl_seconds():
+    """Return cache TTL in seconds. Reads from env or settings.yaml."""
+    # Env var takes precedence (useful for CI/scripts)
+    env_ttl = os.environ.get('MACRO_CACHE_TTL_DAYS')
+    if env_ttl is not None:
+        try:
+            return int(float(env_ttl) * 86400)
+        except ValueError:
+            pass
+    # Try settings.yaml
+    try:
+        import yaml
+        settings_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'config', 'settings.yaml')
+        if os.path.exists(settings_path):
+            with open(settings_path) as f:
+                cfg = yaml.safe_load(f) or {}
+            if 'MACRO_CACHE_TTL_DAYS' in cfg:
+                return int(float(cfg['MACRO_CACHE_TTL_DAYS']) * 86400)
+    except Exception:
+        pass
+    return _DEFAULT_TTL_DAYS * 86400
+
+
+def _is_cache_fresh(cached_entry, ttl_seconds=None):
+    """Check if a cached entry is still within TTL."""
+    if ttl_seconds is None:
+        ttl_seconds = _get_cache_ttl_seconds()
+    if ttl_seconds <= 0:
+        return False  # TTL=0 means always refresh
+    cached_time = datetime.fromisoformat(
+        cached_entry.get('timestamp', '2000-01-01T00:00:00+00:00'))
+    return (datetime.now(UTC) - cached_time).total_seconds() < ttl_seconds
+
+
 # Cache file for macro data
 _CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'macro')
 _CACHE_FILE = os.path.join(_CACHE_DIR, 'macro_indicators.json')
@@ -285,8 +327,7 @@ def fetch_caixin_pmi(force_refresh=False):
     # Check cache (valid for 24h unless force_refresh)
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching Caixin Manufacturing PMI...")
@@ -357,8 +398,7 @@ def fetch_nbs_pmi(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching NBS Manufacturing PMI...")
@@ -408,8 +448,7 @@ def fetch_ism_pmi(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching US ISM Manufacturing PMI...")
@@ -466,8 +505,7 @@ def fetch_ism_svc_pmi(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching US ISM Services PMI...")
@@ -520,8 +558,7 @@ def fetch_jolts(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching JOLTS Job Openings...")
@@ -570,8 +607,7 @@ def fetch_china_cpi(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching China CPI+PPI...")
@@ -619,8 +655,7 @@ def fetch_uk_cpi(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching UK CPI...")
@@ -666,8 +701,7 @@ def fetch_uk_wages(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching UK Wages...")
@@ -715,8 +749,7 @@ def fetch_us_retail_sales(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching US Retail Sales...")
@@ -762,8 +795,7 @@ def fetch_us_housing_starts(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching US Housing Starts...")
@@ -807,8 +839,7 @@ def fetch_pboc_lpr(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching PBoC LPR...")
@@ -844,8 +875,7 @@ def fetch_adp_employment(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching ADP Employment...")
@@ -881,8 +911,7 @@ def fetch_nfp(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching NFP (Non-Farm Payrolls)...")
@@ -918,8 +947,7 @@ def fetch_ifo(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching Germany Ifo Business Climate...")
@@ -955,8 +983,7 @@ def fetch_ums(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching Michigan Consumer Sentiment...")
@@ -992,8 +1019,7 @@ def fetch_germany_cpi(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching Germany CPI...")
@@ -1021,8 +1047,7 @@ def fetch_ez_cpi(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching Eurozone CPI Flash...")
@@ -1050,8 +1075,7 @@ def fetch_ez_gdp(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching Eurozone GDP Flash...")
@@ -1079,8 +1103,7 @@ def fetch_us_gdp(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching US GDP Advance...")
@@ -1108,8 +1131,7 @@ def fetch_us_durables(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching US Durable Goods Orders...")
@@ -1137,8 +1159,7 @@ def fetch_us_pce(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching US Core PCE...")
@@ -1166,8 +1187,7 @@ def fetch_jp_cpi(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching Japan CPI (Tokyo Flash)...")
@@ -1195,8 +1215,7 @@ def fetch_cb_consumer_confidence(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching CB Consumer Confidence...")
@@ -1229,8 +1248,7 @@ def fetch_uk_gdp_monthly(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching UK Monthly GDP...")
@@ -1263,8 +1281,7 @@ def fetch_rba_rate(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching RBA Rate Decision...")
@@ -1298,8 +1315,7 @@ def fetch_au_cpi(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching Australia Quarterly CPI...")
@@ -1332,8 +1348,7 @@ def fetch_china_gdp(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching China Quarterly GDP...")
@@ -1366,8 +1381,7 @@ def fetch_treasury_auction(force_refresh=False):
 
     if not force_refresh and cache_key in cache:
         cached = cache[cache_key]
-        cached_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01T00:00:00+00:00'))
-        if (datetime.now(UTC) - cached_time).total_seconds() < 86400:
+        if _is_cache_fresh(cached):
             return cached
 
     print("  📡 Fetching US Treasury 10Y auction results...")
@@ -1388,40 +1402,43 @@ def fetch_treasury_auction(force_refresh=False):
     return None
 
 
-def get_latest_macro_indicators():
+def get_latest_macro_indicators(force_refresh=False):
     """Fetch all relevant macro indicators for the scanner.
+
+    Args:
+        force_refresh: If True, ignore cache TTL and re-fetch everything.
 
     Returns dict with keys for each indicator.
     """
     return {
-        'caixin_mfg_pmi': fetch_caixin_pmi(),
-        'nbs_mfg_pmi': fetch_nbs_pmi(),
-        'ism_mfg_pmi': fetch_ism_pmi(),
-        'ism_svc_pmi': fetch_ism_svc_pmi(),
-        'jolts': fetch_jolts(),
-        'china_cpi_ppi': fetch_china_cpi(),
-        'uk_cpi': fetch_uk_cpi(),
-        'uk_wages': fetch_uk_wages(),
-        'us_retail_sales': fetch_us_retail_sales(),
-        'us_housing_starts': fetch_us_housing_starts(),
-        'pboc_lpr': fetch_pboc_lpr(),
-        'adp_employment': fetch_adp_employment(),
-        'nfp': fetch_nfp(),
-        'ifo': fetch_ifo(),
-        'ums': fetch_ums(),
-        'germany_cpi': fetch_germany_cpi(),
-        'ez_cpi': fetch_ez_cpi(),
-        'ez_gdp': fetch_ez_gdp(),
-        'us_gdp': fetch_us_gdp(),
-        'us_durables': fetch_us_durables(),
-        'us_pce': fetch_us_pce(),
-        'jp_cpi': fetch_jp_cpi(),
-        'cb_consumer_confidence': fetch_cb_consumer_confidence(),
-        'uk_gdp_monthly': fetch_uk_gdp_monthly(),
-        'rba_rate': fetch_rba_rate(),
-        'au_cpi': fetch_au_cpi(),
-        'china_gdp': fetch_china_gdp(),
-        'treasury_auction': fetch_treasury_auction(),
+        'caixin_mfg_pmi': fetch_caixin_pmi(force_refresh=force_refresh),
+        'nbs_mfg_pmi': fetch_nbs_pmi(force_refresh=force_refresh),
+        'ism_mfg_pmi': fetch_ism_pmi(force_refresh=force_refresh),
+        'ism_svc_pmi': fetch_ism_svc_pmi(force_refresh=force_refresh),
+        'jolts': fetch_jolts(force_refresh=force_refresh),
+        'china_cpi_ppi': fetch_china_cpi(force_refresh=force_refresh),
+        'uk_cpi': fetch_uk_cpi(force_refresh=force_refresh),
+        'uk_wages': fetch_uk_wages(force_refresh=force_refresh),
+        'us_retail_sales': fetch_us_retail_sales(force_refresh=force_refresh),
+        'us_housing_starts': fetch_us_housing_starts(force_refresh=force_refresh),
+        'pboc_lpr': fetch_pboc_lpr(force_refresh=force_refresh),
+        'adp_employment': fetch_adp_employment(force_refresh=force_refresh),
+        'nfp': fetch_nfp(force_refresh=force_refresh),
+        'ifo': fetch_ifo(force_refresh=force_refresh),
+        'ums': fetch_ums(force_refresh=force_refresh),
+        'germany_cpi': fetch_germany_cpi(force_refresh=force_refresh),
+        'ez_cpi': fetch_ez_cpi(force_refresh=force_refresh),
+        'ez_gdp': fetch_ez_gdp(force_refresh=force_refresh),
+        'us_gdp': fetch_us_gdp(force_refresh=force_refresh),
+        'us_durables': fetch_us_durables(force_refresh=force_refresh),
+        'us_pce': fetch_us_pce(force_refresh=force_refresh),
+        'jp_cpi': fetch_jp_cpi(force_refresh=force_refresh),
+        'cb_consumer_confidence': fetch_cb_consumer_confidence(force_refresh=force_refresh),
+        'uk_gdp_monthly': fetch_uk_gdp_monthly(force_refresh=force_refresh),
+        'rba_rate': fetch_rba_rate(force_refresh=force_refresh),
+        'au_cpi': fetch_au_cpi(force_refresh=force_refresh),
+        'china_gdp': fetch_china_gdp(force_refresh=force_refresh),
+        'treasury_auction': fetch_treasury_auction(force_refresh=force_refresh),
     }
 
 

@@ -4,6 +4,12 @@
 # Override any parameter here. Unset keys fall back to defaults.
 # Switch between "modes" by passing --config v615.yaml etc.
 
+# ─── MACRO CACHE ─────────────────────────────────────────────
+# TTL in days for macro indicator cache (default: 7).
+# Macro data (PMI, CPI, GDP, rate decisions) releases monthly/quarterly.
+# Set to 0 to always fetch fresh (old behavior: 24h TTL).
+MACRO_CACHE_TTL_DAYS: 7
+
 # ─── GATE THRESHOLDS ─────────────────────────────────────────
 ICS_THRESHOLD_NORMAL: 0.65     # raised from 0.62 — 0.65+ bucket has 76% WR
 ICS_THRESHOLD_CAUTION: 0.65
