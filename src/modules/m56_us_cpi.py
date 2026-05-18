@@ -154,6 +154,13 @@ CPI_RELEASES = {
     '2026-04-14': {'cpi_yoy': 2.4, 'consensus_yoy': 2.3, 'prior_yoy': 2.3, 'cpi_mom': 0.3, 'consensus_mom': 0.2},
 }
 
+# All scheduled CPI release dates (including future dates without data yet)
+# Used by M22/M23 for time decay and release detection
+CPI_SCHEDULE_DATES = set(CPI_RELEASES.keys()) | {
+    '2026-05-12', '2026-06-10', '2026-07-14', '2026-08-12',
+    '2026-09-10', '2026-10-13', '2026-11-10', '2026-12-09',
+}
+
 
 # ── Edge table ──
 # Format: (wyckoff, vol, signal) → (avg_24h_ret, win_rate, n, direction, ics_adj, size_mult)

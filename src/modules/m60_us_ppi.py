@@ -150,6 +150,13 @@ PPI_RELEASES = {
     '2026-04-14': {'ppi_yoy': 6.3, 'consensus_yoy': 4.0, 'prior_yoy': 3.5},
 }
 
+# All scheduled PPI release dates (including future dates without data yet)
+# Used by M22/M23 for time decay and release detection
+PPI_SCHEDULE_DATES = set(PPI_RELEASES.keys()) | {
+    '2026-05-13', '2026-06-11', '2026-07-10', '2026-08-13',
+    '2026-09-11', '2026-10-14', '2026-11-13', '2026-12-10',
+}
+
 
 # ═══════════════════════════════════════════════════════════════
 # REGIME-CONDITIONAL EDGE TABLE

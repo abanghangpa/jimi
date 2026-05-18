@@ -28,28 +28,14 @@ it's a different regime label (STAGFLATION_TRAPPED).
 from src.config import CONFIG
 from datetime import datetime
 
+# Release dates sourced from standalone modules (M60: PPI, M56: CPI)
+from src.modules.m60_us_ppi import PPI_SCHEDULE_DATES as _PPI_RELEASE_DATES
+from src.modules.m56_us_cpi import CPI_SCHEDULE_DATES as _CPI_RELEASE_DATES
+
 
 # ═══════════════════════════════════════════════════════════════
-# TIME DECAY — same schedule as v1
+# TIME DECAY — release schedule from M60/M56
 # ═══════════════════════════════════════════════════════════════
-
-M22_PPI_RELEASE_DATES = {
-    '2026-01-14', '2026-02-13', '2026-03-13', '2026-04-14',
-    '2026-05-13', '2026-06-11', '2026-07-10', '2026-08-13',
-    '2026-09-11', '2026-10-14', '2026-11-13', '2026-12-10',
-    '2025-01-14', '2025-02-13', '2025-03-13', '2025-04-10',
-    '2025-05-15', '2025-06-12', '2025-07-16', '2025-08-14',
-    '2025-09-11', '2025-10-15', '2025-11-13', '2025-12-11',
-}
-
-M22_CPI_RELEASE_DATES = {
-    '2026-01-14', '2026-02-11', '2026-03-11', '2026-04-10',
-    '2026-05-12', '2026-06-10', '2026-07-14', '2026-08-12',
-    '2026-09-10', '2026-10-13', '2026-11-10', '2026-12-09',
-    '2025-01-15', '2025-02-12', '2025-03-12', '2025-04-10',
-    '2025-05-13', '2025-06-11', '2025-07-15', '2025-08-12',
-    '2025-09-10', '2025-10-14', '2025-11-12', '2025-12-10',
-}
 
 
 def _compute_release_decay(release_dates, today_str=None):
@@ -77,10 +63,10 @@ def _compute_release_decay(release_dates, today_str=None):
 
 
 def compute_m22_decay(config=None, today_str=None):
-    """Compute M22 time decay from PPI/CPI release schedule."""
+    """Compute M22 time decay from PPI/CPI release schedule (sourced from M60/M56)."""
     cfg = config or CONFIG
-    ppi_mult, ppi_days, ppi_date = _compute_release_decay(M22_PPI_RELEASE_DATES, today_str)
-    cpi_mult, cpi_days, cpi_date = _compute_release_decay(M22_CPI_RELEASE_DATES, today_str)
+    ppi_mult, ppi_days, ppi_date = _compute_release_decay(_PPI_RELEASE_DATES, today_str)
+    cpi_mult, cpi_days, cpi_date = _compute_release_decay(_CPI_RELEASE_DATES, today_str)
     if ppi_mult >= cpi_mult:
         best_mult, best_days, best_date, best_type = ppi_mult, ppi_days, ppi_date, 'PPI'
     else:

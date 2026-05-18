@@ -146,6 +146,13 @@ NFP_RELEASES = {
     '2026-05-01': {'nfp_k': 128, 'consensus_k': 130, 'prev_k': 132},
 }
 
+# All scheduled NFP release dates (including future dates without data yet)
+# Used by M23 for release detection and session analysis
+NFP_SCHEDULE_DATES = set(NFP_RELEASES.keys()) | {
+    '2026-06-05', '2026-07-03', '2026-08-07',
+    '2026-09-04', '2026-10-02', '2026-11-06', '2026-12-04',
+}
+
 
 # ═══════════════════════════════════════════════════════════════
 # REGIME-CONDITIONAL EDGE TABLE
