@@ -909,7 +909,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     m22_details = {}
     _ls_for_m22 = result.get('derivatives', {}).get('ls_ratio', None)
     try:
-        m22_status, m22_score, m22_details = score_m22(
+        m22_status, m22_score, m22_details, m22_size_mult = score_m22(
             direction=direction, ls_ratio=_ls_for_m22, config=cfg)
         if m22_details and m22_details.get('regime') not in ('DISABLED', 'NO_DATA'):
             result['m22'] = {
@@ -932,9 +932,8 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
                 'details': m22_details,
             }
             # Apply size multiplier from inflation regime
-            _m22_size_mult = m22_details.get('size_mult', 1.0)
-            if _m22_size_mult < 1.0:
-                result['_m22_size_mult'] = _m22_size_mult
+            if m22_size_mult < 1.0:
+                result['_m22_size_mult'] = m22_size_mult
     except Exception as e:
         result['m22'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
@@ -945,7 +944,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     try:
         from datetime import datetime as _dt
         _now_utc = _dt.utcnow()
-        m23_status, m23_score, m23_details = score_m23_ppi_session(
+        m23_status, m23_score, m23_details, m23_decay_mult = score_m23_ppi_session(
             df_15m, current_time=_now_utc, config=cfg)
         if m23_details and m23_details.get('regime') not in ('DISABLED', 'NO_PPI', 'NO_DATA'):
             result['m23'] = {
@@ -965,8 +964,12 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
                 # NFP-specific fields
                 'nfp_seasonality': m23_details.get('nfp_seasonality'),
                 'nfp_asia_fade_rate': m23_details.get('nfp_asia_fade_rate'),
+                'decay_mult': m23_decay_mult,
                 'details': m23_details,
             }
+            # Apply decay multiplier from macro release timing
+            if m23_decay_mult < 1.0:
+                result['_m23_decay_mult'] = m23_decay_mult
     except Exception as e:
         result['m23'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 

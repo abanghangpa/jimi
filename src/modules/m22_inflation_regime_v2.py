@@ -1119,7 +1119,9 @@ def score_m22(direction='LONG', ls_ratio=None, config=None):
         result[2]['_fred_live'] = bool(fred_overrides)
         result[2]['_fred_overrides'] = list(fred_overrides.keys()) if fred_overrides else []
 
-    return result
+    # 4-tuple: (status, score, details, size_mult)
+    size_mult = result[2].get('size_mult', 1.0) if len(result) >= 3 and isinstance(result[2], dict) else 1.0
+    return result[0], result[1], result[2], size_mult
 
 
 # ═══════════════════════════════════════════════════════════════
