@@ -999,6 +999,10 @@ M54_WINDOW_DAYS: 1            # Days after release to consider active
 M55_ENABLED: true
 M55_WINDOW_DAYS: 0            # Same-day only (weekly frequency)
 
+# ─── M56: US CPI Session Bias (regime-conditional) ───────────
+M56_ENABLED: true
+M56_WINDOW_DAYS: 0            # Same-day only (monthly frequency)
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

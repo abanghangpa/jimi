@@ -78,6 +78,7 @@ from src.modules.m52_rba_rate import score_m52_rba_rate, format_m52
 from src.modules.m53_au_cpi import score_m53_au_cpi, format_m53
 from src.modules.m54_china_gdp import score_m54_china_gdp, format_m54
 from src.modules.m55_treasury_auction import score_m55_treasury, format_m55
+from src.modules.m56_us_cpi import score_m56_us_cpi, format_m56
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1945,6 +1946,39 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m55'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M56: US CPI Session Bias (regime-conditional) ──
+    m56_score_adj = 0.0
+    m56_size_mult = 1.0
+    m56_status = 'SKIP'
+    m56_details = {}
+    try:
+        _wyckoff_for_m56 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m56 = result.get('m9', {}).get('regime', 'CHOP')
+        m56_status, m56_score_adj, m56_size_mult, m56_details = score_m56_us_cpi(
+            wyckoff_phase=_wyckoff_for_m56,
+            vol_regime=_vol_for_m56,
+            direction=direction, date_str=today_str)
+        if m56_details and m56_status in ('ACTIVE', 'WEAK', 'NO_EDGE'):
+            result['m56'] = {
+                'status': m56_status,
+                'score_adj': m56_score_adj,
+                'size_mult': m56_size_mult,
+                'cpi_yoy': m56_details.get('cpi_yoy'),
+                'consensus_yoy': m56_details.get('consensus_yoy'),
+                'signal': m56_details.get('signal'),
+                'inflation': m56_details.get('inflation'),
+                'bias': m56_details.get('bias'),
+                'avg_ret_24h': m56_details.get('avg_ret_24h'),
+                'win_rate': m56_details.get('win_rate'),
+                'sample_size': m56_details.get('sample_size'),
+                'edge_key': m56_details.get('source'),
+                'details': m56_details,
+            }
+            if m56_size_mult < 1.0:
+                result['_m56_size_mult'] = m56_size_mult
+    except Exception as e:
+        result['m56'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2462,6 +2496,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m55_ics_adj'] = m55_score_adj
+
+    # ── M56 US CPI ICS adjustment ──
+    if m56_score_adj != 0.0 and m56_status in ('ACTIVE', 'WEAK'):
+        ics += m56_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m56_ics_adj'] = m56_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
