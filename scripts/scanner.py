@@ -79,6 +79,8 @@ from src.modules.m53_au_cpi import score_m53_au_cpi, format_m53
 from src.modules.m54_china_gdp import score_m54_china_gdp, format_m54
 from src.modules.m55_treasury_auction import score_m55_treasury, format_m55
 from src.modules.m56_us_cpi import score_m56_us_cpi, format_m56
+from src.modules.m57_fomc import score_m57_fomc, format_m57
+from src.modules.m58_powell_presser import score_m58_presser, format_m58
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -1979,6 +1981,75 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m56'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M57: FOMC Rate Decision Session Bias (regime-conditional) ──
+    m57_score_adj = 0.0
+    m57_size_mult = 1.0
+    m57_status = 'SKIP'
+    m57_details = {}
+    try:
+        _wyckoff_for_m57 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m57 = result.get('m9', {}).get('regime', 'CHOP')
+        m57_status, m57_score_adj, m57_size_mult, m57_details = score_m57_fomc(
+            wyckoff_phase=_wyckoff_for_m57,
+            vol_regime=_vol_for_m57,
+            direction=direction, date_str=today_str)
+        if m57_details and m57_status in ('ACTIVE', 'WEAK', 'NO_EDGE'):
+            result['m57'] = {
+                'status': m57_status,
+                'score_adj': m57_score_adj,
+                'size_mult': m57_size_mult,
+                'rate': m57_details.get('rate'),
+                'prior_rate': m57_details.get('prior_rate'),
+                'rate_action': m57_details.get('rate_action'),
+                'signal': m57_details.get('signal'),
+                'stance': m57_details.get('stance'),
+                'dot_plot': m57_details.get('dot_plot'),
+                'vote': m57_details.get('vote'),
+                'bias': m57_details.get('bias'),
+                'avg_ret_24h': m57_details.get('avg_ret_24h'),
+                'win_rate': m57_details.get('win_rate'),
+                'sample_size': m57_details.get('sample_size'),
+                'edge_key': m57_details.get('source'),
+                'details': m57_details,
+            }
+            if m57_size_mult < 1.0:
+                result['_m57_size_mult'] = m57_size_mult
+    except Exception as e:
+        result['m57'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
+    # ── M58: Powell Press Conference Session Bias (regime-conditional) ──
+    m58_score_adj = 0.0
+    m58_size_mult = 1.0
+    m58_status = 'SKIP'
+    m58_details = {}
+    try:
+        _wyckoff_for_m58 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m58 = result.get('m9', {}).get('regime', 'CHOP')
+        m58_status, m58_score_adj, m58_size_mult, m58_details = score_m58_presser(
+            wyckoff_phase=_wyckoff_for_m58,
+            vol_regime=_vol_for_m58,
+            direction=direction, date_str=today_str)
+        if m58_details and m58_status in ('ACTIVE', 'WEAK', 'NO_EDGE'):
+            result['m58'] = {
+                'status': m58_status,
+                'score_adj': m58_score_adj,
+                'size_mult': m58_size_mult,
+                'fomc_stance': m58_details.get('fomc_stance'),
+                'powell_tone': m58_details.get('powell_tone'),
+                'tone_vs_statement': m58_details.get('tone_vs_statement'),
+                'signal': m58_details.get('signal'),
+                'bias': m58_details.get('bias'),
+                'avg_ret_24h': m58_details.get('avg_ret_24h'),
+                'win_rate': m58_details.get('win_rate'),
+                'sample_size': m58_details.get('sample_size'),
+                'edge_key': m58_details.get('source'),
+                'details': m58_details,
+            }
+            if m58_size_mult < 1.0:
+                result['_m58_size_mult'] = m58_size_mult
+    except Exception as e:
+        result['m58'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2503,6 +2574,20 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m56_ics_adj'] = m56_score_adj
+
+    # ── M57 FOMC Rate Decision ICS adjustment ──
+    if m57_score_adj != 0.0 and m57_status in ('ACTIVE', 'WEAK'):
+        ics += m57_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m57_ics_adj'] = m57_score_adj
+
+    # ── M58 Powell Presser ICS adjustment ──
+    if m58_score_adj != 0.0 and m58_status in ('ACTIVE', 'WEAK'):
+        ics += m58_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m58_ics_adj'] = m58_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
