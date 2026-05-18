@@ -1,0 +1,185 @@
+{
+  "fine": [
+    {
+      "wyckoff": "MARKUP",
+      "vol": "COMPRESSING",
+      "signal": "SURPRISE_BEAT",
+      "n": 3,
+      "avg_ret": -3.597,
+      "win_rate": 0.667,
+      "bias": "SHORT"
+    },
+    {
+      "wyckoff": "MARKUP",
+      "vol": "COMPRESSING",
+      "signal": "SURPRISE_MISS",
+      "n": 3,
+      "avg_ret": 1.441,
+      "win_rate": 1.0,
+      "bias": "LONG"
+    },
+    {
+      "wyckoff": "MARKUP",
+      "vol": "LOW_VOL",
+      "signal": "NEUTRAL",
+      "n": 3,
+      "avg_ret": -0.752,
+      "win_rate": 0.0,
+      "bias": "SHORT"
+    },
+    {
+      "wyckoff": "MARKUP",
+      "vol": "LOW_VOL",
+      "signal": "SURPRISE_BEAT",
+      "n": 3,
+      "avg_ret": 0.706,
+      "win_rate": 0.667,
+      "bias": "LONG"
+    },
+    {
+      "wyckoff": "RANGE",
+      "vol": "COMPRESSING",
+      "signal": "NEUTRAL",
+      "n": 17,
+      "avg_ret": -0.561,
+      "win_rate": 0.353,
+      "bias": "SHORT"
+    },
+    {
+      "wyckoff": "RANGE",
+      "vol": "COMPRESSING",
+      "signal": "SURPRISE_BEAT",
+      "n": 15,
+      "avg_ret": 0.997,
+      "win_rate": 0.667,
+      "bias": "LONG"
+    }
+  ],
+  "broad": [
+    {
+      "wyckoff": "CHOP",
+      "signal": "NEUTRAL",
+      "n": 5,
+      "avg_ret": 2.183,
+      "win_rate": 1.0,
+      "bias": "LONG"
+    },
+    {
+      "wyckoff": "MARKDOWN",
+      "signal": "NEUTRAL",
+      "n": 3,
+      "avg_ret": 2.473,
+      "win_rate": 0.667,
+      "bias": "LONG"
+    },
+    {
+      "wyckoff": "MARKDOWN",
+      "signal": "SAHM_TRIGGERED",
+      "n": 3,
+      "avg_ret": 1.203,
+      "win_rate": 0.667,
+      "bias": "LONG"
+    },
+    {
+      "wyckoff": "MARKDOWN",
+      "signal": "SURPRISE_MISS",
+      "n": 3,
+      "avg_ret": 1.396,
+      "win_rate": 1.0,
+      "bias": "LONG"
+    },
+    {
+      "wyckoff": "MARKUP",
+      "signal": "NEUTRAL",
+      "n": 5,
+      "avg_ret": -0.994,
+      "win_rate": 0.2,
+      "bias": "SHORT"
+    },
+    {
+      "wyckoff": "MARKUP",
+      "signal": "SURPRISE_BEAT",
+      "n": 6,
+      "avg_ret": -1.445,
+      "win_rate": 0.667,
+      "bias": "SHORT"
+    },
+    {
+      "wyckoff": "MARKUP",
+      "signal": "SURPRISE_MISS",
+      "n": 5,
+      "avg_ret": 1.996,
+      "win_rate": 0.8,
+      "bias": "LONG"
+    },
+    {
+      "wyckoff": "RANGE",
+      "signal": "LEVEL_DANGER",
+      "n": 3,
+      "avg_ret": 3.689,
+      "win_rate": 0.333,
+      "bias": "LONG"
+    },
+    {
+      "wyckoff": "RANGE",
+      "signal": "NEUTRAL",
+      "n": 18,
+      "avg_ret": -0.773,
+      "win_rate": 0.333,
+      "bias": "SHORT"
+    },
+    {
+      "wyckoff": "RANGE",
+      "signal": "SAHM_TRIGGERED",
+      "n": 8,
+      "avg_ret": 0.462,
+      "win_rate": 0.625,
+      "bias": "LONG"
+    },
+    {
+      "wyckoff": "RANGE",
+      "signal": "SURPRISE_BEAT",
+      "n": 16,
+      "avg_ret": 1.133,
+      "win_rate": 0.688,
+      "bias": "LONG"
+    }
+  ],
+  "signal_only": [
+    {
+      "signal": "LEVEL_DANGER",
+      "n": 6,
+      "avg_ret": 3.173,
+      "win_rate": 0.5,
+      "bias": "LONG"
+    },
+    {
+      "signal": "SAHM_TRIGGERED",
+      "n": 14,
+      "avg_ret": -0.421,
+      "win_rate": 0.571,
+      "bias": "SHORT"
+    },
+    {
+      "signal": "SURPRISE_BEAT",
+      "n": 25,
+      "avg_ret": 0.508,
+      "win_rate": 0.68,
+      "bias": "LONG"
+    },
+    {
+      "signal": "SURPRISE_MISS",
+      "n": 23,
+      "avg_ret": 0.689,
+      "win_rate": 0.652,
+      "bias": "LONG"
+    }
+  ],
+  "metadata": {
+    "backtest_date": "2026-05-18 03:00",
+    "total_releases": 101,
+    "date_range": "2018-01-05 \u2192 2026-05-01",
+    "data_source": "eth_15m_merged.csv",
+    "criteria": "n>=3, |avg_ret|>=0.5% (fine), >=0.3% (broad/signal)"
+  }
+}

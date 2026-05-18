@@ -1049,6 +1049,37 @@ M58_WINDOW_DAYS: 0            # Same-day only (8x/year)
 M59_ENABLED: true
 M59_WINDOW_DAYS: 0            # Same-day only (8x/year, 3-week lag)
 
+# ─── M60: US PPI SESSION BIAS ────────────────────────────────
+# BLS PPI Final Demand released ~mid-month, 08:30 ET (12:30 UTC). 100 releases backtested.
+# Overall: -0.31% avg, 48% win, p=0.54 — NOT significant (noise).
+# PPI confirms/denies CPI signal (released 1-2 days after CPI).
+# Edges in RANGE + COMPRESSING regime (consistently bearish across signals).
+M60_ENABLED: true
+M60_WINDOW_DAYS: 1            # Days after release to consider active
+
+# ─── M61: US WEEKLY JOBLESS CLAIMS SESSION BIAS ──────────────
+# Weekly claims released every Thursday, 08:30 ET (12:30 UTC). 437 releases backtested.
+# Claims are BACKGROUND CONTEXT — overall noise (p=0.47). Edges in specific regime combos:
+#   RANGE + COMPRESSING + CRISIS: +1.44% avg, 61% win, n=28 → LONG
+#   RANGE + COMPRESSING + ELEVATED: -2.01% avg, 25% win, n=16 → SHORT
+#   RANGE + COMPRESSING + SPIKE: +2.44% avg, 63% win, n=8 → LONG
+#   MARKUP + COMPRESSING + NORMAL: +1.38% avg, 75% win, n=8 → LONG
+#   MARKDOWN + COMPRESSING + LOW: +3.02% avg, 83% win, n=6 → LONG
+# Session chain: London Midday→NY PM 80-90% direction persistence.
+M61_ENABLED: true
+M61_WINDOW_DAYS: 0            # Same-day only (weekly frequency — every Thursday)
+
+# ─── M62: US UNEMPLOYMENT RATE SESSION BIAS ──────────────────
+# Released with NFP (first Friday, 08:30 ET). 101 releases backtested.
+# Key edges:
+#   RANGE + COMPRESSING + SURPRISE_BEAT: +1.00% avg, 67% win, n=15 → LONG
+#   RANGE + COMPRESSING + NEUTRAL: -0.56% avg, 35% win, n=17 → SHORT
+#   LEVEL_DANGER (>4.5%): +3.17% avg (contrarian) → LONG
+#   SAHM_TRIGGERED: -0.42% avg → SHORT
+# Mechanism: unemployment = Fed dual mandate metric. Rising = dovish pivot.
+M62_ENABLED: true
+M62_WINDOW_DAYS: 1            # Days after release to consider active
+
 # ─── DATA ────────────────────────────────────────────────────
 PAIR: "ETHUSDT"
 WARMUP_BARS_1H: 168

@@ -82,6 +82,9 @@ from src.modules.m56_us_cpi import score_m56_us_cpi, format_m56
 from src.modules.m57_fomc import score_m57_fomc, format_m57
 from src.modules.m58_powell_presser import score_m58_presser, format_m58
 from src.modules.m59_fomc_minutes import score_m59_minutes, format_m59
+from src.modules.m62_us_unemployment import score_m62_us_unemployment, format_m62
+from src.modules.m60_us_ppi import score_m60_us_ppi, format_m60
+from src.modules.m61_us_claims import score_m61_us_claims, format_m61
 from src.modules.m23_ppi_session import (
     score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
@@ -2085,6 +2088,110 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m59'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M60: US PPI Session Bias (regime-conditional) ──
+    m60_score_adj = 0.0
+    m60_size_mult = 1.0
+    m60_status = 'SKIP'
+    m60_details = {}
+    try:
+        _wyckoff_for_m60 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m60 = result.get('m9', {}).get('regime', 'CHOP')
+        m60_status, m60_score_adj, m60_size_mult, m60_details = score_m60_us_ppi(
+            wyckoff_phase=_wyckoff_for_m60,
+            vol_regime=_vol_for_m60,
+            direction=direction, today_str=today_str, config=cfg)
+        if m60_details and m60_status in ('PASS', 'WEAK'):
+            result['m60'] = {
+                'status': m60_status,
+                'score_adj': m60_score_adj,
+                'size_mult': m60_size_mult,
+                'ppi_yoy': m60_details.get('ppi_yoy'),
+                'consensus_yoy': m60_details.get('consensus_yoy'),
+                'surprise': m60_details.get('surprise'),
+                'ppi_signal': m60_details.get('ppi_signal'),
+                'infl_level': m60_details.get('infl_level'),
+                'bias': m60_details.get('bias'),
+                'avg_ret_24h': m60_details.get('avg_ret_24h'),
+                'win_rate': m60_details.get('win_rate'),
+                'sample_size': m60_details.get('sample_size'),
+                'source': m60_details.get('source'),
+                'release_date': m60_details.get('release_date'),
+                'details': m60_details,
+            }
+            if m60_size_mult < 1.0:
+                result['_m60_size_mult'] = m60_size_mult
+    except Exception as e:
+        result['m60'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
+    # ── M61: US Weekly Jobless Claims Session Bias (regime-conditional) ──
+    m61_score_adj = 0.0
+    m61_size_mult = 1.0
+    m61_status = 'SKIP'
+    m61_details = {}
+    try:
+        _wyckoff_for_m61 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m61 = result.get('m9', {}).get('regime', 'CHOP')
+        m61_status, m61_score_adj, m61_size_mult, m61_details = score_m61_us_claims(
+            wyckoff_phase=_wyckoff_for_m61,
+            vol_regime=_vol_for_m61,
+            direction=direction, today_str=today_str, config=cfg)
+        if m61_details and m61_details.get('regime') not in ('DISABLED', 'NOT_CLAIMS_DAY', 'NO_CLAIMS_DATA', 'NO_EDGE'):
+            result['m61'] = {
+                'status': m61_status,
+                'score_adj': m61_score_adj,
+                'size_mult': m61_size_mult,
+                'regime': m61_details.get('regime', '?'),
+                'bias': m61_details.get('bias', '?'),
+                'claims_k': m61_details.get('claims_k'),
+                'claims_signal': m61_details.get('claims_signal'),
+                'claims_trend': m61_details.get('claims_trend'),
+                'avg_ret_24h': m61_details.get('avg_ret_24h'),
+                'win_rate': m61_details.get('win_rate'),
+                'sample_size': m61_details.get('sample_size'),
+                'confidence': m61_details.get('confidence'),
+                'trend_mult': m61_details.get('trend_mult'),
+                'details': m61_details,
+            }
+            if m61_size_mult < 1.0:
+                result['_m61_size_mult'] = m61_size_mult
+    except Exception as e:
+        result['m61'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
+    # ── M62: US Unemployment Rate Session Bias (regime-conditional) ──
+    m62_score_adj = 0.0
+    m62_size_mult = 1.0
+    m62_status = 'SKIP'
+    m62_details = {}
+    try:
+        _wyckoff_for_m62 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m62 = result.get('m9', {}).get('regime', 'CHOP')
+        m62_status, m62_score_adj, m62_size_mult, m62_details = score_m62_us_unemployment(
+            wyckoff_phase=_wyckoff_for_m62,
+            vol_regime=_vol_for_m62,
+            direction=direction, today_str=today_str, config=cfg)
+        if m62_details and m62_status in ('PASS', 'WEAK'):
+            result['m62'] = {
+                'status': m62_status,
+                'score_adj': m62_score_adj,
+                'size_mult': m62_size_mult,
+                'regime': m62_details.get('regime', '?'),
+                'bias': m62_details.get('bias', '?'),
+                'unemp_rate': m62_details.get('unemp_rate'),
+                'unemp_signal': m62_details.get('unemp_signal'),
+                'unemp_change': m62_details.get('unemp_change'),
+                'sahm_triggered': m62_details.get('sahm_triggered'),
+                'avg_ret_24h': m62_details.get('avg_ret_24h'),
+                'win_rate': m62_details.get('win_rate'),
+                'sample_size': m62_details.get('sample_size'),
+                'confidence': m62_details.get('confidence'),
+                'release_date': m62_details.get('release_date'),
+                'details': m62_details,
+            }
+            if m62_size_mult < 1.0:
+                result['_m62_size_mult'] = m62_size_mult
+    except Exception as e:
+        result['m62'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -2630,6 +2737,20 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m59_ics_adj'] = m59_score_adj
+
+    # ── M60 US PPI ICS adjustment ──
+    if m60_score_adj != 0.0 and m60_status in ('PASS', 'WEAK'):
+        ics += m60_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m60_ics_adj'] = m60_score_adj
+
+    # ── M61 US Jobless Claims ICS adjustment (regime-conditional bias on Thursdays) ──
+    if m61_score_adj != 0.0 and m61_status in ('PASS', 'WEAK'):
+        ics += m61_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m61_ics_adj'] = m61_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
