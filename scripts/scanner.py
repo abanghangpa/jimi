@@ -446,6 +446,207 @@ def _detect_cascade_risk(df, idx, result):
     }
 
 
+def _build_release_data_map(result, fred_data=None):
+    """Build release_data_map for cascade scoring from module results + FRED cache.
+
+    Maps cascade release names → {actual, previous, consensus, surprise} dicts
+    so cascade signal classifiers can produce real signals instead of NEUTRAL.
+
+    Args:
+        result: scanner result dict with m25, m26, m33, m37, etc. already scored
+        fred_data: dict from FRED cache (cpi, ppi, unemployment, claims)
+
+    Returns:
+        dict: {cascade_name: {release_name: data_dict}}
+    """
+    rdm = {}
+
+    def _mod_data(mod_result, actual_key='actual', prev_key='previous',
+                  cons_key='consensus', surpr_key='surprise'):
+        """Extract release data dict from a module result."""
+        if not mod_result or mod_result.get('status') == 'ERROR':
+            return None
+        d = mod_result.get('details', mod_result)
+        actual = d.get(actual_key) or mod_result.get(actual_key)
+        if actual is None:
+            # Try common alternative keys
+            for k in ('caixin_actual', 'nbs_actual', 'ism_actual', 'nfp_k',
+                       'retail_mom', 'adp_k', 'ifo_actual', 'cpi_yoy', 'ppi_yoy',
+                       'gdp_qoq', 'durables_mom', 'pce_yoy', 'jp_cpi_yoy',
+                       'uk_cpi_yoy', 'wages_yoy', 'rba_rate', 'au_cpi_qoq',
+                       'china_gdp_qoq', 'ez_pmi_actual', 'ums_actual'):
+                actual = d.get(k) or mod_result.get(k)
+                if actual is not None:
+                    break
+        prev = d.get(prev_key) or mod_result.get(prev_key)
+        cons = d.get(cons_key) or mod_result.get(cons_key)
+        # Try alternative consensus keys
+        if cons is None:
+            for ck in ('consensus_k', 'consensus_mom', 'consensus_yoy',
+                       'consensus_qoq'):
+                cons = d.get(ck) or mod_result.get(ck)
+                if cons is not None:
+                    break
+        surpr = d.get(surpr_key) or mod_result.get(surpr_key)
+        if actual is None:
+            return None
+        data = {'actual': actual}
+        if prev is not None:
+            data['previous'] = prev
+        if cons is not None:
+            data['consensus'] = cons
+        if surpr is not None:
+            data['surprise'] = surpr
+        return data
+
+    # ── US_INFLATION cascade ──
+    us_infl = {}
+    # CPI from FRED
+    if fred_data and fred_data.get('cpi', {}).get('yoy'):
+        cpi_yoy = fred_data['cpi']['yoy']
+        latest_cpi = list(cpi_yoy.values())[-1] if cpi_yoy else None
+        prev_cpi = list(cpi_yoy.values())[-2] if len(cpi_yoy) >= 2 else None
+        if latest_cpi is not None:
+            us_infl['CPI'] = {'actual': latest_cpi, 'previous': prev_cpi}
+    # PPI from FRED
+    if fred_data and fred_data.get('ppi', {}).get('yoy'):
+        ppi_yoy = fred_data['ppi']['yoy']
+        latest_ppi = list(ppi_yoy.values())[-1] if ppi_yoy else None
+        prev_ppi = list(ppi_yoy.values())[-2] if len(ppi_yoy) >= 2 else None
+        if latest_ppi is not None:
+            us_infl['PPI'] = {'actual': latest_ppi, 'previous': prev_ppi}
+    # PCE from M45
+    pce_d = _mod_data(result.get('m45'))
+    if pce_d:
+        us_infl['PCE'] = pce_d
+    if us_infl:
+        rdm['US_INFLATION'] = us_infl
+
+    # ── US_LABOR cascade ──
+    us_labor = {}
+    adp_d = _mod_data(result.get('m36'))
+    if adp_d:
+        us_labor['ADP'] = adp_d
+    # Claims from FRED
+    if fred_data and fred_data.get('icsa', {}).get('monthly_avg'):
+        claims = fred_data['icsa']['monthly_avg']
+        latest_claims = list(claims.values())[-1] if claims else None
+        if latest_claims is not None:
+            us_labor['CLAIMS'] = {'actual': latest_claims}
+    if us_labor:
+        rdm['US_LABOR'] = us_labor
+
+    # ── US_ACTIVITY cascade ──
+    us_act = {}
+    ism_d = _mod_data(result.get('m27') if 'm27' in result else None)
+    if ism_d:
+        us_act['ISM_MFG'] = ism_d
+    ism_svc_d = _mod_data(result.get('m28') if 'm28' in result else None)
+    if ism_svc_d:
+        us_act['ISM_SVC'] = ism_svc_d
+    retail_d = _mod_data(result.get('m33'))
+    if retail_d:
+        us_act['RETAIL_SALES'] = retail_d
+    durables_d = _mod_data(result.get('m44'))
+    if durables_d:
+        us_act['DURABLES'] = durables_d
+    gdp_d = _mod_data(result.get('m43'))
+    if gdp_d:
+        us_act['US_GDP'] = gdp_d
+    if us_act:
+        rdm['US_ACTIVITY'] = us_act
+
+    # ── CHINA_MACRO cascade ──
+    cn = {}
+    nbs_d = _mod_data(result.get('m24'))
+    if nbs_d:
+        cn['NBS_PMI'] = nbs_d
+    caixin_d = _mod_data(result.get('m25'))
+    if caixin_d:
+        cn['CAIXIN_PMI'] = caixin_d
+    cn_cpi_d = _mod_data(result.get('m30') if 'm30' in result else None)
+    if cn_cpi_d:
+        cn['CHINA_CPI_PPI'] = cn_cpi_d
+    cn_act_d = _mod_data(result.get('m55') if 'm55' in result else None)
+    if cn_act_d:
+        cn['CHINA_ACTIVITY'] = cn_act_d
+    pboc_d = _mod_data(result.get('m35'))
+    if pboc_d:
+        cn['PBOC_LPR'] = pboc_d
+    cn_gdp_d = _mod_data(result.get('m54'))
+    if cn_gdp_d:
+        cn['GDP'] = cn_gdp_d
+    if cn:
+        rdm['CHINA_MACRO'] = cn
+
+    # ── EU_MACRO cascade ──
+    eu = {}
+    ez_pmi_d = _mod_data(result.get('m26'))
+    if ez_pmi_d:
+        eu['EZ_PMI'] = ez_pmi_d
+    de_cpi_d = _mod_data(result.get('m40'))
+    if de_cpi_d:
+        eu['GERMANY_CPI'] = de_cpi_d
+    ez_cpi_d = _mod_data(result.get('m41'))
+    if ez_cpi_d:
+        eu['EZ_CPI'] = ez_cpi_d
+    ez_gdp_d = _mod_data(result.get('m42'))
+    if ez_gdp_d:
+        eu['EZ_GDP'] = ez_gdp_d
+    ifo_d = _mod_data(result.get('m38'))
+    if ifo_d:
+        eu['IFO'] = ifo_d
+    ecb_d = _mod_data(result.get('m48'))
+    if ecb_d:
+        eu['ECB'] = ecb_d
+    if eu:
+        rdm['EU_MACRO'] = eu
+
+    # ── UK_MACRO cascade ──
+    uk = {}
+    uk_cpi_d = _mod_data(result.get('m31') if 'm31' in result else None)
+    if uk_cpi_d:
+        uk['UK_CPI'] = uk_cpi_d
+    uk_wages_d = _mod_data(result.get('m32') if 'm32' in result else None)
+    if uk_wages_d:
+        uk['UK_WAGES'] = uk_wages_d
+    uk_gdp_d = _mod_data(result.get('m51'))
+    if uk_gdp_d:
+        uk['UK_GDP'] = uk_gdp_d
+    boe_d = _mod_data(result.get('m49'))
+    if boe_d:
+        uk['BOE'] = boe_d
+    if uk:
+        rdm['UK_MACRO'] = uk
+
+    # ── JAPAN_MACRO cascade ──
+    jp = {}
+    jp_cpi_d = _mod_data(result.get('m46'))
+    if jp_cpi_d:
+        jp['JAPAN_CPI'] = jp_cpi_d
+    jp_gdp_d = _mod_data(result.get('m55') if 'm55' in result else None)
+    if jp_gdp_d:
+        jp['JAPAN_GDP'] = jp_gdp_d
+    boj_d = _mod_data(result.get('m47'))
+    if boj_d:
+        jp['BOJ'] = boj_d
+    if jp:
+        rdm['JAPAN_MACRO'] = jp
+
+    # ── AU_MACRO cascade ──
+    au = {}
+    au_cpi_d = _mod_data(result.get('m53'))
+    if au_cpi_d:
+        au['AU_CPI'] = au_cpi_d
+    rba_d = _mod_data(result.get('m52'))
+    if rba_d:
+        au['RBA'] = rba_d
+    if au:
+        rdm['AU_MACRO'] = au
+
+    return rdm
+
+
 def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
                 btc_15m_df=None, btc_corr_series=None):
     """Scan current market for trading signals.
@@ -1237,6 +1438,9 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
                 result['_m36_size_mult'] = m36_size_mult
     except Exception as e:
         result['m36'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
+    # ── today_str: date string for M37-M62 macro modules ──
+    today_str = _now_utc.strftime('%Y-%m-%d')
 
     # ── M37: US Non-Farm Payrolls Session Bias (regime-conditional) ──
     m37_score_adj = 0.0
@@ -2210,8 +2414,21 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     # the meta-aggregator produces a weighted global macro score.
     try:
         _cascade_regime = result.get('m22', {}).get('regime', 'UNKNOWN')
+        # Build release_data_map from FRED cache + module results
+        _fred_data = None
+        try:
+            _fred_cache_path = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                'data', 'fred', 'claims_cache.json')
+            if os.path.exists(_fred_cache_path):
+                with open(_fred_cache_path) as _f:
+                    _fred_data = json.load(_f)
+        except Exception:
+            pass
+        _release_data_map = _build_release_data_map(result, fred_data=_fred_data)
         _cascade_results = score_all_cascades(
-            df_15m, current_time=_now_utc, config=cfg, regime=_cascade_regime)
+            df_15m, current_time=_now_utc, config=cfg, regime=_cascade_regime,
+            release_data_map=_release_data_map)
         if _cascade_results and _cascade_results.get('active_count', 0) > 0:
             result['cascade'] = {
                 'combined_score': _cascade_results.get('combined_score', 0.5),
