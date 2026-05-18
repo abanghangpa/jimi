@@ -35,6 +35,10 @@ from src.modules.m24_nbs_pmi import NBS_PMI_RELEASES
 from src.modules.m25_caixin_pmi import CAIXIN_RELEASES
 from src.modules.m30_china_cpi_ppi import CHINA_RELEASES
 from src.modules.m35_pboc_lpr import PBOC_LPR_RELEASES
+from src.modules.m_china_activity import (
+    CHINA_ACTIVITY_RELEASES, CHINA_ACTIVITY_DATES,
+    classify_activity_bundle, score_china_activity, format_china_activity,
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -107,6 +111,31 @@ def _classify_pboc_signal(data: dict) -> str:
     return 'HOLD'
 
 
+def _classify_activity_signal(data: dict) -> str:
+    """Classify China activity data bundle signal.
+
+    Uses the composite classifier from m_china_activity.
+    Maps the composite to simplified cascade signal names.
+    """
+    result = classify_activity_bundle(data)
+    composite = result.get('composite', 'PENDING')
+
+    # Map to simplified signals for cascade confirmation matrix
+    mapping = {
+        'STRONG_BEAT': 'STRONG_BEAT',
+        'BEAT': 'BEAT',
+        'MILD_BEAT': 'BEAT',
+        'INLINE': 'INLINE',
+        'MIXED': 'MIXED',
+        'MILD_MISS': 'MISS',
+        'MISS': 'MISS',
+        'BIG_MISS': 'BIG_MISS',
+        'PROPERTY_CRISIS': 'CRISIS',
+        'PENDING': 'PENDING',
+    }
+    return mapping.get(composite, 'MIXED')
+
+
 # ═══════════════════════════════════════════════════════════════
 # CONFIRMATION MATRIX
 # ═══════════════════════════════════════════════════════════════
@@ -128,6 +157,25 @@ CHINA_CONFIRMATION_MATRIX = {
 }
 
 # China inflation context modifiers
+# Activity data confirmation (NBS PMI + Activity bundle)
+ACTIVITY_CONFIRMATION = {
+    # PMI expanding + activity data
+    ('EXPANDING', 'STRONG_BEAT'):  (+0.80, +0.10, 'PMI expanding + activity strong — confirmed recovery'),
+    ('EXPANDING', 'BEAT'):         (+0.40, +0.05, 'PMI expanding + activity beat — growth improving'),
+    ('EXPANDING', 'INLINE'):       (+0.10, +0.00, 'PMI expanding + activity inline — stable'),
+    ('EXPANDING', 'MISS'):         (-0.30, -0.05, 'PMI expanding but activity missed — PMI may be misleading'),
+    ('EXPANDING', 'BIG_MISS'):     (-0.60, -0.10, 'PMI expanding but activity collapsing — divergence warning'),
+    ('EXPANDING', 'CRISIS'):       (-1.00, -0.15, 'PMI expanding but property crisis — PMI misleading'),
+    # PMI contracting + activity data
+    ('BOTH_CONTRACTING', 'BIG_MISS'): (-1.20, +0.15, 'PMI + activity both collapsing — confirmed recession'),
+    ('BOTH_CONTRACTING', 'MISS'):     (-0.80, +0.10, 'PMI contracting + activity miss — weakness confirmed'),
+    ('BOTH_CONTRACTING', 'BEAT'):     (+0.20, -0.05, 'PMI contracting but activity beat — mixed signals'),
+    ('MFG_CONTRACTING', 'MISS'):      (-0.60, +0.05, 'Mfg contracting + activity miss — broad weakness'),
+    # Mixed
+    ('MIXED', 'BIG_MISS'):        (-0.50, +0.00, 'Mixed PMI + activity big miss — downside risk'),
+    ('MIXED', 'BEAT'):            (+0.30, +0.00, 'Mixed PMI + activity beat — upside surprise'),
+}
+
 CHINA_INFLATION_CONTEXT = {
     'BOTH_HOT':     (+0.30, 'Both hot — PBOC may tighten'),
     'PPI_HOT':      (+0.20, 'PPI hot — industrial demand strong'),
@@ -164,7 +212,7 @@ CHINA_REGIME_SENSITIVITY = {
 def _build_china_cascade() -> CascadeEngine:
     return CascadeEngine(
         name='CHINA_MACRO',
-        description='China Macro Chain: GDP(structural) → NBS PMI(primary) → Caixin(confirm) → CPI/PPI(inflation) → PBOC(policy)',
+        description='China Macro Chain: GDP(structural) → PMI(primary) → Caixin(confirm) → Activity(real economy) → CPI/PPI(inflation) → PBOC(policy)',
         releases=[
             CascadeRelease('GDP', CHINA_GDP_DATES, 0.10, 'STRUCTURAL', 'M54_ENABLED',
                            release_hour_utc=3, release_minute_utc=0),
@@ -174,9 +222,12 @@ def _build_china_cascade() -> CascadeEngine:
             CascadeRelease('CAIXIN_PMI', CAIXIN_DATES, 0.25, 'CONFIRMATION', 'M25_ENABLED',
                            release_hour_utc=1, release_minute_utc=15,
                            signal_classifier=_classify_caixin_signal),
-            CascadeRelease('CHINA_CPI_PPI', CHINA_CPI_PPI_DATES, 0.15, 'CONFIRMATION', 'M30_ENABLED',
+            CascadeRelease('CHINA_CPI_PPI', CHINA_CPI_PPI_DATES, 0.10, 'CONFIRMATION', 'M30_ENABLED',
                            release_hour_utc=1, release_minute_utc=30,
                            signal_classifier=_classify_china_inflation),
+            CascadeRelease('CHINA_ACTIVITY', CHINA_ACTIVITY_DATES, 0.15, 'CONFIRMATION', 'M_CHINA_ACTIVITY_ENABLED',
+                           release_hour_utc=2, release_minute_utc=0,
+                           signal_classifier=_classify_activity_signal),
             CascadeRelease('PBOC_LPR', PBOC_LPR_DATES, 0.20, 'POLICY', 'M35_ENABLED',
                            release_hour_utc=1, release_minute_utc=30,
                            signal_classifier=_classify_pboc_signal),
@@ -241,6 +292,23 @@ def format_china_cascade(details: dict) -> str:
                 mfg = nbs.get('mfg', '?')
                 svc = nbs.get('services', '?')
                 lines.append(f"    📊 NBS: Mfg={mfg}  Services={svc}")
+        elif step.get('release') == 'CHINA_ACTIVITY':
+            # Format activity data bundle
+            activity_data = CHINA_ACTIVITY_RELEASES.get(step.get('date', ''), {})
+            if activity_data:
+                act_details = None
+                classification = classify_activity_bundle(activity_data)
+                act_details = {
+                    'composite': classification.get('composite', '?'),
+                    'description': '',
+                }
+                from src.modules.m_china_activity import ACTIVITY_SIGNAL_MAP
+                _, _, desc = ACTIVITY_SIGNAL_MAP.get(
+                    classification.get('composite', 'PENDING'), (0, '', ''))
+                act_details['description'] = desc
+                act_out = format_china_activity(activity_data, act_details)
+                if act_out:
+                    lines.append(act_out)
         elif step.get('release') == 'PBOC_LPR':
             signal = step.get('signal', '?')
             if signal == 'CUT':

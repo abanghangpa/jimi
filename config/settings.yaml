@@ -459,7 +459,8 @@ CASCADE_ENABLED: true                  # Master switch for all cascades
 CASCADE_US_INFLATION_ENABLED: true     # CPI→PPI→PCE→FOMC→Presser→Minutes
 CASCADE_US_LABOR_ENABLED: true         # ADP→JOLTS→NFP→Unemployment→Claims
 CASCADE_US_ACTIVITY_ENABLED: true      # ISM Mfg→ISM Svc→Retail→Durables→GDP
-CASCADE_CHINA_MACRO_ENABLED: true      # GDP→NBS PMI→Caixin→CPI/PPI→PBOC
+CASCADE_CHINA_MACRO_ENABLED: true      # GDP→PMI→Caixin→Activity→CPI/PPI→PBOC
+M_CHINA_ACTIVITY_ENABLED: true          # China monthly activity data (IP, Retail, FAI, Unemp, House)
 CASCADE_EU_MACRO_ENABLED: true         # GDP→PMI→DE CPI→EZ CPI→IFO→ECB
 CASCADE_UK_MACRO_ENABLED: true         # GDP→CPI→Wages→BoE
 CASCADE_JAPAN_MACRO_ENABLED: true      # GDP→CPI→BoJ (carry trade)
