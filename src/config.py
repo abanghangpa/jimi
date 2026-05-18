@@ -69,7 +69,24 @@ _DYNAMIC_KEYS = {'_base_timeframe', 'M22_ENABLED', 'M22_WEIGHT', 'M22_VETO_THRES
                   'M59_ENABLED', 'M59_WINDOW_DAYS',
                   'M60_ENABLED', 'M60_WINDOW_DAYS',
                   'M61_ENABLED', 'M61_WINDOW_DAYS',
-                  'M62_ENABLED', 'M62_WINDOW_DAYS'}
+                  'M62_ENABLED', 'M62_WINDOW_DAYS',
+                  # Cascade config keys
+                  'CASCADE_ENABLED',
+                  'CASCADE_US_INFLATION_ENABLED',
+                  'CASCADE_US_LABOR_ENABLED',
+                  'CASCADE_US_ACTIVITY_ENABLED',
+                  'CASCADE_CHINA_MACRO_ENABLED',
+                  'CASCADE_EU_MACRO_ENABLED',
+                  'CASCADE_UK_MACRO_ENABLED',
+                  'CASCADE_JAPAN_MACRO_ENABLED',
+                  'CASCADE_AU_MACRO_ENABLED',
+                  'M_CHINA_ACTIVITY_ENABLED',
+                  # Macro event filter keys
+                  'MACRO_EVENT_FILTER_ENABLED',
+                  'PHASE0_CAUTION',
+                  'MACRO_CASCADE_SIZE_MULT',
+                  'MACRO_LOOKBACK_HOURS',
+                  'MACRO_LOOKAHEAD_HOURS'}
 
 # Module → (enabled_key, weight_key, required_when_enabled)
 _MODULE_WEIGHT_PAIRS = [
