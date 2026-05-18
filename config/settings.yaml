@@ -462,7 +462,7 @@ CASCADE_US_ACTIVITY_ENABLED: true      # ISM Mfg→ISM Svc→Retail→Durables�
 CASCADE_CHINA_MACRO_ENABLED: true      # GDP→NBS PMI→Caixin→CPI/PPI→PBOC
 CASCADE_EU_MACRO_ENABLED: true         # GDP→PMI→DE CPI→EZ CPI→IFO→ECB
 CASCADE_UK_MACRO_ENABLED: true         # GDP→CPI→Wages→BoE
-CASCADE_JAPAN_MACRO_ENABLED: true      # CPI→BoJ (carry trade)
+CASCADE_JAPAN_MACRO_ENABLED: true      # GDP→CPI→BoJ (carry trade)
 CASCADE_AU_MACRO_ENABLED: true         # CPI→RBA
 
 # ─── POWER OF 3 PHASE DETECTOR ─────────────────────────────
