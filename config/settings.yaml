@@ -452,6 +452,19 @@ M23_CLAIMS_ENABLED: true          # Include jobless claims in macro analysis
 M23_CLAIMS_WEIGHT: 0.08           # ICS weight for claims signal (when standalone release)
 M23_COMBO_ENABLED: true           # Enable CPI×PPI×Claims combo matrix
 
+# ─── CASCADE META-AGGREGATOR ───────────────────────────────
+# Generic cascade engine: scores regional macro release chains
+# as unified signals. Each cascade has a weight in the global score.
+CASCADE_ENABLED: true                  # Master switch for all cascades
+CASCADE_US_INFLATION_ENABLED: true     # CPI→PPI→PCE→FOMC→Presser→Minutes
+CASCADE_US_LABOR_ENABLED: true         # ADP→JOLTS→NFP→Unemployment→Claims
+CASCADE_US_ACTIVITY_ENABLED: true      # ISM Mfg→ISM Svc→Retail→Durables→GDP
+CASCADE_CHINA_MACRO_ENABLED: true      # GDP→NBS PMI→Caixin→CPI/PPI→PBOC
+CASCADE_EU_MACRO_ENABLED: true         # GDP→PMI→DE CPI→EZ CPI→IFO→ECB
+CASCADE_UK_MACRO_ENABLED: true         # GDP→CPI→Wages→BoE
+CASCADE_JAPAN_MACRO_ENABLED: true      # CPI→BoJ (carry trade)
+CASCADE_AU_MACRO_ENABLED: true         # CPI→RBA
+
 # ─── POWER OF 3 PHASE DETECTOR ─────────────────────────────
 P3_MIN_KEY_LEVEL_DIST_PCT: 0.005   # min 0.5% distance for actionable key levels
 P3_SWEEP_LOOKBACK: 96              # bars to check for completed sweep (96 = 24h on 15m)

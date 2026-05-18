@@ -91,6 +91,15 @@ from src.modules.m23_ppi_session import (
     is_nfp_release_day, is_macro_release_day, is_claims_release_day,
     get_claims_trend, classify_macro_combo,
 )
+from src.modules.cascade_meta import score_all_cascades, format_all_cascades
+from src.modules.cascade_labor import format_labor_cascade
+from src.modules.cascade_inflation import format_inflation_cascade
+from src.modules.cascade_china import format_china_cascade
+from src.modules.cascade_eu import format_eu_cascade
+from src.modules.cascade_uk import format_uk_cascade
+from src.modules.cascade_japan import format_japan_cascade
+from src.modules.cascade_au import format_au_cascade
+from src.modules.cascade_us_activity import format_us_activity_cascade
 from src.modules.macro_lifecycle import evaluate_macro_lifecycle, format_lifecycle
 from src.modules.macro_calendar import get_macro_calendar, format_macro_calendar, format_macro_calendar_compact, calendar_to_dict
 from src.modules.macro_event_filter import MacroEventFilter, get_phase0_from_df, get_trend_30d
@@ -2194,6 +2203,43 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m22'] = {'status': 'ERROR', 'score': 0.5, 'error': str(e)}
 
+    # ── Cascade Meta-Aggregator (all regional cascades) ──
+    # Runs after M22 so it can use the regime label.
+    # Each cascade scores its release chain independently, then
+    # the meta-aggregator produces a weighted global macro score.
+    try:
+        _cascade_regime = result.get('m22', {}).get('regime', 'UNKNOWN')
+        _cascade_results = score_all_cascades(
+            df_15m, current_time=_now_utc, config=cfg, regime=_cascade_regime)
+        if _cascade_results and _cascade_results.get('active_count', 0) > 0:
+            result['cascade'] = {
+                'combined_score': _cascade_results.get('combined_score', 0.5),
+                'combined_signal': _cascade_results.get('combined_signal', 'HOLD'),
+                'active_count': _cascade_results.get('active_count', 0),
+                'total_weight': _cascade_results.get('total_weight', 0),
+                'active_cascades': [
+                    {
+                        'name': c['name'],
+                        'score': round(c['score'], 3),
+                        'weight': c['weight'],
+                        'signal': c['signal'],
+                        'expected_move': c['expected_move'],
+                        'confidence': c['confidence'],
+                    }
+                    for c in _cascade_results.get('active_cascades', [])
+                ],
+                'all_results': {
+                    name: {'status': r.get('status'), 'score': r.get('score', 0.5)}
+                    for name, r in _cascade_results.get('all_results', {}).items()
+                },
+                'details': _cascade_results,
+            }
+            # Store individual cascade details for formatting
+            for _ac in _cascade_results.get('active_cascades', []):
+                result[f'cascade_{_ac["name"].lower()}'] = _ac.get('details', {})
+    except Exception as e:
+        result['cascade'] = {'status': 'ERROR', 'combined_score': 0.5, 'error': str(e)}
+
     # ── Macro Lifecycle (event cascade tracking) ──
     try:
         lifecycle_state = evaluate_macro_lifecycle(df_15m, config=cfg)
@@ -3130,6 +3176,12 @@ def print_signal(result):
         if m22_out:
             print(m22_out)
 
+    # Cascade Meta-Aggregator (all regional cascades)
+    if 'cascade' in result and result['cascade'].get('active_count', 0) > 0:
+        cascade_out = format_all_cascades(result['cascade'].get('details', {}))
+        if cascade_out:
+            print(cascade_out)
+
     # M23 PPI + CPI Session
     if 'm23' in result and result['m23'].get('status') not in ('SKIP', 'NO_PPI', 'NO_DATA'):
         m23_out = format_m23(result['m23'].get('details', {}))
@@ -3930,6 +3982,24 @@ def print_summary(result):
             gap_icon = '✅' if gap_held else '❌'
             asia_icon = '🟢' if asia_move > 0 else '🔴'
             print(f"  {'  Asia Actual':<22} {asia_icon} {asia_move:+.2f}%  gap={gap_icon}  {pattern}")
+
+    # Cascade Meta-Aggregator summary
+    cascade = result.get('cascade', {})
+    if cascade and cascade.get('active_count', 0) > 0:
+        c_score = cascade.get('combined_score', 0.5)
+        c_signal = cascade.get('combined_signal', 'HOLD')
+        c_count = cascade.get('active_count', 0)
+        c_weight = cascade.get('total_weight', 0)
+        sig_icons = {'STRONG_BUY': '🟢🟢', 'BUY': '🟢', 'HOLD': '⚪', 'SELL': '🔴', 'STRONG_SELL': '🔴🔴'}
+        sig_icon = sig_icons.get(c_signal, '⚪')
+        print(f"  {'Cascade Global':<22} {sig_icon} {c_signal:>12}  score={c_score:.3f}  active={c_count}  wt={c_weight:.0%}")
+        for ac in cascade.get('active_cascades', []):
+            ac_name = ac.get('name', '?')
+            ac_sig = ac.get('signal', '?')
+            ac_sc = ac.get('score', 0.5)
+            ac_wt = ac.get('weight', 0)
+            ac_icon = sig_icons.get(ac_sig, '⚪')
+            print(f"    {ac_name:<20} {ac_icon} {ac_sig:>12}  score={ac_sc:.3f}  wt={ac_wt:.0%}")
 
     # M24 NBS PMI Session Bias summary
     m24 = result.get('m24', {})
