@@ -2751,6 +2751,11 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         ics = max(0.0, min(1.0, ics))
         result['ics'] = round(float(ics), 4)
         result['m61_ics_adj'] = m61_score_adj
+    if m62_score_adj != 0.0 and m62_status in ('PASS', 'WEAK'):
+        ics += m62_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m62_ics_adj'] = m62_score_adj
 
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
