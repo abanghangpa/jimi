@@ -114,14 +114,50 @@ def _score_indicator(actual, consensus, thresholds=None):
     return 'INLINE', surprise
 
 
-def classify_activity_bundle(data):
-    """Classify the full activity data bundle.
+# ═══════════════════════════════════════════════════════════════
+# INDICATOR WEIGHTS (configurable)
+# IP + Retail are primary (released with consensus, market-reactive)
+# FAI is confirmation (investment cycle)
+# House Prices is context (property sector health)
+# Unemployment is background (lagging indicator)
+# ═══════════════════════════════════════════════════════════════
 
-    Returns a composite signal based on all indicators.
-    IP and Retail Sales are the primary signals.
-    FAI and House Prices are confirmation.
-    Unemployment is background context.
+ACTIVITY_WEIGHTS = {
+    'ip':       0.40,   # Industrial Production — manufacturing/output health
+    'retail':   0.40,   # Retail Sales — consumer spending (most market-reactive)
+    'fai':      0.15,   # Fixed Asset Investment — infrastructure + property + capex
+    'house':    0.05,   # House Prices — property sector (slow-moving, context)
+    'unemp':    0.00,   # Unemployment — lagging, no consensus, background only
+}
+
+# Thresholds for individual indicator scoring
+# Default: beat >= +0.3, inline within ±0.3, miss <= -0.3
+# IP has wider bands (more volatile), Retail has tighter (market watches closely)
+INDICATOR_THRESHOLDS = {
+    'ip':     {'big_beat': 1.5, 'beat': 0.5, 'miss': -0.5, 'big_miss': -1.5},
+    'retail': {'big_beat': 1.0, 'beat': 0.3, 'miss': -0.3, 'big_miss': -1.0},
+    'fai':    {'big_beat': 1.0, 'beat': 0.3, 'miss': -0.3, 'big_miss': -1.0},
+}
+
+
+def classify_activity_bundle(data, weights=None):
+    """Classify the full activity data bundle using weighted scoring.
+
+    Each indicator with consensus data gets a score:
+      STRONG_BEAT=+2, BEAT=+1, INLINE=0, MISS=-1, BIG_MISS=-2
+
+    Weighted average determines composite signal.
+    FAI contraction and property crisis act as overrides.
+
+    Args:
+        data: dict from CHINA_ACTIVITY_RELEASES
+        weights: optional custom weights dict (default: ACTIVITY_WEIGHTS)
+
+    Returns:
+        dict with composite signal, per-indicator details, weighted score
     """
+    w = weights or ACTIVITY_WEIGHTS
+
     ip_actual = data.get('ip_yoy')
     ip_consensus = data.get('consensus_ip')
     retail_actual = data.get('retail_yoy')
@@ -130,53 +166,112 @@ def classify_activity_bundle(data):
     unemp = data.get('unemp')
     hp_yoy = data.get('house_price_yoy')
 
-    ip_signal, ip_surprise = _score_indicator(ip_actual, ip_consensus)
-    retail_signal, retail_surprise = _score_indicator(retail_actual, retail_consensus)
+    # Score each indicator
+    ip_signal, ip_surprise = _score_indicator(
+        ip_actual, ip_consensus, INDICATOR_THRESHOLDS.get('ip'))
+    retail_signal, retail_surprise = _score_indicator(
+        retail_actual, retail_consensus, INDICATOR_THRESHOLDS.get('retail'))
 
-    # Composite: IP + Retail are primary
-    signals = [ip_signal, retail_signal]
-    surprises = [ip_surprise, retail_surprise]
+    # FAI: no consensus in data, score vs 0 (contraction = miss)
+    if fai_actual is not None:
+        if fai_actual < -1.0:
+            fai_signal, fai_surprise = 'BIG_MISS', fai_actual
+        elif fai_actual < 0:
+            fai_signal, fai_surprise = 'MISS', fai_actual
+        elif fai_actual > 2.0:
+            fai_signal, fai_surprise = 'BEAT', fai_actual
+        else:
+            fai_signal, fai_surprise = 'INLINE', fai_actual
+    else:
+        fai_signal, fai_surprise = 'PENDING', 0.0
 
-    # Count beats/misses
-    beats = sum(1 for s in signals if 'BEAT' in s)
-    misses = sum(1 for s in signals if 'MISS' in s)
-    pending = sum(1 for s in signals if s in ('PENDING', 'NO_CONSENSUS'))
+    # House prices: score vs threshold (-3% = miss, -5% = crisis)
+    if hp_yoy is not None:
+        if hp_yoy <= -5.0:
+            hp_signal = 'BIG_MISS'
+        elif hp_yoy <= -3.0:
+            hp_signal = 'MISS'
+        elif hp_yoy <= -1.0:
+            hp_signal = 'INLINE'
+        else:
+            hp_signal = 'BEAT'
+    else:
+        hp_signal = 'PENDING'
 
-    if pending >= 2:
-        composite = 'PENDING'
-    elif beats >= 2:
-        composite = 'STRONG_BEAT' if any('STRONG' in s for s in signals) else 'BEAT'
-    elif misses >= 2:
-        composite = 'BIG_MISS' if any('BIG' in s for s in signals) else 'MISS'
-    elif beats >= 1 and misses >= 1:
-        composite = 'MIXED'
-    elif beats >= 1:
+    # Map signals to numeric scores
+    signal_scores = {
+        'STRONG_BEAT': 2, 'BEAT': 1, 'INLINE': 0,
+        'MIXED': 0, 'MILD_BEAT': 0.5, 'MILD_MISS': -0.5,
+        'MISS': -1, 'BIG_MISS': -2, 'PROPERTY_CRISIS': -3,
+        'PENDING': 0, 'NO_CONSENSUS': 0,
+    }
+
+    # Compute weighted score
+    indicator_scores = {
+        'ip': signal_scores.get(ip_signal, 0),
+        'retail': signal_scores.get(retail_signal, 0),
+        'fai': signal_scores.get(fai_signal, 0),
+        'house': signal_scores.get(hp_signal, 0),
+        'unemp': 0.0,  # no consensus, not scored
+    }
+
+    # Only include indicators with actual data
+    active_weights = {}
+    for key, score in indicator_scores.items():
+        if key == 'unemp':
+            continue  # background only
+        actual_key = {'ip': 'ip_yoy', 'retail': 'retail_yoy', 'fai': 'fai_ytd_yoy', 'house': 'house_price_yoy'}.get(key)
+        if data.get(actual_key) is not None:
+            active_weights[key] = w.get(key, 0)
+
+    # Normalize weights
+    total_weight = sum(active_weights.values())
+    if total_weight > 0:
+        weighted_score = sum(
+            indicator_scores[k] * active_weights[k] / total_weight
+            for k in active_weights
+        )
+    else:
+        weighted_score = 0.0
+
+    # Map weighted score to composite signal
+    if weighted_score >= 1.5:
+        composite = 'STRONG_BEAT'
+    elif weighted_score >= 0.5:
+        composite = 'BEAT'
+    elif weighted_score >= 0.15:
         composite = 'MILD_BEAT'
-    elif misses >= 1:
+    elif weighted_score <= -1.5:
+        composite = 'BIG_MISS'
+    elif weighted_score <= -0.5:
+        composite = 'MISS'
+    elif weighted_score <= -0.15:
         composite = 'MILD_MISS'
     else:
         composite = 'INLINE'
 
-    # FAI override: if FAI flipped to contraction, it's a big deal
-    if fai_actual is not None and fai_actual < 0:
-        if composite in ('BEAT', 'STRONG_BEAT', 'MILD_BEAT', 'INLINE'):
-            composite = 'MIXED'  # downgrades beats
-        elif composite in ('MISS', 'BIG_MISS', 'MILD_MISS'):
-            composite = 'BIG_MISS'  # amplifies misses
+    # Override: FAI contraction + retail miss = stagflation risk
+    if fai_actual is not None and fai_actual < 0 and retail_signal in ('MISS', 'BIG_MISS'):
+        composite = 'BIG_MISS'
 
-    # Property deepening: if house prices accelerating decline
+    # Override: property crisis
     if hp_yoy is not None and hp_yoy <= -5.0:
         composite = 'PROPERTY_CRISIS'
 
     return {
         'composite': composite,
+        'weighted_score': round(weighted_score, 3),
         'ip_signal': ip_signal,
         'ip_surprise': round(ip_surprise, 1),
         'retail_signal': retail_signal,
         'retail_surprise': round(retail_surprise, 1),
+        'fai_signal': fai_signal,
         'fai_actual': fai_actual,
-        'unemp': unemp,
+        'house_signal': hp_signal,
         'house_price_yoy': hp_yoy,
+        'unemp': unemp,
+        'indicator_scores': indicator_scores,
+        'active_weights': active_weights,
     }
 
 
@@ -292,6 +387,7 @@ def format_china_activity(data, details=None):
     if details:
         composite = details.get('composite', '?')
         desc = details.get('description', '')
+        wscore = details.get('weighted_score', 0)
         composite_icons = {
             'STRONG_BEAT': '🟢🟢', 'BEAT': '🟢', 'MILD_BEAT': '🟢',
             'INLINE': '⚪', 'MIXED': '🟡', 'MILD_MISS': '🟡',
@@ -299,6 +395,17 @@ def format_china_activity(data, details=None):
             'PENDING': '⏳',
         }
         icon = composite_icons.get(composite, '⚪')
-        lines.append(f"    Composite: {icon} {composite} — {desc}")
+        lines.append(f"    Composite: {icon} {composite} (score={wscore:+.2f}) — {desc}")
+
+        # Show per-indicator scores
+        scores = details.get('indicator_scores', {})
+        if scores:
+            score_parts = []
+            for k in ('ip', 'retail', 'fai', 'house'):
+                if k in scores:
+                    s = scores[k]
+                    s_icon = '🟢' if s > 0 else '🔴' if s < 0 else '⚪'
+                    score_parts.append(f'{k}={s_icon}{s:+.1f}')
+            lines.append(f"    Scores: {' | '.join(score_parts)}")
 
     return '\n'.join(lines)
