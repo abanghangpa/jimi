@@ -26,13 +26,24 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.modules.m23_ppi_session import (
-    PPI_RELEASE_DATES, CPI_RELEASE_DATES, get_release_type,
-    classify_market_regime, compute_1h_spike, compute_us_session,
-    compute_asia_session, _classify_dump_size, _classify_inflation_regime,
-    RELEASE_HOUR_UTC, RELEASE_MINUTE_UTC,
-    US_SESSION_END, ASIA_SESSION_START, ASIA_SESSION_END,
+from src.modules.macro_utils import (
+    PPI_SCHEDULE_DATES as PPI_RELEASE_DATES,
+    CPI_SCHEDULE_DATES as CPI_RELEASE_DATES,
+    get_release_type, classify_market_regime,
+    classify_dump_size as _classify_dump_size,
+    classify_inflation_regime as _classify_inflation_regime,
 )
+from src.modules.cascade_engine import (
+    compute_1h_spike, compute_us_session, compute_asia_session,
+    US_SESSION, ASIA_SESSION,
+)
+
+# Backward compat aliases
+RELEASE_HOUR_UTC = 13
+RELEASE_MINUTE_UTC = 30
+US_SESSION_END = US_SESSION['end']
+ASIA_SESSION_START = ASIA_SESSION['start']
+ASIA_SESSION_END = ASIA_SESSION['end']
 from src.utils.data_handler import load_data
 
 # UK session window (UTC)

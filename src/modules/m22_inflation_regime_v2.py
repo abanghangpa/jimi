@@ -799,7 +799,7 @@ def score_m22_v2(ppi_yoy, ppi_prev_yoy=None, ppi_prev_prev_yoy=None, ppi_mom=Non
     # Labor context — from claims data (M23 cache) or explicit params
     if claims_classification is None:
         try:
-            from src.modules.m23_ppi_session import get_claims_trend
+            from src.modules.macro_utils import get_claims_trend
             ct = get_claims_trend()
             if ct:
                 claims_classification = ct.get('classification', 'NORMAL')

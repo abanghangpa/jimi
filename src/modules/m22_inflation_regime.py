@@ -189,7 +189,7 @@ def _get_claims_classification():
     Returns (classification, modifier_dict) or (None, None) if unavailable.
     """
     try:
-        from src.modules.m23_ppi_session import get_claims_trend
+        from src.modules.macro_utils import get_claims_trend
         claims = get_claims_trend()
         if claims is None:
             return None, None

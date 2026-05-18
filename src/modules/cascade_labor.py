@@ -325,7 +325,7 @@ def _enrich_with_nfp_data(details: dict, nfp_date: str, config: dict = None) -> 
                 break
 
     # Claims context
-    from src.modules.m23_ppi_session import get_claims_trend
+    from src.modules.macro_utils import get_claims_trend
     claims = get_claims_trend(cfg)
     if claims:
         details['claims_context'] = claims

@@ -535,10 +535,11 @@ class MacroLifecycle:
 
     def _compute_session_data(self, df_15m, release_dt, phase, current_time):
         """Compute available session data based on current phase."""
-        from src.modules.m23_ppi_session import (
+        from src.modules.cascade_engine import (
             compute_us_session, compute_asia_session, compute_uk_session,
-            compute_1h_spike, classify_market_regime,
+            compute_1h_spike,
         )
+        from src.modules.macro_utils import classify_market_regime
 
         data = {}
 
@@ -632,7 +633,7 @@ class MacroLifecycle:
 
     def _analyze_release(self, df_15m, release_dt):
         """Analyze the release moment (spike phase)."""
-        from src.modules.m23_ppi_session import compute_1h_spike
+        from src.modules.cascade_engine import compute_1h_spike
 
         spike = compute_1h_spike(df_15m, self.release_date)
         if not spike:
@@ -1060,7 +1061,7 @@ def detect_active_release(config=None):
     today = datetime.utcnow().strftime('%Y-%m-%d')
     yesterday = (datetime.utcnow() - timedelta(days=1)).strftime('%Y-%m-%d')
 
-    from src.modules.m23_ppi_session import get_release_type
+    from src.modules.macro_utils import get_release_type
 
     # Check yesterday first (post-release has actual data)
     yesterday_type = get_release_type(yesterday)

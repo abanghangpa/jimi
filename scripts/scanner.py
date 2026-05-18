@@ -86,9 +86,10 @@ from src.modules.m59_fomc_minutes import score_m59_minutes, format_m59
 from src.modules.m62_us_unemployment import score_m62_us_unemployment, format_m62
 from src.modules.m60_us_ppi import score_m60_us_ppi, format_m60
 from src.modules.m61_us_claims import score_m61_us_claims, format_m61
-from src.modules.m23_ppi_session import (
-    score_m23_ppi_session, format_m23, is_ppi_release_day, is_cpi_release_day,
-    is_nfp_release_day, is_macro_release_day, is_claims_release_day,
+from src.modules.m23_ppi_session import score_m23_ppi_session, format_m23
+from src.modules.macro_utils import (
+    is_ppi_release_day, is_cpi_release_day, is_nfp_release_day,
+    is_macro_release_day, is_claims_release_day,
     get_claims_trend, classify_macro_combo,
 )
 from src.modules.cascade_meta import score_all_cascades, format_all_cascades
