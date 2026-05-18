@@ -1,19 +1,19 @@
 """
 M22 Aggregator: Macro Regime Classifier
 
-Reads outputs from M23-M65 modules and classifies the macro regime.
-M22 does NOT independently fetch data — it is a pure downstream aggregator.
+Reads outputs from M23-M65 modules AND FRED cache to classify the macro regime.
+Uses module outputs on release days; falls back to FRED cache otherwise.
 
 Architecture:
-    M45 (Core PCE)  ──┐
-    M56 (US CPI)    ──┤── Inflation signal
-    M60 (US PPI)    ──┘
-    M37 (NFP)       ──┐
-    M62 (Unemployment)─┤── Labor signal
-    M61 (Claims)    ──┘
-    M57 (FOMC)      ──┐
-    M58 (Powell)    ──┤── Policy signal
-    M59 (Minutes)   ──┘
+    M45 (Core PCE)  ──┐                        ┌─ FRED CPIAUCSL fallback
+    M56 (US CPI)    ──┤── Inflation signal ─────┤
+    M60 (US PPI)    ──┘                        └─ FRED WPSFD49207 fallback
+    M37 (NFP)       ──┐                        ┌─ FRED UNRATE fallback
+    M62 (Unemployment)─┤── Labor signal ────────┤
+    M61 (Claims)    ──┘                        └─ FRED ICSA fallback
+    M57 (FOMC)      ──┐                        ┌─ FRED FEDFUNDS fallback
+    M58 (Powell)    ──┤── Policy signal ────────┤
+    M59 (Minutes)   ──┘                        └─ stance inference
     M23 (Release dynamics) ── Session context
     M47-M52 (Global CBs)   ── Global policy
 
@@ -25,7 +25,88 @@ Output:
     details: {regime, severity, factors, inflation_signal, labor_signal, policy_signal}
 """
 
+import os
+import json
 from src.config import CONFIG
+
+
+def _load_fred_cache():
+    """Load FRED macro cache (CPI, PPI, unemployment, claims, fed funds).
+
+    Returns dict with latest values, or empty dict if unavailable.
+    """
+    cache_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        'data', 'fred', 'macro_cache.json')
+    if not os.path.exists(cache_path):
+        return {}
+
+    try:
+        with open(cache_path) as f:
+            raw = json.load(f)
+
+        fred = {}
+
+        # CPI YoY
+        cpi_yoy = raw.get('cpi', {}).get('yoy', {})
+        if cpi_yoy:
+            latest_key = max(cpi_yoy.keys())
+            fred['cpi_yoy'] = cpi_yoy[latest_key]
+            fred['cpi_date'] = latest_key
+
+        # PPI YoY
+        ppi_yoy = raw.get('ppi', {}).get('yoy', {})
+        if ppi_yoy:
+            latest_key = max(ppi_yoy.keys())
+            fred['ppi_yoy'] = ppi_yoy[latest_key]
+            fred['ppi_date'] = latest_key
+
+        # Unemployment
+        unemp = raw.get('unrate', {}).get('monthly', {})
+        if unemp:
+            latest_key = max(unemp.keys())
+            fred['unemp'] = unemp[latest_key]
+            fred['unemp_date'] = latest_key
+
+        # Fed funds rate + stance
+        stance_info = raw.get('fed_funds', {}).get('stance_info', {})
+        if stance_info:
+            fred['fed_rate'] = stance_info.get('current_rate')
+            fred['fed_stance'] = stance_info.get('stance', 'UNKNOWN')
+            fred['fed_change'] = stance_info.get('change', 0)
+
+        return fred
+    except Exception:
+        return {}
+
+
+def _load_claims_cache():
+    """Load FRED claims cache (weekly jobless claims)."""
+    cache_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        'data', 'fred', 'claims_cache.json')
+    if not os.path.exists(cache_path):
+        return {}
+
+    try:
+        with open(cache_path) as f:
+            raw = json.load(f)
+
+        claims = {}
+        monthly_avg = raw.get('icsa', {}).get('monthly_avg', {})
+        if monthly_avg:
+            latest_key = max(monthly_avg.keys())
+            claims['claims_k'] = monthly_avg[latest_key]
+            claims['claims_date'] = latest_key
+
+        unemp = raw.get('unrate', {}).get('monthly', {})
+        if unemp:
+            latest_key = max(unemp.keys())
+            claims['unemp'] = unemp[latest_key]
+
+        return claims
+    except Exception:
+        return {}
 
 
 def _extract_module(result, key):
@@ -37,7 +118,7 @@ def _extract_module(result, key):
 
 
 def _classify_inflation(result):
-    """Aggregate inflation signal from M45, M56, M60.
+    """Aggregate inflation signal from M45, M56, M60 + FRED cache fallback.
 
     Returns: (signal: float, label: str, factors: list)
     signal: -1.0 (deflationary) to +1.0 (inflationary)
@@ -49,7 +130,6 @@ def _classify_inflation(result):
     m45 = _extract_module(result, 'm45')
     if m45:
         pce_yoy = m45.get('core_pce_yoy')
-        infl = m45.get('inflation', '')
         if pce_yoy is not None:
             if pce_yoy >= 3.0:
                 signals.append(0.8)
@@ -68,7 +148,6 @@ def _classify_inflation(result):
     m56 = _extract_module(result, 'm56')
     if m56:
         cpi_yoy = m56.get('cpi_yoy')
-        bias = m56.get('bias', '')
         if cpi_yoy is not None:
             if cpi_yoy >= 3.5:
                 signals.append(0.7)
@@ -85,7 +164,6 @@ def _classify_inflation(result):
     m60 = _extract_module(result, 'm60')
     if m60:
         ppi_yoy = m60.get('ppi_yoy')
-        ppi_signal = m60.get('ppi_signal', '')
         if ppi_yoy is not None:
             if ppi_yoy >= 4.0:
                 signals.append(0.6)
@@ -94,6 +172,38 @@ def _classify_inflation(result):
                 signals.append(0.3)
             elif ppi_yoy < 2.0:
                 signals.append(-0.4)
+
+    # FRED cache fallback — always available (not release-day dependent)
+    fred = _load_fred_cache()
+
+    if not any(m in result for m in ('m45', 'm56', 'm60')):
+        # No module outputs today — use FRED data directly
+        cpi = fred.get('cpi_yoy')
+        if cpi is not None:
+            if cpi >= 3.5:
+                signals.append(0.7)
+                factors.append(f'CPI {cpi:.1f}% HOT (FRED {fred.get("cpi_date", "?")})')
+            elif cpi >= 2.5:
+                signals.append(0.2)
+                factors.append(f'CPI {cpi:.1f}% WARM (FRED)')
+            elif cpi >= 2.0:
+                signals.append(-0.1)
+                factors.append(f'CPI {cpi:.1f}% TARGET (FRED)')
+            else:
+                signals.append(-0.6)
+                factors.append(f'CPI {cpi:.1f}% COOL (FRED)')
+
+        ppi = fred.get('ppi_yoy')
+        if ppi is not None:
+            if ppi >= 4.0:
+                signals.append(0.6)
+                factors.append(f'PPI {ppi:.1f}% HOT (FRED {fred.get("ppi_date", "?")})')
+            elif ppi >= 3.0:
+                signals.append(0.3)
+                factors.append(f'PPI {ppi:.1f}% WARM (FRED)')
+            elif ppi < 2.0:
+                signals.append(-0.4)
+                factors.append(f'PPI {ppi:.1f}% COOL (FRED)')
 
     if not signals:
         return 0.0, 'NO_DATA', factors
@@ -164,9 +274,7 @@ def _classify_labor(result):
     # M61: Claims
     m61 = _extract_module(result, 'm61')
     if m61:
-        claims_signal = m61.get('claims_signal', '')
         claims_k = m61.get('claims_k')
-        claims_trend = m61.get('claims_trend', '')
         if claims_k is not None:
             if claims_k < 210:
                 signals.append(0.3)
@@ -178,6 +286,41 @@ def _classify_labor(result):
             else:
                 signals.append(-0.7)
                 factors.append(f'Claims {claims_k}K spike')
+
+    # FRED cache fallback — always available
+    fred = _load_fred_cache()
+    claims_cache = _load_claims_cache()
+
+    if not any(m in result for m in ('m37', 'm62', 'm61')):
+        # No module outputs today — use FRED data directly
+        unemp = fred.get('unemp')
+        if unemp is not None:
+            if unemp < 4.0:
+                signals.append(0.5)
+                factors.append(f'Unemployment {unemp:.1f}% strong (FRED {fred.get("unemp_date", "?")})')
+            elif unemp < 4.5:
+                signals.append(0.0)
+                factors.append(f'Unemployment {unemp:.1f}% normal (FRED)')
+            elif unemp < 5.0:
+                signals.append(-0.4)
+                factors.append(f'Unemployment {unemp:.1f}% softening (FRED)')
+            else:
+                signals.append(-0.8)
+                factors.append(f'Unemployment {unemp:.1f}% danger (FRED)')
+
+        claims_k = claims_cache.get('claims_k')
+        if claims_k is not None:
+            if claims_k < 210:
+                signals.append(0.3)
+                factors.append(f'Claims {claims_k}K low (FRED)')
+            elif claims_k < 240:
+                signals.append(0.0)
+            elif claims_k < 280:
+                signals.append(-0.3)
+                factors.append(f'Claims {claims_k}K elevated (FRED)')
+            else:
+                signals.append(-0.7)
+                factors.append(f'Claims {claims_k}K spike (FRED)')
 
     if not signals:
         return 0.0, 'NO_DATA', factors
@@ -238,11 +381,33 @@ def _classify_policy(result):
     m59 = _extract_module(result, 'm59')
     if m59:
         surprise = m59.get('minutes_surprise', '')
-        bias = m59.get('bias', '')
         if surprise == 'DOVISH':
             signals.append(0.3)
         elif surprise == 'HAWKISH':
             signals.append(-0.3)
+
+    # FRED cache fallback — always available
+    fred = _load_fred_cache()
+
+    if not any(m in result for m in ('m57', 'm58', 'm59')):
+        # No FOMC outputs today — use FRED fed funds data
+        fed_rate = fred.get('fed_rate')
+        fed_stance = fred.get('fed_stance', 'UNKNOWN')
+        fed_change = fred.get('fed_change', 0)
+
+        if fed_rate is not None:
+            if fed_stance == 'CUTTING' or fed_change < -0.25:
+                signals.append(0.5)
+                factors.append(f'Fed CUTTING {fed_rate:.2f}% (FRED)')
+            elif fed_stance == 'HIKING' or fed_change > 0.25:
+                signals.append(-0.5)
+                factors.append(f'Fed HIKING {fed_rate:.2f}% (FRED)')
+            elif fed_stance == 'HOLDING':
+                signals.append(0.0)
+                factors.append(f'Fed HOLDING {fed_rate:.2f}% (FRED)')
+            else:
+                signals.append(0.0)
+                factors.append(f'Fed {fed_rate:.2f}% stance={fed_stance} (FRED)')
 
     if not signals:
         return 0.0, 'NO_DATA', factors
