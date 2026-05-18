@@ -1590,7 +1590,10 @@ def _build_narrative_v2(phase, direction, structure_bullish, smart_money_bearish
         parts.append(f"→ Entry NOW at ${price:.0f}, target ${reversal_target:.0f}.")
 
     elif sweep_status == 'IN_PROGRESS':
-        parts.append(f"\n⏳ Sweep IN PROGRESS at ${sweep_level:.0f}.")
+        if sweep_level is not None:
+            parts.append(f"\n⏳ Sweep IN PROGRESS at ${sweep_level:.0f}.")
+        else:
+            parts.append(f"\n⏳ Sweep IN PROGRESS — level pending confirmation.")
         if reversal_target:
             target_dist = abs(reversal_target - price) / price * 100
             parts.append(f"🎯 After sweep: reversal target ${reversal_target:.0f} ({reversal_target_name}, {target_dist:+.1f}%).")

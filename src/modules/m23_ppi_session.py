@@ -1182,12 +1182,30 @@ def get_claims_context_for_release(release_type, config=None):
     today_str = datetime.utcnow().strftime('%Y-%m-%d')
     claims_today = is_claims_release_day(today_str)
 
+    # Compute data age (days since last CPI/PPI release)
+    cpi_days_ago = None
+    ppi_days_ago = None
+    try:
+        today_dt = datetime.utcnow()
+        if CPI_RELEASE_DATES:
+            latest_cpi = max(CPI_RELEASE_DATES)
+            cpi_dt = datetime.strptime(latest_cpi, '%Y-%m-%d')
+            cpi_days_ago = (today_dt - cpi_dt).days
+        if PPI_RELEASE_DATES:
+            latest_ppi = max(PPI_RELEASE_DATES)
+            ppi_dt = datetime.strptime(latest_ppi, '%Y-%m-%d')
+            ppi_days_ago = (today_dt - ppi_dt).days
+    except Exception:
+        pass
+
     return {
         'claims': claims,
         'combo': combo,
         'claims_today': claims_today,
         'cpi_yoy': cpi_yoy,
         'ppi_yoy': ppi_yoy,
+        'cpi_days_ago': cpi_days_ago,
+        'ppi_days_ago': ppi_days_ago,
         'release_type': release_type,
     }
 
@@ -1244,7 +1262,7 @@ def format_claims_context(ctx):
 
         lines.append(f"\n    Macro Cascade: {sig_icon} {signal}")
         if cascade:
-            # Show cascade breakdown
+            # Show cascade breakdown with data age context
             cpi_sig = cascade.get('cpi_signal', '?')
             cpi_base = cascade.get('cpi_base_move', 0)
             ppi_conf = cascade.get('ppi_confirmation', '?')
@@ -1253,8 +1271,14 @@ def format_claims_context(ctx):
             claims_mod = cascade.get('claims_modifier', 0)
             claims_desc = cascade.get('claims_description', '')
 
-            lines.append(f"      1. CPI {cpi_sig}: {cpi_base:+.2f}% (primary)")
-            lines.append(f"      2. PPI {ppi_conf}: {ppi_mod:+.2f}% — {ppi_desc}")
+            # Show age of CPI/PPI data (these are stale on claims-only days)
+            cpi_age = ctx.get('cpi_days_ago')
+            ppi_age = ctx.get('ppi_days_ago')
+            cpi_age_str = f" ({cpi_age}d ago)" if cpi_age else ""
+            ppi_age_str = f" ({ppi_age}d ago)" if ppi_age else ""
+
+            lines.append(f"      1. CPI {cpi_sig}: {cpi_base:+.2f}% (primary){cpi_age_str}")
+            lines.append(f"      2. PPI {ppi_conf}: {ppi_mod:+.2f}% — {ppi_desc}{ppi_age_str}")
             lines.append(f"      3. Claims: {claims_mod:+.2f}% — {claims_desc}")
             lines.append(f"      → Total: {expected:+.1f}%  Conf: {conf}")
         else:
