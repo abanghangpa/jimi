@@ -10,10 +10,16 @@ import ccxt
 
 def load_data(filepath):
     """Load 15m OHLCV CSV and normalize columns."""
-    df = pd.read_csv(filepath)
+    df = pd.read_csv(filepath, low_memory=False)
     df.columns = df.columns.str.strip()
-    df['Open time'] = pd.to_datetime(df['Open time'].str.strip(), format='mixed')
-    df['Close time'] = pd.to_datetime(df['Close time'].str.strip(), format='mixed')
+    df['Open time'] = pd.to_datetime(df['Open time'].astype(str).str.strip(), format='mixed')
+    # Close time may be raw ms or formatted datetime
+    close_raw = df['Close time'].astype(str).str.strip()
+    try:
+        df['Close time'] = pd.to_datetime(close_raw, format='mixed')
+    except (ValueError, pd.errors.OutOfBoundsDatetime):
+        # Raw millisecond timestamps
+        df['Close time'] = pd.to_datetime(pd.to_numeric(close_raw, errors='coerce'), unit='ms')
     for col in ['Open', 'High', 'Low', 'Close', 'Volume',
                 'Quote asset volume', 'Number of trades',
                 'Taker buy base asset volume', 'Taker buy quote asset volume']:
