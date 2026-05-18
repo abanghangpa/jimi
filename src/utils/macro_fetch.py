@@ -289,19 +289,20 @@ def _fetch_fred_caixin():
 
 
 def _fetch_hardcoded_latest():
-    """Use hardcoded latest Caixin PMI from m_china_activity.py releases.
+    """Use hardcoded latest Caixin PMI from m25_caixin_pmi.py releases.
 
     This is a fallback when all web sources fail. Updates only when
-    the release data is manually updated in m_china_activity.py.
+    the release data is manually updated in m25_caixin_pmi.py.
+    CAIXIN_RELEASES is a list of (date, actual, previous) tuples.
     """
     try:
         from src.modules.m25_caixin_pmi import CAIXIN_RELEASES
         if CAIXIN_RELEASES:
-            latest_date = max(CAIXIN_RELEASES.keys())
-            entry = CAIXIN_RELEASES[latest_date]
+            # List of (date_str, actual, previous) tuples, sorted by date
+            latest = CAIXIN_RELEASES[-1]
             return {
-                'actual': entry.get('actual'),
-                'previous': entry.get('previous'),
+                'actual': latest[1],    # actual PMI value
+                'previous': latest[2],  # previous PMI value
                 'source': 'hardcoded_releases',
                 'timestamp': datetime.now(UTC).isoformat(),
             }
