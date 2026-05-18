@@ -227,6 +227,89 @@ def _fetch_investing_com():
 # SOURCE 3: Binance price reaction proxy
 # ══════════════════════════════════════════════════════════════
 
+def _fetch_sina_caixin():
+    """Fetch Caixin PMI from Sina Finance macro API.
+
+    Sina Finance is one of China's largest financial data providers.
+    Free, no API key needed. Reliable for Chinese macro data.
+    """
+    try:
+        import requests
+        # Sina macro indicator page for Caixin Manufacturing PMI
+        url = 'https://vip.stock.finance.sina.com.cn/q/view/vSina_MacroIndicator.php'
+        params = {'symbol': 'caixin_pmi_mfg'}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
+            'Referer': 'https://finance.sina.com.cn/',
+        }
+        resp = requests.get(url, params=params, headers=headers, timeout=10)
+        if resp.status_code == 200 and resp.text:
+            import re
+            # Parse: typically returns JS var with data array
+            # Format: var = [[date, actual, previous, forecast], ...]
+            match = re.search(r'(\d+\.\d+)\s*,\s*(\d+\.\d+)\s*,\s*(\d+\.\d+)', resp.text)
+            if match:
+                return {
+                    'actual': float(match.group(1)),
+                    'previous': float(match.group(2)),
+                    'forecast': float(match.group(3)),
+                    'source': 'sina_finance',
+                    'timestamp': datetime.now(UTC).isoformat(),
+                }
+    except Exception as e:
+        print(f"  ⚠️  Sina Finance Caixin fetch failed: {e}")
+    return None
+
+
+def _fetch_fred_caixin():
+    """Fetch Caixin PMI from FRED (if available via public CSV).
+
+    FRED series: CHNPMI (China PMI) or similar.
+    Caixin PMI may not be on FRED directly, but worth trying.
+    """
+    try:
+        import requests
+        # Try FRED public CSV download (no API key needed for some series)
+        url = 'https://fred.stlouisfed.org/graph/fredgraph.csv'
+        params = {'id': 'CHNPMI', 'cosd': '2025-01-01'}
+        resp = requests.get(url, params=params, timeout=10)
+        if resp.status_code == 200 and ',' in resp.text:
+            lines = resp.text.strip().split('\n')
+            if len(lines) >= 2:
+                last = lines[-1].split(',')
+                if len(last) >= 2 and last[1] != '.':
+                    return {
+                        'actual': float(last[1]),
+                        'source': 'fred',
+                        'timestamp': datetime.now(UTC).isoformat(),
+                    }
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_hardcoded_latest():
+    """Use hardcoded latest Caixin PMI from m_china_activity.py releases.
+
+    This is a fallback when all web sources fail. Updates only when
+    the release data is manually updated in m_china_activity.py.
+    """
+    try:
+        from src.modules.m25_caixin_pmi import CAIXIN_RELEASES
+        if CAIXIN_RELEASES:
+            latest_date = max(CAIXIN_RELEASES.keys())
+            entry = CAIXIN_RELEASES[latest_date]
+            return {
+                'actual': entry.get('actual'),
+                'previous': entry.get('previous'),
+                'source': 'hardcoded_releases',
+                'timestamp': datetime.now(UTC).isoformat(),
+            }
+    except Exception:
+        pass
+    return None
+
+
 def _fetch_price_reaction_proxy(symbol='ETHUSDT'):
     """Infer PMI surprise direction from ETH price reaction.
 
@@ -337,7 +420,10 @@ def fetch_caixin_pmi(force_refresh=False):
         ('manual_input', _fetch_manual_input),
         ('trading_economics', _fetch_trading_economics),
         ('trading_economics_calendar', _fetch_trading_economics_calendar),
+        ('sina_finance', _fetch_sina_caixin),
         ('investing_com', _fetch_investing_com),
+        ('fred', _fetch_fred_caixin),
+        ('hardcoded_releases', _fetch_hardcoded_latest),
         ('price_reaction', _fetch_price_reaction_proxy),
     ]
 

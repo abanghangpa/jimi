@@ -56,6 +56,7 @@ from src.modules.m22_inflation_regime_v2 import score_m22, format_m22
 from src.modules.m22_aggregator import aggregate_macro_regime, format_m22_aggregated
 from src.modules.m24_nbs_pmi import score_m24_nbs_pmi, format_m24
 from src.modules.m25_caixin_pmi import score_m25_caixin_pmi, format_m25
+from src.modules.m65_china_activity import score_m65_china_activity, format_m65
 from src.modules.m26_ez_pmi import score_m26_ez_pmi, format_m26
 from src.modules.m33_retail_sales import score_m33_retail_sales, format_m33
 from src.modules.m34_housing_starts import score_m34_housing, format_m34
@@ -2280,6 +2281,42 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
     except Exception as e:
         result['m59'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
 
+    # ── M65: China NBS Activity Session Bias (regime-conditional) ──
+    m65_score_adj = 0.0
+    m65_size_mult = 1.0
+    m65_status = 'SKIP'
+    m65_details = {}
+    try:
+        _wyckoff_for_m65 = result.get('m21', {}).get('phase', 'RANGE')
+        _vol_for_m65 = result.get('m9', {}).get('regime', 'CHOP')
+        m65_status, m65_score_adj, m65_size_mult, m65_details = score_m65_china_activity(
+            today_str=today_str,
+            wyckoff_phase=_wyckoff_for_m65,
+            vol_regime=_vol_for_m65,
+            direction=direction,
+            config=cfg)
+        if m65_details and m65_details.get('regime') not in ('DISABLED', 'NOT_RELEASE_DAY', 'NO_EDGE'):
+            result['m65'] = {
+                'status': m65_status,
+                'score_adj': m65_score_adj,
+                'size_mult': m65_size_mult,
+                'regime': m65_details.get('regime', '?'),
+                'composite': m65_details.get('composite', '?'),
+                'release_date': m65_details.get('release_date'),
+                'wyckoff': m65_details.get('wyckoff'),
+                'vol': m65_details.get('vol'),
+                'edge_direction': m65_details.get('edge_direction'),
+                'edge_avg_ret': m65_details.get('edge_avg_ret'),
+                'edge_win_rate': m65_details.get('edge_win_rate'),
+                'edge_n': m65_details.get('edge_n'),
+                'edge_confidence': m65_details.get('edge_confidence'),
+                'details': m65_details,
+            }
+            if m65_size_mult < 1.0:
+                result['_m65_size_mult'] = m65_size_mult
+    except Exception as e:
+        result['m65'] = {'status': 'ERROR', 'score_adj': 0.0, 'error': str(e)}
+
     # ── M60: US PPI Session Bias (regime-conditional) ──
     m60_score_adj = 0.0
     m60_size_mult = 1.0
@@ -3024,6 +3061,13 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         result['ics'] = round(float(ics), 4)
         result['m62_ics_adj'] = m62_score_adj
 
+    # ── M65 China Activity ICS adjustment (regime-conditional on release days) ──
+    if m65_score_adj != 0.0 and m65_status in ('PASS', 'WEAK'):
+        ics += m65_score_adj
+        ics = max(0.0, min(1.0, ics))
+        result['ics'] = round(float(ics), 4)
+        result['m65_ics_adj'] = m65_score_adj
+
     # ── Phase 5: Veto + Coherence + Filters ──
     # Veto
     if cfg.get('VETO_ENABLED', False):
@@ -3418,6 +3462,12 @@ def print_signal(result):
         m25_out = format_m25(result['m25'].get('details', {}))
         if m25_out:
             print(m25_out)
+
+    # M65 China Activity Session Bias
+    if 'm65' in result and result['m65'].get('status') not in ('SKIP', 'NO_EDGE', 'ERROR'):
+        m65_out = format_m65(result['m65'].get('details', {}))
+        if m65_out:
+            print(m65_out)
 
     # M26 Eurozone Flash PMI Session Bias
     if 'm26' in result and result['m26'].get('status') not in ('SKIP', 'NO_EDGE'):

@@ -70,6 +70,7 @@ _DYNAMIC_KEYS = {'_base_timeframe', 'M22_ENABLED', 'M22_WEIGHT', 'M22_VETO_THRES
                   'M60_ENABLED', 'M60_WINDOW_DAYS',
                   'M61_ENABLED', 'M61_WINDOW_DAYS',
                   'M62_ENABLED', 'M62_WINDOW_DAYS',
+                  'M65_ENABLED', 'M65_WINDOW_DAYS',
                   # Cascade config keys
                   'CASCADE_ENABLED',
                   'CASCADE_US_INFLATION_ENABLED',
