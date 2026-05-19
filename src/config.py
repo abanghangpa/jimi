@@ -99,6 +99,7 @@ _DYNAMIC_KEYS = {'_base_timeframe', 'M22_ENABLED', 'M22_WEIGHT', 'M22_VETO_THRES
                   'M72_ENABLED', 'M72_WEIGHT', 'M72_HIGH_THRESH', 'M72_LOW_THRESH',
                   'M73_ENABLED', 'M73_WEIGHT', 'M73_LARGE_MINT_THRESH',
                   'M73_MEGA_MINT_THRESH', 'M73_LARGE_BURN_THRESH',
+                  'M66_CARRY_ALERT_SCORE', 'M66_CARRY_CONFIRMED_SCORE',
                   'SIGNAL_EVAL_TRADFI_ACTIVE',
                   'MACRO_CACHE_TTL_DAYS'}
 
