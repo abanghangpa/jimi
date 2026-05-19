@@ -14,6 +14,8 @@ def fetch_vix(period="5d", interval="1d"):
     if not HAS_YFINANCE:
         return None
     df = yf.download("^VIX", period=period, interval=interval, progress=False)
+    if hasattr(df.columns, "levels") and len(df.columns.levels) > 1:
+        df.columns = df.columns.droplevel(1)
     return df
 
 

@@ -14,6 +14,8 @@ def fetch_usdjpy(period="5d", interval="1m"):
     if not HAS_YFINANCE:
         return None
     df = yf.download("JPY=X", period=period, interval=interval, progress=False)
+    if hasattr(df.columns, "levels") and len(df.columns.levels) > 1:
+        df.columns = df.columns.droplevel(1)
     return df
 
 

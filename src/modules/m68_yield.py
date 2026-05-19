@@ -14,6 +14,8 @@ def fetch_10y_yield(period="5d", interval="1h"):
     if not HAS_YFINANCE:
         return None
     df = yf.download("^TNX", period=period, interval=interval, progress=False)
+    if hasattr(df.columns, "levels") and len(df.columns.levels) > 1:
+        df.columns = df.columns.droplevel(1)
     if df is not None and len(df) > 0:
         df['yield'] = df['Close'] / 10.0
     return df

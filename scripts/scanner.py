@@ -159,6 +159,9 @@ def fetch_all_tradfi_data(config=None):
     for key, (ticker, period, interval) in tickers.items():
         try:
             df = yf.download(ticker, period=period, interval=interval, progress=False)
+            # yfinance >=1.0 returns MultiIndex columns ('Close','JPY=X') — flatten
+            if hasattr(df.columns, 'levels') and len(df.columns.levels) > 1:
+                df.columns = df.columns.droplevel(1)
             if df is not None and len(df) > 0:
                 data[key] = df
             else:

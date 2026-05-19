@@ -14,6 +14,8 @@ def fetch_dxy(period="5d", interval="15m"):
     if not HAS_YFINANCE:
         return None
     df = yf.download("DX-Y.NYB", period=period, interval=interval, progress=False)
+    if hasattr(df.columns, "levels") and len(df.columns.levels) > 1:
+        df.columns = df.columns.droplevel(1)
     return df
 
 
