@@ -2539,7 +2539,7 @@ def scan_signal(df_15m, df_1h, df_2h, df_4h, df_1d, config=None,
         try:
             _vix_df = _tradfi_data.get('vix')
             m69_status, m69_score, m69_details = score_m69_vix(
-                _vix_df, direction, config=cfg)
+                _vix_df, direction, config=cfg, df_dxy=_dxy_df)
             if m69_status == 'PASS':
                 result['m69'] = {'status': m69_status, 'score': round(float(m69_score), 3),
                                  'details': m69_details}
