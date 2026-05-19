@@ -1414,9 +1414,20 @@ def detect_squeeze_v6(result, config=None, last_signal_bar=-1, current_bar=0,
                 cfg=cfg,
             )
             if _levels.get('tp1_source') == 'UNSWEPT_POOL':
-                tp_dist = abs(_levels['tp1'] - entry_price_for_levels)
-                sl_dist = abs(entry_price_for_levels - _levels['sl'])
-                tp1_source = 'UNSWEPT_POOL'
+                _pool_tp_dist = abs(_levels['tp1'] - entry_price_for_levels)
+                _pool_sl_dist = abs(entry_price_for_levels - _levels['sl'])
+                # Compute ATR fallback for comparison
+                _atr_tp = atr * cfg.get('SQUEEZE_TP_ATR_MULT', 2.5) if atr > 0 else 0
+                _atr_sl = atr * cfg.get('SQUEEZE_SL_ATR_MULT', 1.0) if atr > 0 else 0
+                # Pick UNSWEPT_POOL only if R:R is better than ATR fallback
+                _pool_rr = _pool_tp_dist / _pool_sl_dist if _pool_sl_dist > 0 else 0
+                _atr_rr = _atr_tp / _atr_sl if _atr_sl > 0 else 0
+                if _pool_rr >= _atr_rr and _pool_rr >= 0.5:
+                    tp_dist = _pool_tp_dist
+                    sl_dist = _pool_sl_dist
+                    tp1_source = 'UNSWEPT_POOL'
+                else:
+                    raise ValueError(f'UNSWEPT_POOL R:R {_pool_rr:.2f} worse than ATR {_atr_rr:.2f}')
             else:
                 raise ValueError('ATR fallback')
         except Exception:
