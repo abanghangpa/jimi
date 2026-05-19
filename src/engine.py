@@ -46,6 +46,13 @@ from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, SQUEEZE
 from src.modules.m19_breakout_confirm import check_breakout_filters
 from src.modules.m20_failed_breakout import score_m20
 from src.modules.m21_wyckoff import score_m21, detect_trading_range, get_range_targets, get_range_sl
+# M66-M71: Tradfi modules (FX, commodities, VIX)
+from src.modules.m66_usdjpy import score_m66_usdjpy
+from src.modules.m67_dxy import score_m67_dxy
+from src.modules.m68_yield import score_m68_yield
+from src.modules.m69_vix import score_m69_vix
+from src.modules.m70_wti import score_m70_wti
+from src.modules.m71_gold import score_m71_gold
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -67,7 +74,13 @@ class Trade:
                  tp1_close_frac=None, tp2_close_frac=None,
                  squeeze_type='NONE', squeeze_score=0.0, squeeze_strong=False,
                  squeeze_trigger_type='NONE', squeeze_failed_breakout=False,
-                 squeeze_box_type='UNKNOWN', squeeze_lifecycle='NONE'):
+                 squeeze_box_type='UNKNOWN', squeeze_lifecycle='NONE',
+                 m66_score=0.5, m66_status='SKIP',
+                 m67_score=0.5, m67_status='SKIP',
+                 m68_score=0.5, m68_status='SKIP',
+                 m69_score=0.5, m69_status='SKIP',
+                 m70_score=0.5, m70_status='SKIP',
+                 m71_score=0.5, m71_status='SKIP'):
         self.entry_time = entry_time
         self.direction = direction
         self.entry_price = entry_price
@@ -121,6 +134,13 @@ class Trade:
         self.squeeze_failed_breakout = squeeze_failed_breakout
         self.squeeze_box_type = squeeze_box_type
         self.squeeze_lifecycle = squeeze_lifecycle
+        # M66-M71 tradfi scores at entry
+        self.m66_score = m66_score; self.m66_status = m66_status
+        self.m67_score = m67_score; self.m67_status = m67_status
+        self.m68_score = m68_score; self.m68_status = m68_status
+        self.m69_score = m69_score; self.m69_status = m69_status
+        self.m70_score = m70_score; self.m70_status = m70_status
+        self.m71_score = m71_score; self.m71_status = m71_status
         # Lifecycle
         self.remaining = 1.0
         self.tp1_hit = False
@@ -451,6 +471,29 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
     print(f"  1H: {len(df_1h):,} | 2H: {len(df_2h):,} | 4H: {len(df_4h):,} | 1D: {len(df_1d):,}")
 
     print("[3/6] Computing indicators...")
+
+    # Load aligned tradfi data for M66-M71
+    tradfi_df = None
+    _tradfi_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                'data', 'tradfi', 'aligned.csv')
+    if os.path.exists(_tradfi_path) and cfg.get('M66_ENABLED', False) or \
+       cfg.get('M67_ENABLED', False) or cfg.get('M68_ENABLED', False) or \
+       cfg.get('M69_ENABLED', False) or cfg.get('M70_ENABLED', False) or \
+       cfg.get('M71_ENABLED', False):
+        try:
+            tradfi_df = pd.read_csv(_tradfi_path)
+            tradfi_df['_ts'] = pd.to_datetime(tradfi_df['datetime'])
+            print(f"  Tradfi data loaded: {len(tradfi_df):,} rows from {_tradfi_path}")
+        except Exception as e:
+            print(f"  ⚠️  Tradfi data load failed: {e} — M66-M71 disabled in backtest")
+            tradfi_df = None
+
+    def find_tradfi_idx(ts, df):
+        """Find the most recent tradfi bar for a given timestamp."""
+        if df is None or len(df) == 0:
+            return -1
+        idx = df['_ts'].searchsorted(ts, side='right') - 1
+        return max(idx, -1)
     df_15m['vwap'] = calc_vwap(df_15m['High'], df_15m['Low'], df_15m['Close'], df_15m['Volume'], cfg['VWAP_LOOKBACK'])
     df_15m['vol_ma20'] = df_15m['Volume'].rolling(20).mean()
     taker_base = df_15m['Taker buy base asset volume']
@@ -665,6 +708,13 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
         'm17_pass', 'm17_skip',
         'm20_pass', 'm20_fail', 'm20_skip', 'm20_direct_signal',
         'm20_override', 'm20_ics_bypass',
+        # M66-M71 tradfi stats
+        'm66_pass', 'm66_skip',
+        'm67_pass', 'm67_skip',
+        'm68_pass', 'm68_skip',
+        'm69_pass', 'm69_skip',
+        'm70_pass', 'm70_skip',
+        'm71_pass', 'm71_skip',
     ]}
 
     adaptive_tracker = None
@@ -1564,6 +1614,162 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
             except Exception:
                 stats['m21_skip'] = stats.get('m21_skip', 0) + 1
 
+        # ═══════════════════════════════════════════════════════════
+        # M66-M71: TRADFI MODULES (FX, commodities, VIX)
+        # Scores from aligned tradfi CSV (daily + intraday forward-filled)
+        # ═══════════════════════════════════════════════════════════
+        m66_score = 0.5; m66_status = 'SKIP'; use_m66 = False
+        m67_score = 0.5; m67_status = 'SKIP'; use_m67 = False
+        m68_score = 0.5; m68_status = 'SKIP'; use_m68 = False
+        m69_score = 0.5; m69_status = 'SKIP'; use_m69 = False
+        m70_score = 0.5; m70_status = 'SKIP'; use_m70 = False
+        m71_score = 0.5; m71_status = 'SKIP'; use_m71 = False
+
+        if tradfi_df is not None:
+            _tf_idx = find_tradfi_idx(ts, tradfi_df)
+            if _tf_idx >= 0:
+                _tf_row = tradfi_df.iloc[_tf_idx]
+
+                # Build DataFrames for each module from the aligned row
+                # Each module expects a DataFrame with at least 2 rows (current + prev)
+                # We use the aligned grid index to get the previous row
+                _tf_prev_idx = max(0, _tf_idx - 1)
+
+                # M66: USD/JPY
+                if cfg.get('M66_ENABLED', False) and not pd.isna(_tf_row.get('usdjpy', float('nan'))):
+                    try:
+                        _usdjpy_now = float(_tf_row['usdjpy'])
+                        _usdjpy_prev = float(tradfi_df.iloc[_tf_prev_idx]['usdjpy'])
+                        _dxy_now = float(_tf_row.get('dxy', 0))
+                        _dxy_prev = float(tradfi_df.iloc[_tf_prev_idx].get('dxy', 0))
+                        # Build minimal DataFrames for the scoring functions
+                        _df_usdjpy = pd.DataFrame({
+                            'Close': [_usdjpy_prev, _usdjpy_now],
+                            'Open': [_usdjpy_prev, _usdjpy_now],
+                            'High': [_usdjpy_prev, _usdjpy_now],
+                            'Low': [_usdjpy_prev, _usdjpy_now],
+                        })
+                        _df_dxy = pd.DataFrame({
+                            'Close': [_dxy_prev, _dxy_now],
+                            'Open': [_dxy_prev, _dxy_now],
+                            'High': [_dxy_prev, _dxy_now],
+                            'Low': [_dxy_prev, _dxy_now],
+                        })
+                        m66_status, m66_score, _m66_details = score_m66_usdjpy(
+                            _df_usdjpy, _df_dxy, direction, config=cfg)
+                        use_m66 = m66_status == 'PASS'
+                    except Exception:
+                        pass
+
+                # M67: DXY divergence
+                if cfg.get('M67_ENABLED', False) and not pd.isna(_tf_row.get('dxy', float('nan'))):
+                    try:
+                        _dxy_now = float(_tf_row['dxy'])
+                        _dxy_prev = float(tradfi_df.iloc[_tf_prev_idx]['dxy'])
+                        _df_dxy_m67 = pd.DataFrame({
+                            'Close': [_dxy_prev, _dxy_now],
+                            'Open': [_dxy_prev, _dxy_now],
+                            'High': [_dxy_prev, _dxy_now],
+                            'Low': [_dxy_prev, _dxy_now],
+                        })
+                        _eth_now = float(row['Close'])
+                        _eth_prev = float(df_15m['Close'].iloc[max(0, idx - 1)])
+                        m67_status, m67_score, _m67_details = score_m67_dxy(
+                            _df_dxy_m67, _eth_now, _eth_prev, direction, config=cfg)
+                        use_m67 = m67_status == 'PASS'
+                    except Exception:
+                        pass
+
+                # M68: 10Y Yield
+                if cfg.get('M68_ENABLED', False) and not pd.isna(_tf_row.get('tnx', float('nan'))):
+                    try:
+                        _tnx_now = float(_tf_row['tnx'])
+                        _tnx_prev = float(tradfi_df.iloc[_tf_prev_idx]['tnx'])
+                        _df_tnx = pd.DataFrame({
+                            'Close': [_tnx_prev, _tnx_now],
+                            'Open': [_tnx_prev, _tnx_now],
+                            'High': [_tnx_prev, _tnx_now],
+                            'Low': [_tnx_prev, _tnx_now],
+                        })
+                        m68_status, m68_score, _m68_details = score_m68_yield(
+                            _df_tnx, None, direction, config=cfg)
+                        use_m68 = m68_status == 'PASS'
+                    except Exception:
+                        pass
+
+                # M69: VIX
+                if cfg.get('M69_ENABLED', False) and not pd.isna(_tf_row.get('vix', float('nan'))):
+                    try:
+                        _vix_now = float(_tf_row['vix'])
+                        _vix_prev = float(tradfi_df.iloc[_tf_prev_idx]['vix'])
+                        _df_vix = pd.DataFrame({
+                            'Close': [_vix_prev, _vix_now],
+                            'Open': [_vix_prev, _vix_now],
+                            'High': [_vix_prev, _vix_now],
+                            'Low': [_vix_prev, _vix_now],
+                        })
+                        # DXY for crisis classification
+                        _df_dxy_m69 = None
+                        if not pd.isna(_tf_row.get('dxy', float('nan'))):
+                            _dxy_now_m69 = float(_tf_row['dxy'])
+                            _dxy_prev_m69 = float(tradfi_df.iloc[_tf_prev_idx]['dxy'])
+                            _df_dxy_m69 = pd.DataFrame({
+                                'Close': [_dxy_prev_m69, _dxy_now_m69],
+                            })
+                        m69_status, m69_score, _m69_details = score_m69_vix(
+                            _df_vix, direction, config=cfg, df_dxy=_df_dxy_m69)
+                        use_m69 = m69_status == 'PASS'
+                    except Exception:
+                        pass
+
+                # M70: WTI Crude Oil
+                if cfg.get('M70_ENABLED', False) and not pd.isna(_tf_row.get('wti', float('nan'))):
+                    try:
+                        _wti_now = float(_tf_row['wti'])
+                        _wti_prev = float(tradfi_df.iloc[_tf_prev_idx]['wti'])
+                        _df_wti = pd.DataFrame({
+                            'Close': [_wti_prev, _wti_now],
+                            'Open': [_wti_prev, _wti_now],
+                            'High': [_wti_prev, _wti_now],
+                            'Low': [_wti_prev, _wti_now],
+                        })
+                        _df_dxy_m70 = None
+                        if not pd.isna(_tf_row.get('dxy', float('nan'))):
+                            _dxy_now_m70 = float(_tf_row['dxy'])
+                            _dxy_prev_m70 = float(tradfi_df.iloc[_tf_prev_idx]['dxy'])
+                            _df_dxy_m70 = pd.DataFrame({
+                                'Close': [_dxy_prev_m70, _dxy_now_m70],
+                            })
+                        m70_status, m70_score, _m70_details = score_m70_wti(
+                            _df_wti, _df_dxy_m70, direction, config=cfg)
+                        use_m70 = m70_status == 'PASS'
+                    except Exception:
+                        pass
+
+                # M71: Gold
+                if cfg.get('M71_ENABLED', False) and not pd.isna(_tf_row.get('gold', float('nan'))):
+                    try:
+                        _gold_now = float(_tf_row['gold'])
+                        _gold_prev = float(tradfi_df.iloc[_tf_prev_idx]['gold'])
+                        _df_gold = pd.DataFrame({
+                            'Close': [_gold_prev, _gold_now],
+                            'Open': [_gold_prev, _gold_now],
+                            'High': [_gold_prev, _gold_now],
+                            'Low': [_gold_prev, _gold_now],
+                        })
+                        _df_dxy_m71 = None
+                        if not pd.isna(_tf_row.get('dxy', float('nan'))):
+                            _dxy_now_m71 = float(_tf_row['dxy'])
+                            _dxy_prev_m71 = float(tradfi_df.iloc[_tf_prev_idx]['dxy'])
+                            _df_dxy_m71 = pd.DataFrame({
+                                'Close': [_dxy_prev_m71, _dxy_now_m71],
+                            })
+                        m71_status, m71_score, _m71_details = score_m71_gold(
+                            _df_gold, _df_dxy_m71, direction, config=cfg)
+                        use_m71 = m71_status == 'PASS'
+                    except Exception:
+                        pass
+
         # TAKER: Taker flow momentum + regime scoring
         taker_score = 0.5
         use_taker = False
@@ -1605,6 +1811,12 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                                         m17_score=m17_score, use_m17=use_m17,
                                         m20_score=m20_score, use_m20=use_m20,
                                         taker_score=taker_score, use_taker=use_taker,
+                                        m66_score=m66_score, use_m66=use_m66,
+                                        m67_score=m67_score, use_m67=use_m67,
+                                        m68_score=m68_score, use_m68=use_m68,
+                                        m69_score=m69_score, use_m69=use_m69,
+                                        m70_score=m70_score, use_m70=use_m70,
+                                        m71_score=m71_score, use_m71=use_m71,
                                         config=cfg)
         ics += gatekeeper.ics_boost
 
@@ -2001,7 +2213,13 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                       squeeze_trigger_type=squeeze_result.get('trigger_type', 'NONE'),
                       squeeze_failed_breakout=squeeze_result.get('failed_breakout', False),
                       squeeze_box_type=squeeze_result.get('box_type', 'UNKNOWN'),
-                      squeeze_lifecycle=squeeze_result.get('lifecycle_stage', 'NONE'))
+                      squeeze_lifecycle=squeeze_result.get('lifecycle_stage', 'NONE'),
+                      m66_score=m66_score, m66_status=m66_status,
+                      m67_score=m67_score, m67_status=m67_status,
+                      m68_score=m68_score, m68_status=m68_status,
+                      m69_score=m69_score, m69_status=m69_status,
+                      m70_score=m70_score, m70_status=m70_status,
+                      m71_score=m71_score, m71_status=m71_status)
         trade.dir_size_mult = dir_size_mult
         open_trades.append(trade); trades.append(trade)
         daily_trades[today] += 1; stats['entries'] += 1
