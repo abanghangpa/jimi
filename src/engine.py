@@ -1635,26 +1635,18 @@ def run_backtest(csv_path, config=None, verbose=False, date_start=None, date_end
                 # We use the aligned grid index to get the previous row
                 _tf_prev_idx = max(0, _tf_idx - 1)
 
-                # M66: USD/JPY
+                # M66: USD/JPY (needs 20 rows for ROC)
                 if cfg.get('M66_ENABLED', False) and not pd.isna(_tf_row.get('usdjpy', float('nan'))):
                     try:
-                        _usdjpy_now = float(_tf_row['usdjpy'])
-                        _usdjpy_prev = float(tradfi_df.iloc[_tf_prev_idx]['usdjpy'])
-                        _dxy_now = float(_tf_row.get('dxy', 0))
-                        _dxy_prev = float(tradfi_df.iloc[_tf_prev_idx].get('dxy', 0))
-                        # Build minimal DataFrames for the scoring functions
-                        _df_usdjpy = pd.DataFrame({
-                            'Close': [_usdjpy_prev, _usdjpy_now],
-                            'Open': [_usdjpy_prev, _usdjpy_now],
-                            'High': [_usdjpy_prev, _usdjpy_now],
-                            'Low': [_usdjpy_prev, _usdjpy_now],
-                        })
-                        _df_dxy = pd.DataFrame({
-                            'Close': [_dxy_prev, _dxy_now],
-                            'Open': [_dxy_prev, _dxy_now],
-                            'High': [_dxy_prev, _dxy_now],
-                            'Low': [_dxy_prev, _dxy_now],
-                        })
+                        _usdjpy_start = max(0, _tf_idx - 19)
+                        _df_usdjpy = tradfi_df.iloc[_usdjpy_start:_tf_idx + 1][['Open', 'High', 'Low', 'Close']].copy()
+                        _df_usdjpy.columns = ['Open', 'High', 'Low', 'Close']  # ensure order
+                        # Also build DXY with same rows
+                        _df_dxy = tradfi_df.iloc[_usdjpy_start:_tf_idx + 1][['dxy']].copy()
+                        _df_dxy.columns = ['Close']
+                        _df_dxy['Open'] = _df_dxy['Close']
+                        _df_dxy['High'] = _df_dxy['Close']
+                        _df_dxy['Low'] = _df_dxy['Close']
                         m66_status, m66_score, _m66_details = score_m66_usdjpy(
                             _df_usdjpy, _df_dxy, direction, config=cfg)
                         use_m66 = m66_status == 'PASS'
