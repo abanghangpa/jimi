@@ -107,6 +107,7 @@ from src.modules.macro_lifecycle import evaluate_macro_lifecycle, format_lifecyc
 from src.modules.macro_calendar import get_macro_calendar, format_macro_calendar, format_macro_calendar_compact, calendar_to_dict
 from src.modules.macro_event_filter import MacroEventFilter, get_phase0_from_df, get_trend_30d
 from src.sl_tp import calc_trade_levels, check_sweep_gate, calc_limit_entry
+from src.signal_eval import evaluate_signal, format_signal_eval
 from src.modules.conflict_resolver import detect_conflict, format_conflict, conflict_to_dict
 from src.modules.power_of_3 import detect_phase, format_phase, phase_to_dict
 from src.modules.m18_squeeze import detect_squeeze_v6 as detect_squeeze, format_squeeze
@@ -5401,6 +5402,17 @@ def main():
         print_signal(result)
         print_summary(result)
         print_dual_strategy(result)
+
+        # ── Signal Evaluation (post-generation actionable check) ──
+        # Price may have moved since data was fetched — evaluate freshness
+        try:
+            _live_price = float(df_base['Close'].iloc[-1])
+            _eval = evaluate_signal(result, current_price=_live_price, config=scaled_config)
+            if _eval:
+                print(format_signal_eval(_eval))
+                result['signal_eval'] = _eval
+        except Exception:
+            pass
 
         # ── Macro Lifecycle ──
         _lc = result.get('macro_lifecycle')
