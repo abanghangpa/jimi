@@ -59,8 +59,14 @@ def score_m68_yield(df_10y, df_tips, direction, config=None):
     alert_bps = cfg.get('M68_ALERT_BPS', 5.0)
     extreme_bps = cfg.get('M68_EXTREME_BPS', 10.0)
 
-    yield_now = float(df_10y['yield'].iloc[-1])
-    yield_prev = float(df_10y['yield'].iloc[-2])
+    # Support both fetch_10y_yield() output (has 'yield' col) and raw yfinance
+    if 'yield' in df_10y.columns:
+        yield_now = float(df_10y['yield'].iloc[-1])
+        yield_prev = float(df_10y['yield'].iloc[-2])
+    else:
+        # yfinance ^TNX returns yield * 10 as 'Close'
+        yield_now = float(df_10y['Close'].iloc[-1]) / 10.0
+        yield_prev = float(df_10y['Close'].iloc[-2]) / 10.0
     delta_bps = (yield_now - yield_prev) * 100  # % to bps
 
     # TIPS cross-check
