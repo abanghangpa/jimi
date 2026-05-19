@@ -1396,7 +1396,9 @@ def detect_squeeze_v6(result, config=None, last_signal_bar=-1, current_bar=0,
     squeeze_type = 'SHORT_SQUEEZE' if direction == 'LONG' else 'LONG_SQUEEZE'
 
     # ── TP/SL Levels ──
-    entry_price_for_levels = entry_price if entry_triggered else price
+    # Always use trigger entry for SL/TP — even when PENDING.
+    # Using current price when pending creates SL above entry (LONG) or below entry (SHORT).
+    entry_price_for_levels = entry_price
     tp1_source = 'ATR'
 
     if magnets is not None and liq_levels is not None:

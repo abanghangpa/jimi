@@ -4142,7 +4142,9 @@ def print_signal(result):
         sq_confirmed = result.get('squeeze_confirmed', False)
         if sq_filters:
             icons = {True: '✅', False: '❌'}
-            print(f"\n  Squeeze Confirmation Gate:")
+            _sq_status_label = sq.get('squeeze_status', 'NONE')
+            _gate_label = f" (only matters when TRIGGERED)" if _sq_status_label != 'TRIGGERED' else ""
+            print(f"\n  Squeeze Confirmation Gate{_gate_label}:")
             print(f"    EMA regime:   {icons.get(sq_filters.get('ema_regime'), '?')}")
             print(f"    CVD agrees:   {icons.get(sq_filters.get('cvd_agrees'), '?')}")
             print(f"    RSI ok:       {icons.get(sq_filters.get('rsi_ok'), '?')}")
@@ -4150,7 +4152,9 @@ def print_signal(result):
             _atr_val = sq_filters.get('_atr_value', '?')
             _atr_thr = sq_filters.get('_atr_threshold', '?')
             print(f"    ATR floor:    {icons.get(sq_filters.get('atr_floor'), '?')}  (ATR=${_atr_val} vs floor=${_atr_thr})")
-            if sq_confirmed:
+            if _sq_status_label != 'TRIGGERED':
+                print(f"    → ⏳ PENDING — gate will be checked on trigger")
+            elif sq_confirmed:
                 print(f"    → ✅ CONFIRMED (backtested 84.6% WR on 4h)")
             else:
                 print(f"    → ❌ NOT CONFIRMED — regime override & ICS boost skipped")
